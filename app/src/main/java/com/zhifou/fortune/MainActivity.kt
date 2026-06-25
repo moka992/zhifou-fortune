@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -66,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -244,30 +247,121 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
 private fun OracleScreen(vm: FortuneViewModel) {
     val context = LocalContext.current
     var isListening by remember { mutableStateOf(false) }
+    var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
+    val speechHandler = remember { Handler(Looper.getMainLooper()) }
+    val speechIntent = remember {
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出你想占卜的问题")
+        }
+    }
+    fun stopVoiceInput() {
+        isListening = false
+        speechHandler.removeCallbacksAndMessages(null)
+        recognizer?.cancel()
+        recognizer?.destroy()
+        recognizer = null
+        vm.voiceMessage = ""
+    }
+    fun restartListening() {
+        if (!isListening) return
+        speechHandler.postDelayed({
+            if (isListening) {
+                try {
+                    recognizer?.startListening(speechIntent)
+                } catch (_: Throwable) {
+                    vm.voiceMessage = "语音识别暂时不可用，请重新点击麦克风"
+                    stopVoiceInput()
+                }
+            }
+        }, 250L)
+    }
+    fun startVoiceInput() {
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            vm.voiceMessage = "当前设备没有可用的系统语音识别服务"
+            return
+        }
+        if (recognizer == null) {
+            recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        vm.voiceMessage = "正在聆听"
+                    }
+
+                    override fun onBeginningOfSpeech() = Unit
+                    override fun onRmsChanged(rmsdB: Float) = Unit
+                    override fun onBufferReceived(buffer: ByteArray?) = Unit
+                    override fun onEndOfSpeech() = Unit
+
+                    override fun onError(error: Int) {
+                        if (!isListening) return
+                        vm.voiceMessage = when (error) {
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
+                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音识别网络异常，继续等待"
+                            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "继续聆听"
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "语音识别正在准备"
+                            else -> "继续聆听"
+                        }
+                        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                            stopVoiceInput()
+                        } else {
+                            restartListening()
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            .orEmpty()
+                            .trim()
+                        if (text.isNotBlank()) {
+                            vm.question = text
+                            vm.voiceMessage = "已识别：$text"
+                        }
+                        restartListening()
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val text = partialResults
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            .orEmpty()
+                            .trim()
+                        if (text.isNotBlank()) {
+                            vm.question = text
+                            vm.voiceMessage = "正在识别：$text"
+                        }
+                    }
+
+                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
+                })
+            }
+        }
+        isListening = true
+        vm.voiceMessage = "正在聆听"
+        recognizer?.startListening(speechIntent)
+    }
+    fun toggleVoiceInput() {
+        if (isListening) {
+            stopVoiceInput()
+        } else {
+            startVoiceInput()
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            startVoiceQuestion(
-                context = context,
-                onListening = { listening -> isListening = listening },
-                onResult = { text -> vm.question = text },
-                onError = { message -> vm.voiceMessage = message },
-            )
+            startVoiceInput()
         } else {
             vm.voiceMessage = "需要麦克风权限才能语音提问"
         }
     }
-    fun beginVoiceInput() {
-        vm.voiceMessage = if (isListening) "正在聆听，请说出你的问题" else ""
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            startVoiceQuestion(
-                context = context,
-                onListening = { listening -> isListening = listening },
-                onResult = { text -> vm.question = text },
-                onError = { message -> vm.voiceMessage = message },
-            )
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+    DisposableEffect(Unit) {
+        onDispose { stopVoiceInput() }
     }
 
     Column(
@@ -285,7 +379,15 @@ private fun OracleScreen(vm: FortuneViewModel) {
             placeholder = { Text("例如：这周适合推进新计划吗？") },
             minLines = 2,
             trailingIcon = {
-                IconButton(onClick = { beginVoiceInput() }) {
+                IconButton(
+                    onClick = {
+                        if (isListening || ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            toggleVoiceInput()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                ) {
                     Icon(
                         Icons.Default.Mic,
                         contentDescription = if (isListening) "正在语音输入" else "语音输入",
@@ -299,7 +401,10 @@ private fun OracleScreen(vm: FortuneViewModel) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             Button(
-                onClick = { vm.castCoins() },
+                onClick = {
+                    stopVoiceInput()
+                    vm.castCoins()
+                },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
             ) {
@@ -308,7 +413,10 @@ private fun OracleScreen(vm: FortuneViewModel) {
                 Text("三币起卦")
             }
             Button(
-                onClick = { vm.drawAnswerBook() },
+                onClick = {
+                    stopVoiceInput()
+                    vm.drawAnswerBook()
+                },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Rose, contentColor = Ink),
             ) {
@@ -327,7 +435,7 @@ private fun OracleScreen(vm: FortuneViewModel) {
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("使用方式", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("输入问题，或点击输入框右侧麦克风进行语音输入。配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
+                Text("点击输入框右侧麦克风可开启或关闭语音输入。点击占卜按钮时会自动停止语音识别。配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
             }
         }
     }
@@ -917,89 +1025,6 @@ private fun JSONObject.toScheduleItem(): ScheduleItem = ScheduleItem(
     createdAt = optString("createdAt"),
     done = optBoolean("done", false),
 )
-
-private fun startVoiceQuestion(
-    context: Context,
-    onListening: (Boolean) -> Unit,
-    onResult: (String) -> Unit,
-    onError: (String) -> Unit,
-) {
-    if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-        onError("当前设备没有可用的系统语音识别服务")
-        return
-    }
-
-    val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-    fun finishListening() {
-        onListening(false)
-        recognizer.destroy()
-    }
-
-    recognizer.setRecognitionListener(object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {
-            onListening(true)
-        }
-
-        override fun onBeginningOfSpeech() = Unit
-        override fun onRmsChanged(rmsdB: Float) = Unit
-        override fun onBufferReceived(buffer: ByteArray?) = Unit
-        override fun onEndOfSpeech() {
-            onListening(false)
-        }
-
-        override fun onError(error: Int) {
-            val message = when (error) {
-                SpeechRecognizer.ERROR_AUDIO -> "录音失败，请重试"
-                SpeechRecognizer.ERROR_CLIENT -> "语音识别被中断，请重试"
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
-                SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音识别网络异常，请稍后重试"
-                SpeechRecognizer.ERROR_NO_MATCH -> "没有听清问题，请靠近麦克风重新说"
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "语音识别正在忙，请稍后再试"
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有检测到语音，请重新开始"
-                else -> "语音识别失败，请重试"
-            }
-            finishListening()
-            onError(message)
-        }
-
-        override fun onResults(results: Bundle?) {
-            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
-            val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
-            val text = matches.firstOrNull().orEmpty().trim()
-            val confidence = confidences?.firstOrNull() ?: 1f
-            finishListening()
-            when {
-                text.isBlank() -> onError("没有听清问题，请重新说一遍")
-                confidence < 0.45f -> onError("识别置信度偏低，请重新说一遍")
-                else -> {
-                    onResult(text)
-                    onError("已识别：$text")
-                }
-            }
-        }
-
-        override fun onPartialResults(partialResults: Bundle?) {
-            val text = partialResults
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-                .orEmpty()
-                .trim()
-            if (text.isNotBlank()) onError("正在识别：$text")
-        }
-
-        override fun onEvent(eventType: Int, params: Bundle?) = Unit
-    })
-
-    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
-        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-        putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出你想占卜的问题")
-    }
-    recognizer.startListening(intent)
-}
 
 private object AiInterpreter {
     private val client = OkHttpClient.Builder()

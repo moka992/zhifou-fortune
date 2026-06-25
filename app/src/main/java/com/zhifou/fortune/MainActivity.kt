@@ -1,4 +1,4 @@
-package com.cyberiching.fortune
+package com.zhifou.fortune
 
 import android.app.Application
 import android.content.Context
@@ -26,14 +26,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -116,6 +119,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("首页", Icons.Default.Home),
     Oracle("占卜", Icons.Default.Casino),
+    Schedule("日程", Icons.AutoMirrored.Filled.EventNote),
     History("记录", Icons.Default.History),
     Settings("设置", Icons.Default.Settings),
 }
@@ -149,6 +153,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
             when (tab) {
                 Tab.Home -> HomeScreen(vm, onOpenOracle = { tab = Tab.Oracle })
                 Tab.Oracle -> OracleScreen(vm)
+                Tab.Schedule -> ScheduleScreen(vm)
                 Tab.History -> HistoryScreen(vm)
                 Tab.Settings -> SettingsScreen(vm)
             }
@@ -266,6 +271,112 @@ private fun OracleScreen(vm: FortuneViewModel) {
 }
 
 @Composable
+private fun ScheduleScreen(vm: FortuneViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("记录日程", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = vm.scheduleTitle,
+                    onValueChange = { vm.scheduleTitle = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("事项") },
+                    placeholder = { Text("例如：周五前确认方案") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = vm.scheduleNote,
+                    onValueChange = { vm.scheduleNote = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("备注或日期") },
+                    placeholder = { Text("例如：2026-06-28 之前") },
+                    minLines = 2,
+                )
+                Button(
+                    onClick = { vm.addScheduleItem() },
+                    enabled = vm.scheduleTitle.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Gold),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.EventNote, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("保存到日程")
+                }
+            }
+        }
+
+        Text("待办事项", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        if (vm.scheduleItems.isEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = PanelAlt),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("还没有日程。把重要日期、灵感和待办写在这里。", color = TextSub, modifier = Modifier.padding(16.dp))
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                vm.scheduleItems.forEach { item ->
+                    ScheduleItemCard(
+                        item = item,
+                        onToggle = { vm.toggleScheduleItem(item.id) },
+                        onDelete = { vm.deleteScheduleItem(item.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScheduleItemCard(
+    item: ScheduleItem,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = if (item.done) PanelAlt else Panel),
+        border = BorderStroke(1.dp, Line),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            IconButton(onClick = onToggle) {
+                Icon(
+                    if (item.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = if (item.done) "标记未完成" else "标记完成",
+                    tint = if (item.done) Mint else TextSub,
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, color = TextMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                if (item.note.isNotBlank()) {
+                    Text(item.note, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                }
+                Text(item.createdAt, color = TextSub, style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "删除日程", tint = TextSub)
+            }
+        }
+    }
+}
+
+@Composable
 private fun HistoryScreen(vm: FortuneViewModel) {
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -324,8 +435,8 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("独立版定位", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("这是面向普通用户的手机应用，不依赖赛博占卜硬件终端。后续可以接入云端账号、会员、AI 解读和推送提醒。", color = TextSub)
+                Text("应用定位", color = TextMain, fontWeight = FontWeight.SemiBold)
+                Text("知否运势是安装即用的手机端应用，所有基础记录都保存在本机。后续可以继续扩展账号同步、AI 解读、提醒和会员能力。", color = TextSub)
             }
         }
     }
@@ -443,12 +554,16 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var history by mutableStateOf(repo.loadHistory())
         private set
+    var scheduleItems by mutableStateOf(repo.loadScheduleItems())
+        private set
     var nickname by mutableStateOf(repo.nickname)
         private set
     var birthHint by mutableStateOf(repo.birthHint)
         private set
     var todayReading by mutableStateOf(oracle.today(nickname, birthHint))
         private set
+    var scheduleTitle by mutableStateOf("")
+    var scheduleNote by mutableStateOf("")
 
     fun castCoins() {
         save(oracle.coin(question))
@@ -481,6 +596,32 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         history = emptyList()
     }
 
+    fun addScheduleItem() {
+        val title = scheduleTitle.trim()
+        if (title.isBlank()) return
+        val item = ScheduleItem(
+            id = System.currentTimeMillis(),
+            title = title,
+            note = scheduleNote.trim(),
+            createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
+        )
+        scheduleItems = repo.saveScheduleItems(listOf(item) + scheduleItems)
+        scheduleTitle = ""
+        scheduleNote = ""
+    }
+
+    fun toggleScheduleItem(id: Long) {
+        scheduleItems = repo.saveScheduleItems(
+            scheduleItems.map { item ->
+                if (item.id == id) item.copy(done = !item.done) else item
+            }
+        )
+    }
+
+    fun deleteScheduleItem(id: Long) {
+        scheduleItems = repo.saveScheduleItems(scheduleItems.filterNot { it.id == id })
+    }
+
     private fun save(reading: FortuneReading) {
         latestReading = reading
         history = repo.save(reading)
@@ -498,8 +639,16 @@ data class FortuneReading(
     val timeLabel: String,
 )
 
+data class ScheduleItem(
+    val id: Long,
+    val title: String,
+    val note: String,
+    val createdAt: String,
+    val done: Boolean = false,
+)
+
 class FortuneRepository(context: Context) {
-    private val prefs = context.getSharedPreferences("cyber_fortune", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("zhifou_fortune", Context.MODE_PRIVATE)
 
     var nickname: String
         get() = prefs.getString("nickname", "") ?: ""
@@ -528,6 +677,22 @@ class FortuneRepository(context: Context) {
     fun clearHistory() {
         prefs.edit().remove("history").apply()
     }
+
+    fun loadScheduleItems(): List<ScheduleItem> {
+        val raw = prefs.getString("schedule_items", "[]") ?: "[]"
+        val array = JSONArray(raw)
+        return (0 until array.length()).map { index ->
+            array.getJSONObject(index).toScheduleItem()
+        }
+    }
+
+    fun saveScheduleItems(items: List<ScheduleItem>): List<ScheduleItem> {
+        val next = items.take(120)
+        val array = JSONArray()
+        next.forEach { array.put(it.toJson()) }
+        prefs.edit().putString("schedule_items", array.toString()).apply()
+        return next
+    }
 }
 
 private fun FortuneReading.toJson(): JSONObject = JSONObject()
@@ -549,6 +714,21 @@ private fun JSONObject.toReading(): FortuneReading = FortuneReading(
     advice = optString("advice"),
     score = optInt("score", 70),
     timeLabel = optString("timeLabel"),
+)
+
+private fun ScheduleItem.toJson(): JSONObject = JSONObject()
+    .put("id", id)
+    .put("title", title)
+    .put("note", note)
+    .put("createdAt", createdAt)
+    .put("done", done)
+
+private fun JSONObject.toScheduleItem(): ScheduleItem = ScheduleItem(
+    id = optLong("id"),
+    title = optString("title"),
+    note = optString("note"),
+    createdAt = optString("createdAt"),
+    done = optBoolean("done", false),
 )
 
 class FortuneOracle {

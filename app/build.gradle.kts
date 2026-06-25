@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.cyberiching.fortune"
+    namespace = "com.zhifou.fortune"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.cyberiching.fortune"
+        applicationId = "com.zhifou.fortune"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

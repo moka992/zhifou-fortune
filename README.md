@@ -1,20 +1,45 @@
 # 知否运势
 
-知否运势是一个独立 Android 手机应用，面向普通用户提供每日运势、三枚铜钱占卜、答案之书和本地历史记录。
+知否运势是一款面向个人用户的 Android 运势与占卜应用。应用提供每日运势、三枚铜钱占卜、答案之书、历史记录和本地日程事项管理，核心功能可在手机端独立完成。
 
-这个项目从赛博占卜的用户侧能力拆出，不依赖硬件终端、不请求蓝牙权限，也不包含旧项目中的 BLE、语音模型和设备配网流程。
+## Features
 
-## 功能
+- Daily fortune reading based on date and optional user profile keywords
+- Three-coin I Ching divination with main hexagram, changed hexagram, moving lines and advice
+- Answer Book style short oracle prompts
+- Local history for previous fortune and divination records
+- Local schedule and task notes with complete/delete actions
+- Basic personalization through nickname and long-term keywords
 
-- 今日运势：基于日期、昵称和个人关键词生成稳定的每日提示。
-- 三枚铜钱占卜：本地随机起卦，展示本卦、变卦、动爻和行动建议。
-- 答案之书：随机抽取短答案与建议。
-- 历史记录：占卜结果保存在本机 SharedPreferences。
-- 设置：昵称和生日/长期关键词用于个性化每日运势。
+## Privacy
 
-## 技术栈
+- Core records are stored locally on the device.
+- The current version does not require account sign-in.
+- The current version does not request Bluetooth, location, microphone or contacts permissions.
+- API keys, signing keys, local SDK paths and build outputs are excluded from version control.
+
+## Tech Stack
 
 - Kotlin
 - Jetpack Compose
+- Material 3
 - Android Gradle Plugin 8.6.1
 - minSdk 26 / targetSdk 35
+
+## Build
+
+Install Android Studio with Android SDK Platform 35 and then run:
+
+```bash
+./gradlew :app:assembleDebug
+```
+
+The debug APK is generated under:
+
+```text
+app/build/outputs/apk/debug/
+```
+
+## Project Status
+
+This repository contains the first standalone mobile version. The next development stages can add structured persistence, notification reminders, richer calendar views, optional cloud sync and AI-assisted interpretations.

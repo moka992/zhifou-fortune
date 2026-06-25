@@ -1,9 +1,17 @@
 package com.zhifou.fortune
 
+import android.Manifest
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -36,6 +44,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -59,6 +68,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,17 +79,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
 
 private val Ink = Color(0xFF111318)
@@ -219,6 +242,34 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
 
 @Composable
 private fun OracleScreen(vm: FortuneViewModel) {
+    val context = LocalContext.current
+    var isListening by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            startVoiceQuestion(
+                context = context,
+                onListening = { listening -> isListening = listening },
+                onResult = { text -> vm.question = text },
+                onError = { message -> vm.voiceMessage = message },
+            )
+        } else {
+            vm.voiceMessage = "需要麦克风权限才能语音提问"
+        }
+    }
+    fun beginVoiceInput() {
+        vm.voiceMessage = if (isListening) "正在聆听，请说出你的问题" else ""
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startVoiceQuestion(
+                context = context,
+                onListening = { listening -> isListening = listening },
+                onResult = { text -> vm.question = text },
+                onError = { message -> vm.voiceMessage = message },
+            )
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -233,7 +284,19 @@ private fun OracleScreen(vm: FortuneViewModel) {
             label = { Text("你想问什么") },
             placeholder = { Text("例如：这周适合推进新计划吗？") },
             minLines = 2,
+            trailingIcon = {
+                IconButton(onClick = { beginVoiceInput() }) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = if (isListening) "正在语音输入" else "语音输入",
+                        tint = if (isListening) Gold else TextSub,
+                    )
+                }
+            },
         )
+        if (vm.voiceMessage.isNotBlank()) {
+            Text(vm.voiceMessage, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = { vm.castCoins() },
@@ -264,7 +327,7 @@ private fun OracleScreen(vm: FortuneViewModel) {
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("使用方式", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("把问题写具体，点击一种方式即可得到结果。所有记录只保存在本机。", color = TextSub)
+                Text("输入问题，或点击输入框右侧麦克风进行语音输入。配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
             }
         }
     }
@@ -434,6 +497,43 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             border = BorderStroke(1.dp, Line),
             shape = RoundedCornerShape(8.dp),
         ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("AI 解读", color = TextMain, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = vm.aiApiKey,
+                    onValueChange = { vm.updateAiApiKey(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("API Key") },
+                    placeholder = { Text("仅保存在本机") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = vm.aiModel,
+                    onValueChange = { vm.updateAiModel(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("模型") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = vm.aiEndpoint,
+                    onValueChange = { vm.updateAiEndpoint(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("OpenAI-compatible endpoint") },
+                    singleLine = true,
+                )
+                Text(
+                    "AI Key、模型和接口地址只写入本机设置，不会进入 Git 仓库。未配置 Key 时应用仍可使用本地占卜。",
+                    color = TextSub,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(8.dp),
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("应用定位", color = TextMain, fontWeight = FontWeight.SemiBold)
                 Text("知否运势是安装即用的手机端应用，所有基础记录都保存在本机。后续可以继续扩展账号同步、AI 解读、提醒和会员能力。", color = TextSub)
@@ -470,6 +570,17 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
             }
             Text(reading.body, color = TextMain, style = MaterialTheme.typography.bodyLarge)
             Text(reading.advice, color = Gold, style = MaterialTheme.typography.bodyMedium)
+            if (reading.aiStatus.isNotBlank()) {
+                Text(reading.aiStatus, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (reading.aiInterpretation.isNotBlank()) {
+                Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("AI 解读", color = Mint, fontWeight = FontWeight.SemiBold)
+                        Text(reading.aiInterpretation, color = TextMain, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
         }
     }
 }
@@ -564,6 +675,13 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var scheduleTitle by mutableStateOf("")
     var scheduleNote by mutableStateOf("")
+    var voiceMessage by mutableStateOf("")
+    var aiApiKey by mutableStateOf(repo.aiApiKey)
+        private set
+    var aiModel by mutableStateOf(repo.aiModel)
+        private set
+    var aiEndpoint by mutableStateOf(repo.aiEndpoint)
+        private set
 
     fun castCoins() {
         save(oracle.coin(question))
@@ -589,6 +707,21 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         birthHint = value
         repo.birthHint = value
         refreshToday()
+    }
+
+    fun updateAiApiKey(value: String) {
+        aiApiKey = value.trim()
+        repo.aiApiKey = aiApiKey
+    }
+
+    fun updateAiModel(value: String) {
+        aiModel = value.trim()
+        repo.aiModel = aiModel
+    }
+
+    fun updateAiEndpoint(value: String) {
+        aiEndpoint = value.trim()
+        repo.aiEndpoint = aiEndpoint
     }
 
     fun clearHistory() {
@@ -623,8 +756,31 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun save(reading: FortuneReading) {
-        latestReading = reading
-        history = repo.save(reading)
+        val saved = if (aiApiKey.isBlank()) {
+            reading.copy(aiStatus = "未配置 AI Key，已生成本地占卜结果")
+        } else {
+            reading.copy(aiStatus = "AI 解读生成中")
+        }
+        latestReading = saved
+        history = repo.save(saved)
+        if (aiApiKey.isNotBlank()) generateAiInterpretation(saved)
+    }
+
+    private fun generateAiInterpretation(reading: FortuneReading) {
+        viewModelScope.launch {
+            val result = AiInterpreter.interpret(
+                endpoint = aiEndpoint,
+                apiKey = aiApiKey,
+                model = aiModel,
+                reading = reading,
+            )
+            val updated = result.fold(
+                onSuccess = { text -> reading.copy(aiInterpretation = text, aiStatus = "") },
+                onFailure = { error -> reading.copy(aiStatus = "AI 解读失败：${error.message ?: "请检查网络、Key 或模型配置"}") },
+            )
+            latestReading = updated
+            history = repo.replaceReading(updated)
+        }
     }
 }
 
@@ -637,6 +793,8 @@ data class FortuneReading(
     val advice: String,
     val score: Int,
     val timeLabel: String,
+    val aiInterpretation: String = "",
+    val aiStatus: String = "",
 )
 
 data class ScheduleItem(
@@ -658,6 +816,21 @@ class FortuneRepository(context: Context) {
         get() = prefs.getString("birth_hint", "") ?: ""
         set(value) = prefs.edit().putString("birth_hint", value).apply()
 
+    var aiApiKey: String
+        get() = prefs.getString("ai_api_key", "") ?: ""
+        set(value) = prefs.edit().putString("ai_api_key", value).apply()
+
+    var aiModel: String
+        get() = prefs.getString("ai_model", "gpt-4o-mini") ?: "gpt-4o-mini"
+        set(value) = prefs.edit().putString("ai_model", value.ifBlank { "gpt-4o-mini" }).apply()
+
+    var aiEndpoint: String
+        get() = prefs.getString("ai_endpoint", "https://api.openai.com/v1/chat/completions")
+            ?: "https://api.openai.com/v1/chat/completions"
+        set(value) = prefs.edit()
+            .putString("ai_endpoint", value.ifBlank { "https://api.openai.com/v1/chat/completions" })
+            .apply()
+
     fun loadHistory(): List<FortuneReading> {
         val raw = prefs.getString("history", "[]") ?: "[]"
         val array = JSONArray(raw)
@@ -668,6 +841,16 @@ class FortuneRepository(context: Context) {
 
     fun save(reading: FortuneReading): List<FortuneReading> {
         val next = (listOf(reading) + loadHistory()).take(80)
+        val array = JSONArray()
+        next.forEach { array.put(it.toJson()) }
+        prefs.edit().putString("history", array.toString()).apply()
+        return next
+    }
+
+    fun replaceReading(reading: FortuneReading): List<FortuneReading> {
+        val next = loadHistory().map { item ->
+            if (item.id == reading.id) reading else item
+        }
         val array = JSONArray()
         next.forEach { array.put(it.toJson()) }
         prefs.edit().putString("history", array.toString()).apply()
@@ -704,6 +887,8 @@ private fun FortuneReading.toJson(): JSONObject = JSONObject()
     .put("advice", advice)
     .put("score", score)
     .put("timeLabel", timeLabel)
+    .put("aiInterpretation", aiInterpretation)
+    .put("aiStatus", aiStatus)
 
 private fun JSONObject.toReading(): FortuneReading = FortuneReading(
     id = optLong("id"),
@@ -714,6 +899,8 @@ private fun JSONObject.toReading(): FortuneReading = FortuneReading(
     advice = optString("advice"),
     score = optInt("score", 70),
     timeLabel = optString("timeLabel"),
+    aiInterpretation = optString("aiInterpretation"),
+    aiStatus = optString("aiStatus"),
 )
 
 private fun ScheduleItem.toJson(): JSONObject = JSONObject()
@@ -730,6 +917,165 @@ private fun JSONObject.toScheduleItem(): ScheduleItem = ScheduleItem(
     createdAt = optString("createdAt"),
     done = optBoolean("done", false),
 )
+
+private fun startVoiceQuestion(
+    context: Context,
+    onListening: (Boolean) -> Unit,
+    onResult: (String) -> Unit,
+    onError: (String) -> Unit,
+) {
+    if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+        onError("当前设备没有可用的系统语音识别服务")
+        return
+    }
+
+    val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+    fun finishListening() {
+        onListening(false)
+        recognizer.destroy()
+    }
+
+    recognizer.setRecognitionListener(object : RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {
+            onListening(true)
+        }
+
+        override fun onBeginningOfSpeech() = Unit
+        override fun onRmsChanged(rmsdB: Float) = Unit
+        override fun onBufferReceived(buffer: ByteArray?) = Unit
+        override fun onEndOfSpeech() {
+            onListening(false)
+        }
+
+        override fun onError(error: Int) {
+            val message = when (error) {
+                SpeechRecognizer.ERROR_AUDIO -> "录音失败，请重试"
+                SpeechRecognizer.ERROR_CLIENT -> "语音识别被中断，请重试"
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
+                SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音识别网络异常，请稍后重试"
+                SpeechRecognizer.ERROR_NO_MATCH -> "没有听清问题，请靠近麦克风重新说"
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "语音识别正在忙，请稍后再试"
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有检测到语音，请重新开始"
+                else -> "语音识别失败，请重试"
+            }
+            finishListening()
+            onError(message)
+        }
+
+        override fun onResults(results: Bundle?) {
+            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+            val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+            val text = matches.firstOrNull().orEmpty().trim()
+            val confidence = confidences?.firstOrNull() ?: 1f
+            finishListening()
+            when {
+                text.isBlank() -> onError("没有听清问题，请重新说一遍")
+                confidence < 0.45f -> onError("识别置信度偏低，请重新说一遍")
+                else -> {
+                    onResult(text)
+                    onError("已识别：$text")
+                }
+            }
+        }
+
+        override fun onPartialResults(partialResults: Bundle?) {
+            val text = partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                .orEmpty()
+                .trim()
+            if (text.isNotBlank()) onError("正在识别：$text")
+        }
+
+        override fun onEvent(eventType: Int, params: Bundle?) = Unit
+    })
+
+    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出你想占卜的问题")
+    }
+    recognizer.startListening(intent)
+}
+
+private object AiInterpreter {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .build()
+    private val jsonType = "application/json; charset=utf-8".toMediaType()
+
+    suspend fun interpret(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        reading: FortuneReading,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject()
+                .put("model", model.ifBlank { "gpt-4o-mini" })
+                .put("temperature", 0.45)
+                .put("messages", JSONArray()
+                    .put(JSONObject()
+                        .put("role", "system")
+                        .put(
+                            "content",
+                            "你是知否运势的占卜解读助手。用中文回答，保持克制、具体、可执行。不要宣称确定未来，不做医疗、法律、金融结论。",
+                        )
+                    )
+                    .put(JSONObject()
+                        .put("role", "user")
+                        .put("content", buildAiPrompt(reading))
+                    )
+                )
+                .put("max_tokens", 900)
+
+            val request = Request.Builder()
+                .url(endpoint.ifBlank { "https://api.openai.com/v1/chat/completions" })
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(body.toString().toRequestBody(jsonType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IllegalStateException("HTTP ${response.code}"))
+                }
+                val content = JSONObject(responseBody)
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+                Result.success(content)
+            }
+        } catch (e: Throwable) {
+            Result.failure(e)
+        }
+    }
+
+    private fun buildAiPrompt(reading: FortuneReading): String {
+        return """
+            请对下面的占卜结果做解释：
+            类型：${reading.kind}
+            问题：${reading.question.ifBlank { "未填写具体问题" }}
+            标题：${reading.title}
+            本地解释：${reading.body}
+            本地建议：${reading.advice}
+
+            输出结构：
+            1. 局面判断：2-3 句
+            2. 关键提醒：3 条短句
+            3. 行动建议：3 条具体做法
+            4. 今日宜忌：宜/忌各 2 条
+        """.trimIndent()
+    }
+}
 
 class FortuneOracle {
     private val random = SecureRandom()

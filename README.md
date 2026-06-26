@@ -9,6 +9,7 @@
 - Answer Book oracle prompts
 - AI-powered interpretation through an OpenAI-compatible endpoint
 - Voice input for divination questions
+- Animated dice game with standard dice expressions such as `d6`, `2d6`, `d20` and `d%`
 - Local reading history
 - Local schedule and task notes
 - Basic user profile settings

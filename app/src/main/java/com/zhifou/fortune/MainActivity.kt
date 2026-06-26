@@ -16,6 +16,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -72,6 +75,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,9 +83,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -92,6 +98,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -107,6 +114,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
+import kotlin.random.Random
 
 private val Ink = Color(0xFF111318)
 private val Panel = Color(0xFF1B1F27)
@@ -144,7 +152,8 @@ class MainActivity : ComponentActivity() {
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("首页", Icons.Default.Home),
-    Oracle("占卜", Icons.Default.Casino),
+    Oracle("占卜", Icons.Default.AutoAwesome),
+    Dice("骰子", Icons.Default.Casino),
     Schedule("日程", Icons.AutoMirrored.Filled.EventNote),
     History("记录", Icons.Default.History),
     Settings("设置", Icons.Default.Settings),
@@ -179,6 +188,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
             when (tab) {
                 Tab.Home -> HomeScreen(vm, onOpenOracle = { tab = Tab.Oracle })
                 Tab.Oracle -> OracleScreen(vm)
+                Tab.Dice -> DiceScreen()
                 Tab.Schedule -> ScheduleScreen(vm)
                 Tab.History -> HistoryScreen(vm)
                 Tab.Settings -> SettingsScreen(vm)
@@ -436,6 +446,241 @@ private fun OracleScreen(vm: FortuneViewModel) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("使用方式", color = TextMain, fontWeight = FontWeight.SemiBold)
                 Text("点击输入框右侧麦克风可开启或关闭语音输入。点击占卜按钮时会自动停止语音识别。配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiceScreen() {
+    val scope = rememberCoroutineScope()
+    val rotation = remember { Animatable(0f) }
+    val bounce = remember { Animatable(0f) }
+    var face by remember { mutableStateOf(1) }
+    var diceExpression by remember { mutableStateOf("d6") }
+    var resultText by remember { mutableStateOf("d6: [1] = 1") }
+    var errorText by remember { mutableStateOf("") }
+    var rolling by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text("骰子游戏", color = TextMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = diceExpression,
+                    onValueChange = {
+                        diceExpression = it
+                        errorText = ""
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("骰子表达式") },
+                    placeholder = { Text("d6、2d6、d20、d%") },
+                    singleLine = true,
+                )
+                DiceVisual(
+                    face = face,
+                    rotation = rotation.value,
+                    bounce = bounce.value,
+                    rolling = rolling,
+                )
+                Text(
+                    if (rolling) "正在摇骰子" else resultText,
+                    color = if (rolling) TextSub else Gold,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (errorText.isNotBlank()) {
+                    Text(errorText, color = Rose, style = MaterialTheme.typography.bodyMedium)
+                }
+                Button(
+                    onClick = {
+                        if (rolling) return@Button
+                        val roll = rollDiceExpression(diceExpression)
+                        if (roll == null) {
+                            errorText = "请输入标准骰子表达式，例如 d6、2d6、d20、d%"
+                            return@Button
+                        }
+                        scope.launch {
+                            rolling = true
+                            errorText = ""
+                            val finalFace = if (roll.rolls.size == 1 && roll.sides == 6) {
+                                roll.rolls.first()
+                            } else {
+                                Random.nextInt(1, 7)
+                            }
+                            repeat(12) { step ->
+                                face = Random.nextInt(1, 7)
+                                bounce.snapTo(if (step % 2 == 0) 1f else 0.35f)
+                                rotation.animateTo(
+                                    targetValue = rotation.value + 58f + step * 3f,
+                                    animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
+                                )
+                                delay(18)
+                            }
+                            face = finalFace
+                            resultText = roll.displayText
+                            bounce.animateTo(0f, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing))
+                            rotation.animateTo(rotation.value + 18f, animationSpec = tween(durationMillis = 160))
+                            history = (listOf(roll.displayText) + history).take(6)
+                            rolling = false
+                        }
+                    },
+                    enabled = !rolling,
+                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Ink),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Casino, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (rolling) "摇动中" else "摇骰子")
+                }
+            }
+        }
+
+        if (history.isNotEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = PanelAlt),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("最近结果", color = TextMain, fontWeight = FontWeight.SemiBold)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        history.forEach { value ->
+                            Badge(value.toString())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class DiceRollResult(
+    val expression: String,
+    val quantity: Int,
+    val sides: Int,
+    val rolls: List<Int>,
+    val sum: Int,
+) {
+    val displayText: String
+        get() = "$expression: [${rolls.joinToString(", ")}] = $sum"
+}
+
+private fun rollDiceExpression(input: String): DiceRollResult? {
+    val normalized = input.trim().lowercase(Locale.ROOT).replace(" ", "")
+    val match = Regex("""^(\d*)d(\d+|%)$""").matchEntire(normalized) ?: return null
+    val quantity = match.groupValues[1].ifBlank { "1" }.toIntOrNull() ?: return null
+    val sides = if (match.groupValues[2] == "%") 100 else match.groupValues[2].toIntOrNull() ?: return null
+    if (quantity !in 1..999 || sides !in 2..999) return null
+    val rolls = List(quantity) { Random.nextInt(1, sides + 1) }
+    val expression = "${if (quantity == 1) "" else quantity}d${if (sides == 100 && normalized.endsWith("d%")) "%" else sides}"
+    return DiceRollResult(
+        expression = expression,
+        quantity = quantity,
+        sides = sides,
+        rolls = rolls,
+        sum = rolls.sum(),
+    )
+}
+
+@Composable
+private fun DiceVisual(
+    face: Int,
+    rotation: Float,
+    bounce: Float,
+    rolling: Boolean,
+) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
+        Canvas(
+            modifier = Modifier
+                .size(230.dp)
+                .graphicsLayer(
+                    rotationZ = rotation,
+                    translationY = -28f * bounce,
+                    scaleX = if (rolling) 1.03f else 1f,
+                    scaleY = if (rolling) 1.03f else 1f,
+                )
+        ) {
+            val side = size.minDimension * 0.56f
+            val left = size.width * 0.22f
+            val top = size.height * 0.28f
+            val depth = side * 0.22f
+
+            drawOval(
+                color = Color(0x55000000),
+                topLeft = Offset(left + side * 0.08f, top + side + depth * 0.82f),
+                size = Size(side * 0.92f, depth * 0.45f),
+            )
+
+            val topFace = Path().apply {
+                moveTo(left, top)
+                lineTo(left + depth, top - depth)
+                lineTo(left + side + depth, top - depth)
+                lineTo(left + side, top)
+                close()
+            }
+            val rightFace = Path().apply {
+                moveTo(left + side, top)
+                lineTo(left + side + depth, top - depth)
+                lineTo(left + side + depth, top + side - depth)
+                lineTo(left + side, top + side)
+                close()
+            }
+
+            drawPath(topFace, Color(0xFFF6E4B0))
+            drawPath(rightFace, Color(0xFFC99B45))
+            drawRoundRect(
+                color = Color(0xFFE7BF62),
+                topLeft = Offset(left, top),
+                size = Size(side, side),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+            )
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0x55FFFFFF), Color.Transparent),
+                    start = Offset(left, top),
+                    end = Offset(left + side, top + side),
+                ),
+                topLeft = Offset(left + 2.dp.toPx(), top + 2.dp.toPx()),
+                size = Size(side - 4.dp.toPx(), side - 4.dp.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx(), 16.dp.toPx()),
+            )
+
+            val dot = side * 0.075f
+            val x1 = left + side * 0.27f
+            val x2 = left + side * 0.50f
+            val x3 = left + side * 0.73f
+            val y1 = top + side * 0.27f
+            val y2 = top + side * 0.50f
+            val y3 = top + side * 0.73f
+            fun pip(x: Float, y: Float) {
+                drawCircle(Color(0xFF30261B), radius = dot, center = Offset(x, y))
+                drawCircle(Color(0x55000000), radius = dot * 0.75f, center = Offset(x + dot * 0.18f, y + dot * 0.18f))
+            }
+            when (face.coerceIn(1, 6)) {
+                1 -> pip(x2, y2)
+                2 -> { pip(x1, y1); pip(x3, y3) }
+                3 -> { pip(x1, y1); pip(x2, y2); pip(x3, y3) }
+                4 -> { pip(x1, y1); pip(x3, y1); pip(x1, y3); pip(x3, y3) }
+                5 -> { pip(x1, y1); pip(x3, y1); pip(x2, y2); pip(x1, y3); pip(x3, y3) }
+                6 -> { pip(x1, y1); pip(x3, y1); pip(x1, y2); pip(x3, y2); pip(x1, y3); pip(x3, y3) }
             }
         }
     }

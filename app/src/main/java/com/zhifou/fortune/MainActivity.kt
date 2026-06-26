@@ -798,12 +798,12 @@ private fun DiceStage(
     val rows = faces.chunked(3)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy((-18).dp),
+        verticalArrangement = Arrangement.spacedBy(if (faces.size <= 3) 12.dp else 8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         rows.forEachIndexed { rowIndex, row ->
             Row(
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -814,7 +814,13 @@ private fun DiceStage(
                         rotation = rotations.getOrElse(index) { 0f },
                         bounce = bounces.getOrElse(index) { 0f },
                         rolling = rolling,
-                        modifier = Modifier.size(if (faces.size == 1) 230.dp else 138.dp),
+                        modifier = Modifier.size(
+                            when (faces.size) {
+                                1 -> 208.dp
+                                2, 3 -> 132.dp
+                                else -> 108.dp
+                            },
+                        ),
                     )
                 }
             }
@@ -830,124 +836,92 @@ private fun DiceVisual(
     rolling: Boolean,
     modifier: Modifier = Modifier.size(160.dp),
 ) {
-    val context = LocalContext.current
-    val mesh = remember { loadDiceMesh(context) }
+    val tilt = if (rolling) sin(rotation / 18f) * 7f else sin(rotation / 42f) * 2.5f
     Box(contentAlignment = Alignment.Center, modifier = modifier) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(translationY = -28f * bounce)
+                .graphicsLayer(
+                    translationY = -18f * bounce,
+                    rotationZ = tilt,
+                    scaleX = if (rolling) 0.98f + bounce * 0.02f else 1f,
+                    scaleY = if (rolling) 0.98f + bounce * 0.02f else 1f,
+                )
         ) {
+            val minSide = size.minDimension
+            val dieSide = minSide * 0.72f
+            val sideDepth = dieSide * 0.12f
+            val left = center.x - dieSide / 2f
+            val top = center.y - dieSide / 2f - minSide * 0.02f
+            val corner = dieSide * 0.16f
+            val shadowWidth = dieSide * 0.8f
+
             drawOval(
-                color = Color(0x55000000),
-                topLeft = Offset(size.width * 0.25f, size.height * 0.77f),
-                size = Size(size.width * 0.5f, size.height * 0.1f),
+                color = Color(0x66000000),
+                topLeft = Offset(center.x - shadowWidth / 2f + sideDepth * 0.45f, top + dieSide * 0.84f),
+                size = Size(shadowWidth, dieSide * 0.18f),
             )
 
-            if (mesh == null) {
-                drawCircle(Color(0xFFE7BF62), radius = size.minDimension * 0.28f, center = center)
-                return@Canvas
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFFD6D0C4), Color(0xFF9E9587)),
+                    start = Offset(left + dieSide * 0.35f, top + dieSide),
+                    end = Offset(left + dieSide + sideDepth, top + dieSide + sideDepth),
+                ),
+                topLeft = Offset(left + sideDepth, top + sideDepth),
+                size = Size(dieSide, dieSide),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+            )
+
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFFFFFFFF), Color(0xFFF0ECE4), Color(0xFFD9D2C7)),
+                    start = Offset(left, top),
+                    end = Offset(left + dieSide, top + dieSide),
+                ),
+                topLeft = Offset(left, top),
+                size = Size(dieSide, dieSide),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+            )
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0x88FFFFFF), Color.Transparent),
+                    start = Offset(left + dieSide * 0.08f, top + dieSide * 0.08f),
+                    end = Offset(left + dieSide * 0.62f, top + dieSide * 0.68f),
+                ),
+                topLeft = Offset(left + dieSide * 0.06f, top + dieSide * 0.06f),
+                size = Size(dieSide * 0.56f, dieSide * 0.34f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner * 0.72f, corner * 0.72f),
+            )
+            drawRoundRect(
+                color = Color(0x22000000),
+                topLeft = Offset(left, top),
+                size = Size(dieSide, dieSide),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+                style = Stroke(width = max(1.2f, dieSide * 0.018f)),
+            )
+
+            val pipRadius = dieSide * 0.075f
+            val pipColor = Color(0xFF171717)
+            val highlightColor = Color(0x33FFFFFF)
+            val x1 = left + dieSide * 0.28f
+            val x2 = left + dieSide * 0.50f
+            val x3 = left + dieSide * 0.72f
+            val y1 = top + dieSide * 0.28f
+            val y2 = top + dieSide * 0.50f
+            val y3 = top + dieSide * 0.72f
+            fun pip(x: Float, y: Float) {
+                drawCircle(Color(0x33000000), radius = pipRadius * 1.08f, center = Offset(x + pipRadius * 0.16f, y + pipRadius * 0.2f))
+                drawCircle(pipColor, radius = pipRadius, center = Offset(x, y))
+                drawCircle(highlightColor, radius = pipRadius * 0.28f, center = Offset(x - pipRadius * 0.22f, y - pipRadius * 0.22f))
             }
-
-            val rx = Math.toRadians((rotation * 0.78f + 23f + face * 3f).toDouble())
-            val ry = Math.toRadians((rotation * 1.06f + 37f + face * 5f).toDouble())
-            val rz = Math.toRadians((rotation * 0.92f + 11f).toDouble())
-            val sx = sin(rx).toFloat()
-            val cx = cos(rx).toFloat()
-            val sy = sin(ry).toFloat()
-            val cy = cos(ry).toFloat()
-            val sz = sin(rz).toFloat()
-            val cz = cos(rz).toFloat()
-            val scale = size.minDimension * if (rolling) 0.42f else 0.39f
-            val projected = mesh.vertices.map { vertex ->
-                var x = vertex.x
-                var y = vertex.y
-                var z = vertex.z
-                val y1 = y * cx - z * sx
-                val z1 = y * sx + z * cx
-                y = y1
-                z = z1
-                val x2 = x * cy + z * sy
-                val z2 = -x * sy + z * cy
-                x = x2
-                z = z2
-                val x3 = x * cz - y * sz
-                val y3 = x * sz + y * cz
-                val depth = 3.2f + z2
-                val perspective = 2.9f / max(1.4f, depth)
-                MeshPoint(
-                    x = center.x + x3 * scale * perspective,
-                    y = center.y + y3 * scale * perspective,
-                    z = z2,
-                )
-            }
-
-            val renderTriangles = mesh.triangles.mapNotNull { tri ->
-                val a = projected[tri.a]
-                val b = projected[tri.b]
-                val c = projected[tri.c]
-                val cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
-                if (cross <= 0f) return@mapNotNull null
-                val shade = (0.72f + ((a.z + b.z + c.z) / 3f + 1f) * 0.08f).coerceIn(0.52f, 1.08f)
-                RenderTriangle(
-                    a = a,
-                    b = b,
-                    c = c,
-                    z = (a.z + b.z + c.z) / 3f,
-                    color = shadeColor(mesh.materials[tri.material.coerceIn(mesh.materials.indices)], shade),
-                )
-            }.sortedBy { it.z }
-
-            renderTriangles.forEach { tri ->
-                val path = Path().apply {
-                    moveTo(tri.a.x, tri.a.y)
-                    lineTo(tri.b.x, tri.b.y)
-                    lineTo(tri.c.x, tri.c.y)
-                    close()
-                }
-                drawPath(path, tri.color)
-            }
-
-            if (!rolling) {
-                val side = size.minDimension * 0.34f
-                val left = center.x - side / 2f
-                val top = center.y - side / 2f
-                drawRoundRect(
-                    color = Color(0xFFD8A342).copy(alpha = 0.94f),
-                    topLeft = Offset(left, top),
-                    size = Size(side, side),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx(), 14.dp.toPx()),
-                )
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color(0x44FFFFFF), Color.Transparent),
-                        start = Offset(left, top),
-                        end = Offset(left + side, top + side),
-                    ),
-                    topLeft = Offset(left + 1.dp.toPx(), top + 1.dp.toPx()),
-                    size = Size(side - 2.dp.toPx(), side - 2.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(13.dp.toPx(), 13.dp.toPx()),
-                )
-
-                val dot = side * 0.075f
-                val x1 = left + side * 0.28f
-                val x2 = left + side * 0.50f
-                val x3 = left + side * 0.72f
-                val y1 = top + side * 0.28f
-                val y2 = top + side * 0.50f
-                val y3 = top + side * 0.72f
-                fun pip(x: Float, y: Float) {
-                    drawCircle(Color(0xFF211912), radius = dot, center = Offset(x, y))
-                    drawCircle(Color(0x33000000), radius = dot * 0.7f, center = Offset(x + dot * 0.16f, y + dot * 0.16f))
-                }
-                when (face.coerceIn(1, 6)) {
-                    1 -> pip(x2, y2)
-                    2 -> { pip(x1, y1); pip(x3, y3) }
-                    3 -> { pip(x1, y1); pip(x2, y2); pip(x3, y3) }
-                    4 -> { pip(x1, y1); pip(x3, y1); pip(x1, y3); pip(x3, y3) }
-                    5 -> { pip(x1, y1); pip(x3, y1); pip(x2, y2); pip(x1, y3); pip(x3, y3) }
-                    6 -> { pip(x1, y1); pip(x3, y1); pip(x1, y2); pip(x3, y2); pip(x1, y3); pip(x3, y3) }
-                }
+            when (face.coerceIn(1, 6)) {
+                1 -> pip(x2, y2)
+                2 -> { pip(x1, y1); pip(x3, y3) }
+                3 -> { pip(x1, y1); pip(x2, y2); pip(x3, y3) }
+                4 -> { pip(x1, y1); pip(x3, y1); pip(x1, y3); pip(x3, y3) }
+                5 -> { pip(x1, y1); pip(x3, y1); pip(x2, y2); pip(x1, y3); pip(x3, y3) }
+                6 -> { pip(x1, y1); pip(x3, y1); pip(x1, y2); pip(x3, y2); pip(x1, y3); pip(x3, y3) }
             }
         }
     }

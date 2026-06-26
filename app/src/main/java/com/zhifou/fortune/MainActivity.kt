@@ -457,9 +457,9 @@ private fun OracleScreen(vm: FortuneViewModel) {
 @Composable
 private fun DiceScreen() {
     val scope = rememberCoroutineScope()
-    val rotation = remember { Animatable(0f) }
-    val bounce = remember { Animatable(0f) }
-    var face by remember { mutableStateOf(1) }
+    val rotations = remember { List(6) { Animatable(0f) } }
+    val bounces = remember { List(6) { Animatable(0f) } }
+    var faces by remember { mutableStateOf(listOf(1)) }
     var diceExpression by remember { mutableStateOf("d6") }
     var resultText by remember { mutableStateOf("d6: [1] = 1") }
     var errorText by remember { mutableStateOf("") }
@@ -494,13 +494,13 @@ private fun DiceScreen() {
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("骰子表达式") },
-                    placeholder = { Text("d6、2d6、d20、d%") },
+                    placeholder = { Text("d6、2d6、6d6") },
                     singleLine = true,
                 )
-                DiceVisual(
-                    face = face,
-                    rotation = rotation.value,
-                    bounce = bounce.value,
+                DiceStage(
+                    faces = faces,
+                    rotations = rotations.map { it.value },
+                    bounces = bounces.map { it.value },
                     rolling = rolling,
                 )
                 Text(
@@ -517,31 +517,40 @@ private fun DiceScreen() {
                         if (rolling) return@Button
                         val roll = rollDiceExpression(diceExpression)
                         if (roll == null) {
-                            errorText = "请输入标准骰子表达式，例如 d6、2d6、d20、d%"
+                            errorText = "请输入 1 到 6 枚六面骰，例如 d6、2d6、6d6"
                             return@Button
                         }
                         scope.launch {
                             rolling = true
                             errorText = ""
-                            val finalFace = if (roll.rolls.size == 1 && roll.sides == 6) {
-                                roll.rolls.first()
-                            } else {
-                                Random.nextInt(1, 7)
-                            }
+                            faces = List(roll.quantity) { Random.nextInt(1, 7) }
                             repeat(12) { step ->
-                                face = Random.nextInt(1, 7)
-                                bounce.snapTo(if (step % 2 == 0) 1f else 0.35f)
-                                rotation.animateTo(
-                                    targetValue = rotation.value + 58f + step * 3f,
-                                    animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
-                                )
+                                faces = List(roll.quantity) { Random.nextInt(1, 7) }
+                                roll.rolls.indices.forEach { index ->
+                                    bounces[index].snapTo(if ((step + index) % 2 == 0) 1f else 0.35f)
+                                }
+                                rotations.take(roll.quantity).forEachIndexed { index, animatable ->
+                                    launch {
+                                        animatable.animateTo(
+                                            targetValue = animatable.value + 48f + step * 3f + index * 9f,
+                                            animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
+                                        )
+                                    }
+                                }
                                 delay(18)
                             }
-                            face = finalFace
+                            faces = roll.rolls
                             resultText = roll.displayText
-                            bounce.animateTo(0f, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing))
-                            rotation.animateTo(rotation.value + 18f, animationSpec = tween(durationMillis = 160))
+                            roll.rolls.indices.forEach { index ->
+                                launch {
+                                    bounces[index].animateTo(0f, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing))
+                                }
+                                launch {
+                                    rotations[index].animateTo(rotations[index].value + 18f + index * 4f, animationSpec = tween(durationMillis = 160))
+                                }
+                            }
                             history = (listOf(roll.displayText) + history).take(6)
+                            delay(190)
                             rolling = false
                         }
                     },
@@ -588,12 +597,12 @@ private data class DiceRollResult(
 
 private fun rollDiceExpression(input: String): DiceRollResult? {
     val normalized = input.trim().lowercase(Locale.ROOT).replace(" ", "")
-    val match = Regex("""^(\d*)d(\d+|%)$""").matchEntire(normalized) ?: return null
+    val match = Regex("""^(\d*)d6$""").matchEntire(normalized) ?: return null
     val quantity = match.groupValues[1].ifBlank { "1" }.toIntOrNull() ?: return null
-    val sides = if (match.groupValues[2] == "%") 100 else match.groupValues[2].toIntOrNull() ?: return null
-    if (quantity !in 1..999 || sides !in 2..999) return null
-    val rolls = List(quantity) { Random.nextInt(1, sides + 1) }
-    val expression = "${if (quantity == 1) "" else quantity}d${if (sides == 100 && normalized.endsWith("d%")) "%" else sides}"
+    val sides = 6
+    if (quantity !in 1..6) return null
+    val rolls = List(quantity) { Random.nextInt(1, 7) }
+    val expression = "${if (quantity == 1) "" else quantity}d6"
     return DiceRollResult(
         expression = expression,
         quantity = quantity,
@@ -604,18 +613,53 @@ private fun rollDiceExpression(input: String): DiceRollResult? {
 }
 
 @Composable
+private fun DiceStage(
+    faces: List<Int>,
+    rotations: List<Float>,
+    bounces: List<Float>,
+    rolling: Boolean,
+) {
+    val rows = faces.chunked(3)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy((-18).dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        rows.forEachIndexed { rowIndex, row ->
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                row.forEachIndexed { columnIndex, face ->
+                    val index = rowIndex * 3 + columnIndex
+                    DiceVisual(
+                        face = face,
+                        rotation = rotations.getOrElse(index) { 0f },
+                        bounce = bounces.getOrElse(index) { 0f },
+                        rolling = rolling,
+                        modifier = Modifier.size(if (faces.size == 1) 230.dp else 138.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DiceVisual(
     face: Int,
     rotation: Float,
     bounce: Float,
     rolling: Boolean,
+    modifier: Modifier = Modifier.size(160.dp),
 ) {
     val context = LocalContext.current
     val mesh = remember { loadDiceMesh(context) }
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
+    Box(contentAlignment = Alignment.Center, modifier = modifier) {
         Canvas(
             modifier = Modifier
-                .size(230.dp)
+                .fillMaxSize()
                 .graphicsLayer(translationY = -28f * bounce)
         ) {
             drawOval(

@@ -11,7 +11,7 @@
 - Voice input for divination questions
 - Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and one to six six-sided dice such as `d6`, `2d6` and `6d6`
 - Local reading history
-- Local schedule and task notes
+- Offline solar/lunar calendar with local schedule and task notes
 - Basic user profile settings
 
 ## Tech Stack

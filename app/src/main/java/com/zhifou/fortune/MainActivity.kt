@@ -114,6 +114,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.sin
 import kotlin.random.Random
 
 private val Ink = Color(0xFF111318)
@@ -607,83 +610,186 @@ private fun DiceVisual(
     bounce: Float,
     rolling: Boolean,
 ) {
+    val context = LocalContext.current
+    val mesh = remember { loadDiceMesh(context) }
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
         Canvas(
             modifier = Modifier
                 .size(230.dp)
-                .graphicsLayer(
-                    rotationZ = rotation,
-                    translationY = -28f * bounce,
-                    scaleX = if (rolling) 1.03f else 1f,
-                    scaleY = if (rolling) 1.03f else 1f,
-                )
+                .graphicsLayer(translationY = -28f * bounce)
         ) {
-            val side = size.minDimension * 0.56f
-            val left = size.width * 0.22f
-            val top = size.height * 0.28f
-            val depth = side * 0.22f
-
             drawOval(
                 color = Color(0x55000000),
-                topLeft = Offset(left + side * 0.08f, top + side + depth * 0.82f),
-                size = Size(side * 0.92f, depth * 0.45f),
+                topLeft = Offset(size.width * 0.25f, size.height * 0.77f),
+                size = Size(size.width * 0.5f, size.height * 0.1f),
             )
 
-            val topFace = Path().apply {
-                moveTo(left, top)
-                lineTo(left + depth, top - depth)
-                lineTo(left + side + depth, top - depth)
-                lineTo(left + side, top)
-                close()
-            }
-            val rightFace = Path().apply {
-                moveTo(left + side, top)
-                lineTo(left + side + depth, top - depth)
-                lineTo(left + side + depth, top + side - depth)
-                lineTo(left + side, top + side)
-                close()
+            if (mesh == null) {
+                drawCircle(Color(0xFFE7BF62), radius = size.minDimension * 0.28f, center = center)
+                return@Canvas
             }
 
-            drawPath(topFace, Color(0xFFF6E4B0))
-            drawPath(rightFace, Color(0xFFC99B45))
-            drawRoundRect(
-                color = Color(0xFFE7BF62),
-                topLeft = Offset(left, top),
-                size = Size(side, side),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx(), 18.dp.toPx()),
-            )
-            drawRoundRect(
-                brush = Brush.linearGradient(
-                    colors = listOf(Color(0x55FFFFFF), Color.Transparent),
-                    start = Offset(left, top),
-                    end = Offset(left + side, top + side),
-                ),
-                topLeft = Offset(left + 2.dp.toPx(), top + 2.dp.toPx()),
-                size = Size(side - 4.dp.toPx(), side - 4.dp.toPx()),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx(), 16.dp.toPx()),
-            )
-
-            val dot = side * 0.075f
-            val x1 = left + side * 0.27f
-            val x2 = left + side * 0.50f
-            val x3 = left + side * 0.73f
-            val y1 = top + side * 0.27f
-            val y2 = top + side * 0.50f
-            val y3 = top + side * 0.73f
-            fun pip(x: Float, y: Float) {
-                drawCircle(Color(0xFF30261B), radius = dot, center = Offset(x, y))
-                drawCircle(Color(0x55000000), radius = dot * 0.75f, center = Offset(x + dot * 0.18f, y + dot * 0.18f))
+            val rx = Math.toRadians((rotation * 0.78f + 23f + face * 3f).toDouble())
+            val ry = Math.toRadians((rotation * 1.06f + 37f + face * 5f).toDouble())
+            val rz = Math.toRadians((rotation * 0.92f + 11f).toDouble())
+            val sx = sin(rx).toFloat()
+            val cx = cos(rx).toFloat()
+            val sy = sin(ry).toFloat()
+            val cy = cos(ry).toFloat()
+            val sz = sin(rz).toFloat()
+            val cz = cos(rz).toFloat()
+            val scale = size.minDimension * if (rolling) 0.42f else 0.39f
+            val projected = mesh.vertices.map { vertex ->
+                var x = vertex.x
+                var y = vertex.y
+                var z = vertex.z
+                val y1 = y * cx - z * sx
+                val z1 = y * sx + z * cx
+                y = y1
+                z = z1
+                val x2 = x * cy + z * sy
+                val z2 = -x * sy + z * cy
+                x = x2
+                z = z2
+                val x3 = x * cz - y * sz
+                val y3 = x * sz + y * cz
+                val depth = 3.2f + z2
+                val perspective = 2.9f / max(1.4f, depth)
+                MeshPoint(
+                    x = center.x + x3 * scale * perspective,
+                    y = center.y + y3 * scale * perspective,
+                    z = z2,
+                )
             }
-            when (face.coerceIn(1, 6)) {
-                1 -> pip(x2, y2)
-                2 -> { pip(x1, y1); pip(x3, y3) }
-                3 -> { pip(x1, y1); pip(x2, y2); pip(x3, y3) }
-                4 -> { pip(x1, y1); pip(x3, y1); pip(x1, y3); pip(x3, y3) }
-                5 -> { pip(x1, y1); pip(x3, y1); pip(x2, y2); pip(x1, y3); pip(x3, y3) }
-                6 -> { pip(x1, y1); pip(x3, y1); pip(x1, y2); pip(x3, y2); pip(x1, y3); pip(x3, y3) }
+
+            val renderTriangles = mesh.triangles.mapNotNull { tri ->
+                val a = projected[tri.a]
+                val b = projected[tri.b]
+                val c = projected[tri.c]
+                val cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+                if (cross <= 0f) return@mapNotNull null
+                val shade = (0.72f + ((a.z + b.z + c.z) / 3f + 1f) * 0.08f).coerceIn(0.52f, 1.08f)
+                RenderTriangle(
+                    a = a,
+                    b = b,
+                    c = c,
+                    z = (a.z + b.z + c.z) / 3f,
+                    color = shadeColor(mesh.materials[tri.material.coerceIn(mesh.materials.indices)], shade),
+                )
+            }.sortedBy { it.z }
+
+            renderTriangles.forEach { tri ->
+                val path = Path().apply {
+                    moveTo(tri.a.x, tri.a.y)
+                    lineTo(tri.b.x, tri.b.y)
+                    lineTo(tri.c.x, tri.c.y)
+                    close()
+                }
+                drawPath(path, tri.color)
+            }
+
+            if (!rolling) {
+                val side = size.minDimension * 0.34f
+                val left = center.x - side / 2f
+                val top = center.y - side / 2f
+                drawRoundRect(
+                    color = Color(0xFFD8A342).copy(alpha = 0.94f),
+                    topLeft = Offset(left, top),
+                    size = Size(side, side),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx(), 14.dp.toPx()),
+                )
+                drawRoundRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0x44FFFFFF), Color.Transparent),
+                        start = Offset(left, top),
+                        end = Offset(left + side, top + side),
+                    ),
+                    topLeft = Offset(left + 1.dp.toPx(), top + 1.dp.toPx()),
+                    size = Size(side - 2.dp.toPx(), side - 2.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(13.dp.toPx(), 13.dp.toPx()),
+                )
+
+                val dot = side * 0.075f
+                val x1 = left + side * 0.28f
+                val x2 = left + side * 0.50f
+                val x3 = left + side * 0.72f
+                val y1 = top + side * 0.28f
+                val y2 = top + side * 0.50f
+                val y3 = top + side * 0.72f
+                fun pip(x: Float, y: Float) {
+                    drawCircle(Color(0xFF211912), radius = dot, center = Offset(x, y))
+                    drawCircle(Color(0x33000000), radius = dot * 0.7f, center = Offset(x + dot * 0.16f, y + dot * 0.16f))
+                }
+                when (face.coerceIn(1, 6)) {
+                    1 -> pip(x2, y2)
+                    2 -> { pip(x1, y1); pip(x3, y3) }
+                    3 -> { pip(x1, y1); pip(x2, y2); pip(x3, y3) }
+                    4 -> { pip(x1, y1); pip(x3, y1); pip(x1, y3); pip(x3, y3) }
+                    5 -> { pip(x1, y1); pip(x3, y1); pip(x2, y2); pip(x1, y3); pip(x3, y3) }
+                    6 -> { pip(x1, y1); pip(x3, y1); pip(x1, y2); pip(x3, y2); pip(x1, y3); pip(x3, y3) }
+                }
             }
         }
     }
+}
+
+private data class DiceMesh(
+    val vertices: List<MeshVertex>,
+    val triangles: List<MeshTriangle>,
+    val materials: List<Color>,
+)
+
+private data class MeshVertex(val x: Float, val y: Float, val z: Float)
+private data class MeshPoint(val x: Float, val y: Float, val z: Float)
+private data class MeshTriangle(val a: Int, val b: Int, val c: Int, val material: Int)
+private data class RenderTriangle(
+    val a: MeshPoint,
+    val b: MeshPoint,
+    val c: MeshPoint,
+    val z: Float,
+    val color: Color,
+)
+
+private fun loadDiceMesh(context: Context): DiceMesh? {
+    return try {
+        val json = context.assets.open("dice_mesh.json").bufferedReader().use { it.readText() }
+        val root = JSONObject(json)
+        val verticesJson = root.getJSONArray("vertices")
+        val trianglesJson = root.getJSONArray("triangles")
+        val materialsJson = root.getJSONArray("materials")
+        val vertices = List(verticesJson.length()) { index ->
+            val item = verticesJson.getJSONArray(index)
+            MeshVertex(
+                x = item.getDouble(0).toFloat(),
+                y = item.getDouble(1).toFloat(),
+                z = item.getDouble(2).toFloat(),
+            )
+        }
+        val triangles = List(trianglesJson.length()) { index ->
+            val item = trianglesJson.getJSONArray(index)
+            MeshTriangle(
+                a = item.getInt(0),
+                b = item.getInt(1),
+                c = item.getInt(2),
+                material = item.getInt(3),
+            )
+        }
+        val materials = List(materialsJson.length()) { index ->
+            Color(android.graphics.Color.parseColor(materialsJson.getString(index)))
+        }
+        DiceMesh(vertices = vertices, triangles = triangles, materials = materials)
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+private fun shadeColor(color: Color, shade: Float): Color {
+    return Color(
+        red = (color.red * shade).coerceIn(0f, 1f),
+        green = (color.green * shade).coerceIn(0f, 1f),
+        blue = (color.blue * shade).coerceIn(0f, 1f),
+        alpha = color.alpha,
+    )
 }
 
 @Composable

@@ -9,7 +9,7 @@
 - Answer Book oracle prompts
 - AI-powered interpretation through an OpenAI-compatible endpoint
 - Voice input for divination questions
-- Animated dice game for one to six six-sided dice, such as `d6`, `2d6` and `6d6`
+- Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and one to six six-sided dice such as `d6`, `2d6` and `6d6`
 - Local reading history
 - Local schedule and task notes
 - Basic user profile settings

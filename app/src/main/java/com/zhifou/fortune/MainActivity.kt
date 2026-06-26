@@ -5,6 +5,11 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.SensorManager
+import android.media.MediaPlayer
+import android.hardware.SensorEventListener
+import android.hardware.SensorEvent
+import android.hardware.Sensor
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -18,9 +23,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,6 +99,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -117,6 +129,7 @@ import kotlin.math.absoluteValue
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 private val Ink = Color(0xFF111318)
@@ -456,6 +469,7 @@ private fun OracleScreen(vm: FortuneViewModel) {
 
 @Composable
 private fun DiceScreen() {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rotations = remember { List(6) { Animatable(0f) } }
     val bounces = remember { List(6) { Animatable(0f) } }
@@ -464,7 +478,95 @@ private fun DiceScreen() {
     var resultText by remember { mutableStateOf("d6: [1] = 1") }
     var errorText by remember { mutableStateOf("") }
     var rolling by remember { mutableStateOf(false) }
+    var cupClosed by remember { mutableStateOf(false) }
+    var canReveal by remember { mutableStateOf(true) }
+    var dragTotal by remember { mutableStateOf(0f) }
+    var lastShakeAt by remember { mutableStateOf(0L) }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    fun playShakeSound() {
+        try {
+            MediaPlayer.create(context, R.raw.dice_shake)?.apply {
+                setOnCompletionListener { player ->
+                    player.release()
+                }
+                start()
+            }
+        } catch (_: Throwable) {
+            // Sound is decorative; rolling should continue if audio is unavailable.
+        }
+    }
+
+    fun startCupRoll() {
+        if (rolling) return
+        val roll = rollDiceExpression(diceExpression)
+        if (roll == null) {
+            errorText = "请输入 1 到 6 枚六面骰，例如 d6、2d6、6d6"
+            return
+        }
+        scope.launch {
+            rolling = true
+            cupClosed = true
+            canReveal = false
+            errorText = ""
+            playShakeSound()
+            repeat(8) { step ->
+                faces = List(roll.quantity) { Random.nextInt(1, 7) }
+                roll.rolls.indices.forEach { index ->
+                    bounces[index].snapTo(if ((step + index) % 2 == 0) 0.55f else 0.15f)
+                }
+                rotations.take(roll.quantity).forEachIndexed { index, animatable ->
+                    launch {
+                        animatable.animateTo(
+                            targetValue = animatable.value + 18f + step * 2f + index * 6f,
+                            animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
+                        )
+                    }
+                }
+                delay(90)
+            }
+            delay(80)
+            faces = roll.rolls
+            resultText = roll.displayText
+            roll.rolls.indices.forEach { index ->
+                launch {
+                    bounces[index].animateTo(0f, animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing))
+                }
+                launch {
+                    rotations[index].animateTo(rotations[index].value + 8f + index * 3f, animationSpec = tween(durationMillis = 120))
+                }
+            }
+            history = (listOf(roll.displayText) + history).take(6)
+            canReveal = true
+            rolling = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val x = event.values.getOrNull(0) ?: return
+                val y = event.values.getOrNull(1) ?: return
+                val z = event.values.getOrNull(2) ?: return
+                val force = sqrt(x * x + y * y + z * z)
+                val now = System.currentTimeMillis()
+                if (force > 20f && now - lastShakeAt > 1200L && !rolling) {
+                    lastShakeAt = now
+                    startCupRoll()
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        if (accelerometer != null) {
+            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        }
+        onDispose {
+            sensorManager?.unregisterListener(listener)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -497,15 +599,41 @@ private fun DiceScreen() {
                     placeholder = { Text("d6、2d6、6d6") },
                     singleLine = true,
                 )
-                DiceStage(
-                    faces = faces,
-                    rotations = rotations.map { it.value },
-                    bounces = bounces.map { it.value },
-                    rolling = rolling,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(rolling, canReveal) {
+                            detectVerticalDragGestures(
+                                onDragStart = { dragTotal = 0f },
+                                onVerticalDrag = { _, dragAmount -> dragTotal += dragAmount },
+                                onDragEnd = {
+                                    if (dragTotal < -52f && !rolling && canReveal) {
+                                        cupClosed = false
+                                    } else if (dragTotal > 52f && !rolling) {
+                                        cupClosed = true
+                                    }
+                                },
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DiceStage(
+                        faces = faces,
+                        rotations = rotations.map { it.value },
+                        bounces = bounces.map { it.value },
+                        rolling = rolling,
+                    )
+                    if (cupClosed) {
+                        DiceCupOverlay(rolling = rolling, canReveal = canReveal)
+                    }
+                }
                 Text(
-                    if (rolling) "正在摇骰子" else resultText,
-                    color = if (rolling) TextSub else Gold,
+                    when {
+                        rolling -> "骰盅摇动中"
+                        cupClosed && canReveal -> "向上滑开骰盅查看结果"
+                        else -> resultText
+                    },
+                    color = if (rolling || cupClosed) TextSub else Gold,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -513,55 +641,20 @@ private fun DiceScreen() {
                     Text(errorText, color = Rose, style = MaterialTheme.typography.bodyMedium)
                 }
                 Button(
-                    onClick = {
-                        if (rolling) return@Button
-                        val roll = rollDiceExpression(diceExpression)
-                        if (roll == null) {
-                            errorText = "请输入 1 到 6 枚六面骰，例如 d6、2d6、6d6"
-                            return@Button
-                        }
-                        scope.launch {
-                            rolling = true
-                            errorText = ""
-                            faces = List(roll.quantity) { Random.nextInt(1, 7) }
-                            repeat(12) { step ->
-                                faces = List(roll.quantity) { Random.nextInt(1, 7) }
-                                roll.rolls.indices.forEach { index ->
-                                    bounces[index].snapTo(if ((step + index) % 2 == 0) 1f else 0.35f)
-                                }
-                                rotations.take(roll.quantity).forEachIndexed { index, animatable ->
-                                    launch {
-                                        animatable.animateTo(
-                                            targetValue = animatable.value + 48f + step * 3f + index * 9f,
-                                            animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
-                                        )
-                                    }
-                                }
-                                delay(18)
-                            }
-                            faces = roll.rolls
-                            resultText = roll.displayText
-                            roll.rolls.indices.forEach { index ->
-                                launch {
-                                    bounces[index].animateTo(0f, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing))
-                                }
-                                launch {
-                                    rotations[index].animateTo(rotations[index].value + 18f + index * 4f, animationSpec = tween(durationMillis = 160))
-                                }
-                            }
-                            history = (listOf(roll.displayText) + history).take(6)
-                            delay(190)
-                            rolling = false
-                        }
-                    },
+                    onClick = { startCupRoll() },
                     enabled = !rolling,
                     colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Ink),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Default.Casino, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (rolling) "摇动中" else "摇骰子")
+                    Text(if (rolling) "摇动中" else "合盅摇骰")
                 }
+                Text(
+                    "可下滑合上骰盅，点击按钮或摇动手机开始；声音结束后上滑打开。",
+                    color = TextSub,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 
@@ -580,6 +673,89 @@ private fun DiceScreen() {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DiceCupOverlay(
+    rolling: Boolean,
+    canReveal: Boolean,
+) {
+    val shakeAnimation = rememberInfiniteTransition(label = "diceCupShake")
+    val animatedShake by shakeAnimation.animateFloat(
+        initialValue = -5f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 70, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "diceCupShakeOffset",
+    )
+    val shakeOffset = if (rolling) animatedShake else 0f
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(250.dp)
+            .graphicsLayer(translationX = shakeOffset),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val trayHeight = size.height * 0.18f
+            drawRoundRect(
+                color = Color(0xFF2A2420),
+                topLeft = Offset(size.width * 0.08f, size.height * 0.74f),
+                size = Size(size.width * 0.84f, trayHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(24.dp.toPx(), 24.dp.toPx()),
+            )
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFF776041), Color(0xFF362A20)),
+                    startY = size.height * 0.08f,
+                    endY = size.height * 0.86f,
+                ),
+                topLeft = Offset(size.width * 0.16f, size.height * 0.08f),
+                size = Size(size.width * 0.68f, size.height * 0.72f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(34.dp.toPx(), 34.dp.toPx()),
+            )
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0x66FFFFFF), Color.Transparent),
+                    start = Offset(size.width * 0.22f, size.height * 0.12f),
+                    end = Offset(size.width * 0.58f, size.height * 0.72f),
+                ),
+                topLeft = Offset(size.width * 0.2f, size.height * 0.13f),
+                size = Size(size.width * 0.14f, size.height * 0.58f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx(), 22.dp.toPx()),
+            )
+            drawOval(
+                color = Gold.copy(alpha = 0.86f),
+                topLeft = Offset(size.width * 0.38f, size.height * 0.02f),
+                size = Size(size.width * 0.24f, size.height * 0.12f),
+            )
+            drawRoundRect(
+                color = Color(0xAA111318),
+                topLeft = Offset(size.width * 0.22f, size.height * 0.82f),
+                size = Size(size.width * 0.56f, size.height * 0.12f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                when {
+                    rolling -> "摇动中"
+                    canReveal -> "上滑查看"
+                    else -> "骰盅已合上"
+                },
+                color = TextMain,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (rolling) "沙沙声结束后打开" else "下滑可再次合上",
+                color = TextSub,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

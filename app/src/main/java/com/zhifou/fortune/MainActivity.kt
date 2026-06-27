@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
@@ -29,6 +30,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +46,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,6 +70,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
@@ -111,14 +115,17 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.nlf.calendar.Solar
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -128,7 +135,6 @@ import org.json.JSONObject
 import java.security.SecureRandom
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
@@ -1172,6 +1178,12 @@ private fun shadeColor(color: Color, shade: Float): Color {
 
 @Composable
 private fun ScheduleScreen(vm: FortuneViewModel) {
+    val today = remember { LocalDate.now() }
+    var selectedDate by remember { mutableStateOf(today) }
+    val selectedItems = remember(vm.scheduleItems, selectedDate) {
+        vm.scheduleItems.filter { it.date == selectedDate.toString() }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1179,7 +1191,11 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        CalendarPanel()
+        CalendarPanel(
+            scheduleItems = vm.scheduleItems,
+            selectedDate = selectedDate,
+            onSelectedDateChange = { selectedDate = it },
+        )
 
         Card(
             colors = CardDefaults.cardColors(containerColor = Panel),
@@ -1187,7 +1203,12 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("记录日程", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "记录 ${selectedDate.monthValue}月${selectedDate.dayOfMonth}日",
+                    color = TextMain,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 OutlinedTextField(
                     value = vm.scheduleTitle,
                     onValueChange = { vm.scheduleTitle = it },
@@ -1200,12 +1221,12 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
                     value = vm.scheduleNote,
                     onValueChange = { vm.scheduleNote = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("备注或日期") },
-                    placeholder = { Text("例如：2026-06-28 之前") },
+                    label = { Text("备注") },
+                    placeholder = { Text("补充地点、时间或准备事项") },
                     minLines = 2,
                 )
                 Button(
-                    onClick = { vm.addScheduleItem() },
+                    onClick = { vm.addScheduleItem(selectedDate) },
                     enabled = vm.scheduleTitle.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Gold),
@@ -1217,18 +1238,23 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
             }
         }
 
-        Text("待办事项", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (vm.scheduleItems.isEmpty()) {
+        Text(
+            "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日日程",
+            color = TextMain,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (selectedItems.isEmpty()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = PanelAlt),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("还没有日程。把重要日期、灵感和待办写在这里。", color = TextSub, modifier = Modifier.padding(16.dp))
+                Text("当日还没有日程。", color = TextSub, modifier = Modifier.padding(16.dp))
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                vm.scheduleItems.forEach { item ->
+                selectedItems.forEach { item ->
                     ScheduleItemCard(
                         item = item,
                         onToggle = { vm.toggleScheduleItem(item.id) },
@@ -1241,11 +1267,28 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
 }
 
 @Composable
-private fun CalendarPanel() {
+private fun CalendarPanel(
+    scheduleItems: List<ScheduleItem>,
+    selectedDate: LocalDate,
+    onSelectedDateChange: (LocalDate) -> Unit,
+) {
     val today = remember { LocalDate.now() }
+    val animationScope = rememberCoroutineScope()
     var visibleMonth by remember { mutableStateOf(YearMonth.from(today)) }
-    var selectedDate by remember { mutableStateOf(today) }
-    val days = remember(visibleMonth) { calendarCells(visibleMonth) }
+    var picker by remember { mutableStateOf<CalendarPicker?>(null) }
+    var calendarOffset by remember { mutableStateOf(Offset.Zero) }
+    var calendarAnimationJob by remember { mutableStateOf<Job?>(null) }
+    val days = remember(visibleMonth) { calendarCells(visibleMonth).map(::calendarDateInfo) }
+    val scheduledDates = remember(scheduleItems) { scheduleItems.mapTo(hashSetOf()) { it.date } }
+    val selectedInfo = remember(selectedDate) { calendarDateInfo(selectedDate) }
+    val showToday = visibleMonth != YearMonth.from(today) || selectedDate != today
+
+    fun showMonth(month: YearMonth) {
+        val safeYear = month.year.coerceIn(CALENDAR_MIN_YEAR, CALENDAR_MAX_YEAR)
+        val safeMonth = YearMonth.of(safeYear, month.monthValue)
+        visibleMonth = safeMonth
+        onSelectedDateChange(safeMonth.atDay(selectedDate.dayOfMonth.coerceAtMost(safeMonth.lengthOfMonth())))
+    }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Panel),
@@ -1255,7 +1298,7 @@ private fun CalendarPanel() {
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("今日日历", color = TextSub, style = MaterialTheme.typography.labelLarge)
+                Text("今天", color = TextSub, style = MaterialTheme.typography.labelLarge)
                 Text(
                     formatFullCalendarDate(today),
                     color = TextMain,
@@ -1263,69 +1306,180 @@ private fun CalendarPanel() {
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { picker = CalendarPicker.Year }) {
+                        Text(
+                            "${visibleMonth.year}年",
+                            color = Gold,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    TextButton(onClick = { picker = CalendarPicker.Month }) {
+                        Text(
+                            "${visibleMonth.monthValue}月",
+                            color = Gold,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                if (showToday) {
+                    TextButton(onClick = {
+                        visibleMonth = YearMonth.from(today)
+                        onSelectedDateChange(today)
+                    }, modifier = Modifier.align(Alignment.CenterEnd)) { Text("今日") }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .graphicsLayer {
+                        translationX = calendarOffset.x
+                        translationY = calendarOffset.y
+                    }
+                    .pointerInput(visibleMonth, selectedDate) {
+                    var dragX = 0f
+                    var dragY = 0f
+                    var dragAxis: CalendarDragAxis? = null
+
+                    fun settleCalendar(target: Offset = Offset.Zero, durationMillis: Int = 140) {
+                        val start = calendarOffset
+                        calendarAnimationJob?.cancel()
+                        calendarAnimationJob = animationScope.launch {
+                            animate(
+                                initialValue = 0f,
+                                targetValue = 1f,
+                                animationSpec = tween(durationMillis, easing = FastOutSlowInEasing),
+                            ) { progress, _ ->
+                                calendarOffset = Offset(
+                                    x = start.x + (target.x - start.x) * progress,
+                                    y = start.y + (target.y - start.y) * progress,
+                                )
+                            }
+                        }
+                    }
+
+                    detectDragGestures(
+                        onDragStart = {
+                            dragX = 0f
+                            dragY = 0f
+                            dragAxis = null
+                            calendarAnimationJob?.cancel()
+                            calendarOffset = Offset.Zero
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            dragX += amount.x
+                            dragY += amount.y
+                            if (dragAxis == null && kotlin.math.abs(dragX) + kotlin.math.abs(dragY) > 16.dp.toPx()) {
+                                dragAxis = if (kotlin.math.abs(dragX) > kotlin.math.abs(dragY)) {
+                                    CalendarDragAxis.Horizontal
+                                } else {
+                                    CalendarDragAxis.Vertical
+                                }
+                            }
+                            calendarOffset = when (dragAxis) {
+                                CalendarDragAxis.Horizontal -> Offset(dragX.coerceIn(-180.dp.toPx(), 180.dp.toPx()), 0f)
+                                CalendarDragAxis.Vertical -> Offset(0f, dragY.coerceIn(-120.dp.toPx(), 120.dp.toPx()))
+                                null -> Offset.Zero
+                            }
+                        },
+                        onDragEnd = {
+                            val horizontalThreshold = 72.dp.toPx()
+                            val verticalThreshold = 88.dp.toPx()
+                            if (dragAxis == CalendarDragAxis.Horizontal && kotlin.math.abs(dragX) > horizontalThreshold) {
+                                showMonth(if (dragX < 0f) visibleMonth.plusMonths(1) else visibleMonth.minusMonths(1))
+                                calendarOffset = Offset(if (dragX < 0f) 56.dp.toPx() else -56.dp.toPx(), 0f)
+                                settleCalendar(durationMillis = 160)
+                            } else if (dragAxis == CalendarDragAxis.Vertical && kotlin.math.abs(dragY) > verticalThreshold) {
+                                showMonth(if (dragY < 0f) visibleMonth.plusYears(1) else visibleMonth.minusYears(1))
+                                calendarOffset = Offset(0f, if (dragY < 0f) 36.dp.toPx() else -36.dp.toPx())
+                                settleCalendar(durationMillis = 150)
+                            } else {
+                                settleCalendar(durationMillis = 120)
+                            }
+                        },
+                        onDragCancel = { settleCalendar(durationMillis = 120) },
+                    )
+                },
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                TextButton(onClick = { visibleMonth = visibleMonth.minusMonths(1) }) { Text("上月") }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "${visibleMonth.year}年${visibleMonth.monthValue}月",
-                        color = Gold,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(formatFullCalendarDate(selectedDate), color = TextSub, style = MaterialTheme.typography.bodySmall)
-                }
-                TextButton(onClick = {
-                    visibleMonth = YearMonth.from(today)
-                    selectedDate = today
-                }) { Text("今日") }
-                TextButton(onClick = { visibleMonth = visibleMonth.plusMonths(1) }) { Text("下月") }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf("一", "二", "三", "四", "五", "六", "日").forEach { label ->
-                    Text(
-                        label,
-                        color = TextSub,
-                        style = MaterialTheme.typography.labelMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            days.chunked(7).forEach { week ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    week.forEach { date ->
-                        CalendarDayCell(
-                            date = date,
-                            visibleMonth = visibleMonth,
-                            selectedDate = selectedDate,
-                            today = today,
-                            onClick = { selectedDate = date },
+                    listOf("一", "二", "三", "四", "五", "六", "日").forEach { label ->
+                        Text(
+                            label,
+                            color = TextSub,
+                            style = MaterialTheme.typography.labelMedium,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier.weight(1f),
                         )
                     }
                 }
+                days.chunked(7).forEach { week ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        week.forEach { info ->
+                            CalendarDayCell(
+                                info = info,
+                                visibleMonth = visibleMonth,
+                                selectedDate = selectedDate,
+                                today = today,
+                                hasSchedule = info.date.toString() in scheduledDates,
+                                onClick = {
+                                    visibleMonth = YearMonth.from(info.date)
+                                    onSelectedDateChange(info.date)
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
             }
+            DateDetail(info = selectedInfo, scheduleItems = scheduleItems.filter { it.date == selectedDate.toString() })
         }
+    }
+
+    when (picker) {
+        CalendarPicker.Year -> CalendarValuePicker(
+            title = "选择年份",
+            values = (CALENDAR_MIN_YEAR..CALENDAR_MAX_YEAR).toList(),
+            selected = visibleMonth.year,
+            label = { "${it}年" },
+            onDismiss = { picker = null },
+            onSelect = {
+                showMonth(YearMonth.of(it, visibleMonth.monthValue))
+                picker = null
+            },
+        )
+        CalendarPicker.Month -> CalendarValuePicker(
+            title = "选择月份",
+            values = (1..12).toList(),
+            selected = visibleMonth.monthValue,
+            label = { "${it}月" },
+            onDismiss = { picker = null },
+            onSelect = {
+                showMonth(YearMonth.of(visibleMonth.year, it))
+                picker = null
+            },
+        )
+        null -> Unit
     }
 }
 
 @Composable
 private fun CalendarDayCell(
-    date: LocalDate,
+    info: CalendarDateInfo,
     visibleMonth: YearMonth,
     selectedDate: LocalDate,
     today: LocalDate,
+    hasSchedule: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val date = info.date
     val inMonth = date.monthValue == visibleMonth.monthValue
     val isToday = date == today
     val isSelected = date == selectedDate
-    val lunar = remember(date) { toLunarDate(date).dayLabel }
     Surface(
         onClick = onClick,
         color = when {
@@ -1339,7 +1493,7 @@ private fun CalendarDayCell(
             isToday -> BorderStroke(1.dp, Mint)
             else -> null
         },
-        modifier = modifier.height(54.dp),
+        modifier = modifier.height(58.dp),
     ) {
         Column(
             modifier = Modifier.padding(vertical = 6.dp, horizontal = 2.dp),
@@ -1359,15 +1513,99 @@ private fun CalendarDayCell(
                 maxLines = 1,
             )
             Text(
-                lunar,
-                color = if (inMonth) TextSub else TextSub.copy(alpha = 0.36f),
+                info.cellLabel,
+                color = when {
+                    !inMonth -> TextSub.copy(alpha = 0.36f)
+                    info.solarTerm.isNotBlank() || info.traditionalFestivals.isNotEmpty() -> Gold
+                    else -> TextSub
+                },
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (hasSchedule) {
+                Box(Modifier.size(3.dp).background(Mint, CircleShape))
+            }
         }
     }
+}
+
+@Composable
+private fun DateDetail(info: CalendarDateInfo, scheduleItems: List<ScheduleItem>) {
+    Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "${info.date.monthValue}月${info.date.dayOfMonth}日 周${info.weekday}",
+                color = TextMain,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text("公历 ${info.date.year}年 · 当年第${info.date.dayOfYear}天", color = TextSub)
+            Text(
+                "农历 ${info.ganZhiYear}年 · 生肖${info.zodiac} · ${info.lunarMonth}${info.lunarDay}",
+                color = TextSub,
+            )
+            if (info.solarTerm.isNotBlank()) {
+                CalendarDetailRow(label = "节气", value = info.solarTerm, accent = Gold)
+            }
+            if (info.traditionalFestivals.isNotEmpty()) {
+                CalendarDetailRow(label = "传统节日", value = info.traditionalFestivals.joinToString("、"), accent = Rose)
+            }
+            CalendarDetailRow(
+                label = "日程",
+                value = if (scheduleItems.isEmpty()) "暂无事项" else scheduleItems.joinToString(" · ") { it.title },
+                accent = Mint,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarDetailRow(label: String, value: String, accent: Color) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+        Text(label, color = accent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(68.dp))
+        Text(value, color = TextMain, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CalendarValuePicker(
+    title: String,
+    values: List<Int>,
+    selected: Int,
+    label: (Int) -> String,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    val selectedIndex = values.indexOf(selected).coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(360.dp)) {
+                items(values, key = { it }) { value ->
+                    Surface(
+                        onClick = { onSelect(value) },
+                        color = if (value == selected) Gold.copy(alpha = 0.18f) else Color.Transparent,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                label(value),
+                                color = if (value == selected) Gold else TextMain,
+                                fontWeight = if (value == selected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+        properties = DialogProperties(usePlatformDefaultWidth = true),
+    )
 }
 
 private fun calendarCells(month: YearMonth): List<LocalDate> {
@@ -1376,124 +1614,73 @@ private fun calendarCells(month: YearMonth): List<LocalDate> {
     return List(42) { start.plusDays(it.toLong()) }
 }
 
-private fun formatFullCalendarDate(date: LocalDate): String {
-    val week = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[date.dayOfWeek.value - 1]
-    val lunar = toLunarDate(date)
-    return "${date.year}年${date.monthValue}月${date.dayOfMonth}日$week·${lunar.yearGanZhi}年${lunar.monthLabel}${lunar.dayLabel}"
-}
+private enum class CalendarPicker { Year, Month }
 
-private data class LunarDate(
-    val year: Int,
-    val month: Int,
-    val day: Int,
-    val isLeapMonth: Boolean,
-) {
-    val yearGanZhi: String
-        get() {
-            val stems = listOf("甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸")
-            val branches = listOf("子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥")
-            return stems[(year - 4).floorMod(10)] + branches[(year - 4).floorMod(12)]
-        }
-    val monthLabel: String
-        get() {
-            val names = listOf("正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月")
-            return if (isLeapMonth) "闰${names[month - 1]}" else names[month - 1]
-        }
-    val dayLabel: String
-        get() {
-            val tens = listOf("初", "十", "廿", "三")
-            val ones = listOf("十", "一", "二", "三", "四", "五", "六", "七", "八", "九")
-            return when (day) {
-                10 -> "初十"
-                20 -> "二十"
-                30 -> "三十"
-                else -> tens[day / 10] + ones[day % 10]
-            }
-        }
-}
+private enum class CalendarDragAxis { Horizontal, Vertical }
 
-private fun Int.floorMod(other: Int): Int = ((this % other) + other) % other
+private const val CALENDAR_MIN_YEAR = 1900
+private const val CALENDAR_MAX_YEAR = 2100
 
-private val lunarInfo = intArrayOf(
-    0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2,
-    0x04ae0, 0x0a5b6, 0x0a4d0, 0x0d250, 0x1d255, 0x0b540, 0x0d6a0, 0x0ada2, 0x095b0, 0x14977,
-    0x04970, 0x0a4b0, 0x0b4b5, 0x06a50, 0x06d40, 0x1ab54, 0x02b60, 0x09570, 0x052f2, 0x04970,
-    0x06566, 0x0d4a0, 0x0ea50, 0x06e95, 0x05ad0, 0x02b60, 0x186e3, 0x092e0, 0x1c8d7, 0x0c950,
-    0x0d4a0, 0x1d8a6, 0x0b550, 0x056a0, 0x1a5b4, 0x025d0, 0x092d0, 0x0d2b2, 0x0a950, 0x0b557,
-    0x06ca0, 0x0b550, 0x15355, 0x04da0, 0x0a5d0, 0x14573, 0x052d0, 0x0a9a8, 0x0e950, 0x06aa0,
-    0x0aea6, 0x0ab50, 0x04b60, 0x0aae4, 0x0a570, 0x05260, 0x0f263, 0x0d950, 0x05b57, 0x056a0,
-    0x096d0, 0x04dd5, 0x04ad0, 0x0a4d0, 0x0d4d4, 0x0d250, 0x0d558, 0x0b540, 0x0b6a0, 0x195a6,
-    0x095b0, 0x049b0, 0x0a974, 0x0a4b0, 0x0b27a, 0x06a50, 0x06d40, 0x0af46, 0x0ab60, 0x09570,
-    0x04af5, 0x04970, 0x064b0, 0x074a3, 0x0ea50, 0x06b58, 0x055c0, 0x0ab60, 0x096d5, 0x092e0,
-    0x0c960, 0x0d954, 0x0d4a0, 0x0da50, 0x07552, 0x056a0, 0x0abb7, 0x025d0, 0x092d0, 0x0cab5,
-    0x0a950, 0x0b4a0, 0x0baa4, 0x0ad50, 0x055d9, 0x04ba0, 0x0a5b0, 0x15176, 0x052b0, 0x0a930,
-    0x07954, 0x06aa0, 0x0ad50, 0x05b52, 0x04b60, 0x0a6e6, 0x0a4e0, 0x0d260, 0x0ea65, 0x0d530,
-    0x05aa0, 0x076a3, 0x096d0, 0x04bd7, 0x04ad0, 0x0a4d0, 0x1d0b6, 0x0d250, 0x0d520, 0x0dd45,
-    0x0b5a0, 0x056d0, 0x055b2, 0x049b0, 0x0a577, 0x0a4b0, 0x0aa50, 0x1b255, 0x06d20, 0x0ada0,
-    0x14b63, 0x09370, 0x049f8, 0x04970, 0x064b0, 0x168a6, 0x0ea50, 0x06b20, 0x1a6c4, 0x0aae0,
-    0x092e0, 0x0d2e3, 0x0c960, 0x0d557, 0x0d4a0, 0x0da50, 0x05d55, 0x056a0, 0x0a6d0, 0x055d4,
-    0x052d0, 0x0a9b8, 0x0a950, 0x0b4a0, 0x0b6a6, 0x0ad50, 0x055a0, 0x0aba4, 0x0a5b0, 0x052b0,
-    0x0b273, 0x06930, 0x07337, 0x06aa0, 0x0ad50, 0x14b55, 0x04b60, 0x0a570, 0x054e4, 0x0d160,
-    0x0e968, 0x0d520, 0x0daa0, 0x16aa6, 0x056d0, 0x04ae0, 0x0a9d4, 0x0a2d0, 0x0d150, 0x0f252,
-    0x0d520
+private val TRADITIONAL_FESTIVAL_NAMES = setOf(
+    "春节",
+    "元宵节",
+    "龙抬头",
+    "龙头节",
+    "上巳节",
+    "寒食节",
+    "清明节",
+    "端午节",
+    "七夕节",
+    "中元节",
+    "中秋节",
+    "重阳节",
+    "寒衣节",
+    "下元节",
+    "腊八节",
+    "小年",
+    "除夕",
 )
 
-private fun toLunarDate(date: LocalDate): LunarDate {
-    val minDate = LocalDate.of(1900, 1, 31)
-    val maxDate = LocalDate.of(2100, 12, 31)
-    val safeDate = date.coerceIn(minDate, maxDate)
-    var offset = ChronoUnit.DAYS.between(minDate, safeDate).toInt()
-    var year = 1900
-    var yearDays = lunarYearDays(year)
-    while (offset >= yearDays && year < 2100) {
-        offset -= yearDays
-        year++
-        yearDays = lunarYearDays(year)
-    }
-    val leapMonth = lunarLeapMonth(year)
-    var isLeap = false
-    var month = 1
-    var monthDays: Int
-    while (true) {
-        monthDays = if (isLeap) lunarLeapDays(year) else lunarMonthDays(year, month)
-        if (offset < monthDays) break
-        offset -= monthDays
-        if (leapMonth == month && !isLeap) {
-            isLeap = true
-        } else {
-            if (isLeap) isLeap = false
-            month++
+private data class CalendarDateInfo(
+    val date: LocalDate,
+    val weekday: String,
+    val ganZhiYear: String,
+    val zodiac: String,
+    val lunarMonth: String,
+    val lunarDay: String,
+    val solarTerm: String,
+    val traditionalFestivals: List<String>,
+) {
+    val cellLabel: String
+        get() = solarTerm.ifBlank {
+            traditionalFestivals.firstOrNull() ?: lunarDay
         }
-    }
-    return LunarDate(year, month, offset + 1, isLeap)
 }
 
-private fun LocalDate.coerceIn(minDate: LocalDate, maxDate: LocalDate): LocalDate = when {
-    isBefore(minDate) -> minDate
-    isAfter(maxDate) -> maxDate
-    else -> this
+private fun calendarDateInfo(date: LocalDate): CalendarDateInfo {
+    val solar = Solar.fromYmd(date.year, date.monthValue, date.dayOfMonth)
+    val lunar = solar.lunar
+    val solarTerm = lunar.jieQi.orEmpty()
+    val traditional = (
+        lunar.festivals +
+            lunar.otherFestivals +
+            if (solarTerm == "清明") listOf("清明节") else emptyList()
+        ).filter { it in TRADITIONAL_FESTIVAL_NAMES }.distinct()
+    return CalendarDateInfo(
+        date = date,
+        weekday = listOf("一", "二", "三", "四", "五", "六", "日")[date.dayOfWeek.value - 1],
+        ganZhiYear = lunar.yearInGanZhi,
+        zodiac = lunar.yearShengXiao,
+        lunarMonth = (if (lunar.month < 0) "闰" else "") + lunar.monthInChinese + "月",
+        lunarDay = lunar.dayInChinese,
+        solarTerm = solarTerm,
+        traditionalFestivals = traditional,
+    )
 }
 
-private fun lunarYearDays(year: Int): Int {
-    var sum = 348
-    var bit = 0x8000
-    val info = lunarInfo[year - 1900]
-    while (bit > 0x8) {
-        if (info and bit != 0) sum++
-        bit = bit shr 1
-    }
-    return sum + lunarLeapDays(year)
-}
-
-private fun lunarLeapMonth(year: Int): Int = lunarInfo[year - 1900] and 0xf
-
-private fun lunarLeapDays(year: Int): Int {
-    if (lunarLeapMonth(year) == 0) return 0
-    return if (lunarInfo[year - 1900] and 0x10000 != 0) 30 else 29
-}
-
-private fun lunarMonthDays(year: Int, month: Int): Int {
-    return if (lunarInfo[year - 1900] and (0x10000 shr month) != 0) 30 else 29
+private fun formatFullCalendarDate(date: LocalDate): String {
+    val info = calendarDateInfo(date)
+    return "${date.year}年${date.monthValue}月${date.dayOfMonth}日周${info.weekday}·${info.ganZhiYear}年${info.lunarMonth}${info.lunarDay}"
 }
 
 @Composable
@@ -1823,13 +2010,14 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         history = emptyList()
     }
 
-    fun addScheduleItem() {
+    fun addScheduleItem(date: LocalDate) {
         val title = scheduleTitle.trim()
         if (title.isBlank()) return
         val item = ScheduleItem(
             id = System.currentTimeMillis(),
             title = title,
             note = scheduleNote.trim(),
+            date = date.toString(),
             createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
         )
         scheduleItems = repo.saveScheduleItems(listOf(item) + scheduleItems)
@@ -1895,6 +2083,7 @@ data class ScheduleItem(
     val id: Long,
     val title: String,
     val note: String,
+    val date: String,
     val createdAt: String,
     val done: Boolean = false,
 )
@@ -2001,6 +2190,7 @@ private fun ScheduleItem.toJson(): JSONObject = JSONObject()
     .put("id", id)
     .put("title", title)
     .put("note", note)
+    .put("date", date)
     .put("createdAt", createdAt)
     .put("done", done)
 
@@ -2008,6 +2198,10 @@ private fun JSONObject.toScheduleItem(): ScheduleItem = ScheduleItem(
     id = optLong("id"),
     title = optString("title"),
     note = optString("note"),
+    date = optString("date").ifBlank {
+        optString("createdAt").take(10).takeIf { value -> runCatching { LocalDate.parse(value) }.isSuccess }
+            ?: LocalDate.now().toString()
+    },
     createdAt = optString("createdAt"),
     done = optBoolean("done", false),
 )

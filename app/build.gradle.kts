@@ -12,8 +12,8 @@ android {
         applicationId = "com.zhifou.fortune"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -62,6 +62,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("cn.6tail:lunar:1.7.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.json:json:20240303")
     implementation(files("libs/sherpa-onnx-1.13.2-arm64.aar"))

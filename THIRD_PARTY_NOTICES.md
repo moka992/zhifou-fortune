@@ -13,3 +13,11 @@
 - License: Apache License 2.0
 
 The Apache License 2.0 is available at https://www.apache.org/licenses/LICENSE-2.0.
+
+## lunar-java
+
+- Project: https://github.com/6tail/lunar-java
+- Version: 1.7.7
+- License: MIT License
+
+The MIT License text is included in `app/src/main/assets/licenses/lunar-java-MIT.txt`.

@@ -8,7 +8,7 @@
 - Three-coin I Ching divination
 - Answer Book oracle prompts
 - AI-powered interpretation through an OpenAI-compatible endpoint
-- Voice input for divination questions
+- Offline Chinese-English voice input for divination questions
 - Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and selectable D4/D6/D8/D10/D12/D20 dice
 - Local reading history
 - Offline solar/lunar calendar with local schedule and task notes
@@ -19,6 +19,7 @@
 - Kotlin
 - Jetpack Compose
 - Material 3
+- Sherpa-ONNX with an INT8 bilingual Zipformer model
 - Android Gradle Plugin 8.6.1
 - minSdk 26
 - targetSdk 35
@@ -56,7 +57,15 @@ AI interpretation can be configured inside the app settings with:
 The app uses the following Android permissions:
 
 - `INTERNET`: used for optional AI interpretation.
-- `RECORD_AUDIO`: used for voice input.
+- `RECORD_AUDIO`: used for on-device voice input. Microphone audio is processed locally and is not uploaded by the speech recognition feature.
+
+## Offline Speech Recognition
+
+Voice input runs locally with a bundled Chinese-English streaming model. Hold the microphone in the question field to speak, release to insert the recognized text, or slide up before releasing to cancel. No speech service account or network connection is required.
+
+The current native package targets `arm64-v8a`, which covers the supported Android phone range while keeping the APK smaller than a universal build.
+
+Third-party licenses and model attribution are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 

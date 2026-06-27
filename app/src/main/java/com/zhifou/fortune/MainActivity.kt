@@ -3,19 +3,14 @@ package com.zhifou.fortune
 import android.Manifest
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.SensorManager
 import android.media.MediaPlayer
+import android.os.Build
 import android.hardware.SensorEventListener
 import android.hardware.SensorEvent
 import android.hardware.Sensor
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +27,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +85,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -133,7 +131,6 @@ import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
 import kotlin.math.cos
@@ -153,8 +150,17 @@ private val TextMain = Color(0xFFF3F0E8)
 private val TextSub = Color(0xFFB7B2A6)
 
 class MainActivity : ComponentActivity() {
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(17, 19, 24)
+        window.navigationBarColor = android.graphics.Color.rgb(27, 31, 39)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            window.decorView.systemUiVisibility = 0
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -187,8 +193,16 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 
 @Composable
 private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
+    val context = LocalContext.current
+    val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
     var showDiceTool by remember { mutableStateOf(false) }
+
+    DisposableEffect(offlineRecognizer) {
+        onDispose {
+            Thread({ offlineRecognizer.close() }, "zhifou-asr-cleanup").start()
+        }
+    }
 
     Scaffold(
         containerColor = Ink,
@@ -217,7 +231,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
         ) {
             when (tab) {
                 Tab.Home -> HomeScreen(vm, onOpenOracle = { tab = Tab.Oracle })
-                Tab.Oracle -> OracleScreen(vm)
+                Tab.Oracle -> OracleScreen(vm, offlineRecognizer)
                 Tab.Tools -> if (showDiceTool) DiceScreen(onBack = { showDiceTool = false }) else ToolsScreen(onOpenDice = { showDiceTool = true })
                 Tab.Schedule -> ScheduleScreen(vm)
                 Tab.History -> HistoryScreen(vm)
@@ -284,124 +298,92 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
 }
 
 @Composable
-private fun OracleScreen(vm: FortuneViewModel) {
+private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechRecognizer) {
     val context = LocalContext.current
-    var isListening by remember { mutableStateOf(false) }
-    var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
-    val speechHandler = remember { Handler(Looper.getMainLooper()) }
-    val speechIntent = remember {
-        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.SIMPLIFIED_CHINESE.toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出你想占卜的问题")
+    var modelReady by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+    var isCancelling by remember { mutableStateOf(false) }
+    var partialText by remember { mutableStateOf("") }
+    var questionBeforeRecording by remember { mutableStateOf("") }
+    var voiceMessage by remember { mutableStateOf("") }
+    var voiceLevel by remember { mutableStateOf(0f) }
+
+    fun commitRecognizedText(text: String) {
+        val recognized = text.trim()
+        if (recognized.isBlank()) return
+        vm.question = when {
+            questionBeforeRecording.isBlank() -> recognized
+            questionBeforeRecording.last().isWhitespace() -> questionBeforeRecording + recognized
+            else -> "${questionBeforeRecording.trimEnd()} $recognized"
         }
     }
-    fun stopVoiceInput() {
-        isListening = false
-        speechHandler.removeCallbacksAndMessages(null)
-        recognizer?.cancel()
-        recognizer?.destroy()
-        recognizer = null
-        vm.voiceMessage = ""
+
+    LaunchedEffect(offlineRecognizer) {
+        val result = offlineRecognizer.prepare()
+        modelReady = result.isSuccess
+        if (result.isFailure) voiceMessage = "离线语音模型加载失败"
     }
-    fun restartListening() {
-        if (!isListening) return
-        speechHandler.postDelayed({
-            if (isListening) {
-                try {
-                    recognizer?.startListening(speechIntent)
-                } catch (_: Throwable) {
-                    vm.voiceMessage = "语音识别暂时不可用，请重新点击麦克风"
-                    stopVoiceInput()
-                }
-            }
-        }, 250L)
-    }
-    fun startVoiceInput() {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            vm.voiceMessage = "当前设备没有可用的系统语音识别服务"
+
+    fun startRecording() {
+        if (isRecording) return
+        if (!modelReady) {
+            voiceMessage = "离线语音模型正在加载，请稍后再试"
             return
         }
-        if (recognizer == null) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) {
-                        vm.voiceMessage = "正在聆听"
-                    }
-
-                    override fun onBeginningOfSpeech() = Unit
-                    override fun onRmsChanged(rmsdB: Float) = Unit
-                    override fun onBufferReceived(buffer: ByteArray?) = Unit
-                    override fun onEndOfSpeech() = Unit
-
-                    override fun onError(error: Int) {
-                        if (!isListening) return
-                        vm.voiceMessage = when (error) {
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
-                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音识别网络异常，继续等待"
-                            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "继续聆听"
-                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "语音识别正在准备"
-                            else -> "继续聆听"
-                        }
-                        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-                            stopVoiceInput()
-                        } else {
-                            restartListening()
-                        }
-                    }
-
-                    override fun onResults(results: Bundle?) {
-                        val text = results
-                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            ?.firstOrNull()
-                            .orEmpty()
-                            .trim()
-                        if (text.isNotBlank()) {
-                            vm.question = text
-                            vm.voiceMessage = "已识别：$text"
-                        }
-                        restartListening()
-                    }
-
-                    override fun onPartialResults(partialResults: Bundle?) {
-                        val text = partialResults
-                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            ?.firstOrNull()
-                            .orEmpty()
-                            .trim()
-                        if (text.isNotBlank()) {
-                            vm.question = text
-                            vm.voiceMessage = "正在识别：$text"
-                        }
-                    }
-
-                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
-                })
-            }
+        questionBeforeRecording = vm.question
+        partialText = ""
+        isCancelling = false
+        voiceLevel = 0.08f
+        voiceMessage = "松手完成，上滑取消"
+        isRecording = offlineRecognizer.start(
+            onPartial = { partialText = it },
+            onFinal = { text ->
+                voiceLevel = 0f
+                if (text.isBlank()) {
+                    voiceMessage = "没有听清，请按住麦克风重试"
+                } else {
+                    commitRecognizedText(text)
+                    partialText = text
+                    voiceMessage = "语音已写入"
+                }
+            },
+            onLevel = { voiceLevel = it },
+            onError = {
+                isRecording = false
+                voiceLevel = 0f
+                voiceMessage = it
+            },
+        )
+        if (!isRecording) {
+            voiceMessage = "无法启动麦克风，请重试"
         }
-        isListening = true
-        vm.voiceMessage = "正在聆听"
-        recognizer?.startListening(speechIntent)
     }
-    fun toggleVoiceInput() {
-        if (isListening) {
-            stopVoiceInput()
+
+    fun finishRecording(cancelled: Boolean) {
+        if (!isRecording) return
+        isRecording = false
+        isCancelling = false
+        voiceLevel = 0f
+        if (cancelled) {
+            offlineRecognizer.stop(cancelled = true)
+            partialText = ""
+            voiceMessage = "已取消语音输入"
         } else {
-            startVoiceInput()
+            voiceMessage = "正在完成识别"
+            offlineRecognizer.stop(cancelled = false)
         }
     }
+
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            startVoiceInput()
-        } else {
-            vm.voiceMessage = "需要麦克风权限才能语音提问"
-        }
+        voiceMessage = if (granted) "请再次按住麦克风说话" else "需要麦克风权限才能使用语音输入"
     }
-    DisposableEffect(Unit) {
-        onDispose { stopVoiceInput() }
+
+    fun handlePressStart() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startRecording()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     Column(
@@ -419,30 +401,69 @@ private fun OracleScreen(vm: FortuneViewModel) {
             placeholder = { Text("例如：这周适合推进新计划吗？") },
             minLines = 2,
             trailingIcon = {
-                IconButton(
-                    onClick = {
-                        if (isListening || ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            toggleVoiceInput()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                handlePressStart()
+                                var fingerDown = true
+                                while (fingerDown) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    isCancelling = isRecording && change.position.y < down.position.y - 72.dp.toPx()
+                                    fingerDown = change.pressed
+                                    change.consume()
+                                }
+                                finishRecording(isCancelling)
+                            }
+                        },
                 ) {
                     Icon(
                         Icons.Default.Mic,
-                        contentDescription = if (isListening) "正在语音输入" else "语音输入",
-                        tint = if (isListening) Gold else TextSub,
+                        contentDescription = "按住语音输入",
+                        tint = when {
+                            isCancelling -> Rose
+                            isRecording -> Gold
+                            else -> TextSub
+                        },
                     )
                 }
             },
         )
-        if (vm.voiceMessage.isNotBlank()) {
-            Text(vm.voiceMessage, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+        AnimatedVisibility(visible = isRecording || voiceMessage.isNotBlank()) {
+            Surface(
+                color = Panel,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, if (isCancelling) Rose else Line),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (isRecording) {
+                        VoiceLevelMeter(level = voiceLevel, cancelling = isCancelling)
+                    }
+                    Text(
+                        text = when {
+                            isCancelling -> "松手取消"
+                            isRecording && partialText.isNotBlank() -> partialText
+                            else -> voiceMessage
+                        },
+                        color = if (isCancelling) Rose else TextSub,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = {
-                    stopVoiceInput()
                     vm.castCoins()
                 },
                 modifier = Modifier.weight(1f),
@@ -454,7 +475,6 @@ private fun OracleScreen(vm: FortuneViewModel) {
             }
             Button(
                 onClick = {
-                    stopVoiceInput()
                     vm.drawAnswerBook()
                 },
                 modifier = Modifier.weight(1f),
@@ -475,8 +495,37 @@ private fun OracleScreen(vm: FortuneViewModel) {
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("使用方式", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("点击输入框右侧麦克风可开启或关闭语音输入。点击占卜按钮时会自动停止语音识别。配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
+                Text("配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
             }
+        }
+    }
+}
+
+@Composable
+private fun VoiceLevelMeter(level: Float, cancelling: Boolean) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(32.dp),
+    ) {
+        val barCount = 21
+        val gap = size.width / (barCount * 2f)
+        val barWidth = gap.coerceAtLeast(2.dp.toPx())
+        val centerY = size.height / 2f
+        val color = if (cancelling) Rose else Gold
+        repeat(barCount) { index ->
+            val distance = kotlin.math.abs(index - barCount / 2f) / (barCount / 2f)
+            val envelope = 1f - distance * 0.7f
+            val variation = 0.72f + 0.28f * kotlin.math.sin(index * 1.9f)
+            val halfHeight = (3.dp.toPx() + level * centerY * envelope * variation).coerceAtMost(centerY)
+            val x = gap + index * gap * 2f
+            drawLine(
+                color = color,
+                start = Offset(x, centerY - halfHeight),
+                end = Offset(x, centerY + halfHeight),
+                strokeWidth = barWidth,
+                cap = StrokeCap.Round,
+            )
         }
     }
 }
@@ -1721,7 +1770,6 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var scheduleTitle by mutableStateOf("")
     var scheduleNote by mutableStateOf("")
-    var voiceMessage by mutableStateOf("")
     var aiApiKey by mutableStateOf(repo.aiApiKey)
         private set
     var aiModel by mutableStateOf(repo.aiModel)

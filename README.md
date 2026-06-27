@@ -62,7 +62,7 @@ The app uses the following Android permissions:
 
 ## Offline Speech Recognition
 
-Voice input runs locally with a bundled Chinese-English streaming model. Hold the microphone in the question field to speak, release to insert the recognized text, or slide up before releasing to cancel. No speech service account or network connection is required.
+Voice input runs locally with a bundled Chinese-English model. Long-press the question field to record, release to transcribe in the background, or slide up before releasing to cancel and return to text editing. No speech service account or network connection is required.
 
 The current native package targets `arm64-v8a`, which covers the supported Android phone range while keeping the APK smaller than a universal build.
 

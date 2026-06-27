@@ -11,6 +11,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorEvent
 import android.hardware.Sensor
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,9 +29,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -61,7 +61,6 @@ import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
@@ -102,6 +101,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -112,6 +113,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -361,13 +363,25 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
 @Composable
 private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechRecognizer) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val questionFocusRequester = remember { FocusRequester() }
     var modelReady by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
-    var partialText by remember { mutableStateOf("") }
-    var questionBeforeRecording by remember { mutableStateOf("") }
-    var voiceMessage by remember { mutableStateOf("") }
     var voiceLevel by remember { mutableStateOf(0f) }
+    var questionBeforeRecording by remember { mutableStateOf("") }
+    val suggestedQuestions = remember {
+        listOf(
+            "我今天适合做重要决定吗？",
+            "这段关系下一步应该怎么走？",
+            "近期的事业机会在哪里？",
+            "现在应该坚持还是改变？",
+        )
+    }
+
+    fun showVoiceMessage(message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
 
     fun commitRecognizedText(text: String) {
         val recognized = text.trim()
@@ -382,41 +396,38 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
     LaunchedEffect(offlineRecognizer) {
         val result = offlineRecognizer.prepare()
         modelReady = result.isSuccess
-        if (result.isFailure) voiceMessage = "离线语音模型加载失败"
+        if (result.isFailure) showVoiceMessage("离线语音模型加载失败")
     }
 
     fun startRecording() {
         if (isRecording) return
         if (!modelReady) {
-            voiceMessage = "离线语音模型正在加载，请稍后再试"
+            showVoiceMessage("离线语音模型正在加载，请稍后再试")
             return
         }
         questionBeforeRecording = vm.question
-        partialText = ""
+        keyboardController?.hide()
         isCancelling = false
-        voiceLevel = 0.08f
-        voiceMessage = "松手完成，上滑取消"
+        voiceLevel = 0.06f
         isRecording = offlineRecognizer.start(
-            onPartial = { partialText = it },
             onFinal = { text ->
                 voiceLevel = 0f
                 if (text.isBlank()) {
-                    voiceMessage = "没有听清，请按住麦克风重试"
+                    showVoiceMessage("没有听清，请重试")
                 } else {
                     commitRecognizedText(text)
-                    partialText = text
-                    voiceMessage = "语音已写入"
                 }
             },
             onLevel = { voiceLevel = it },
             onError = {
                 isRecording = false
+                isCancelling = false
                 voiceLevel = 0f
-                voiceMessage = it
+                showVoiceMessage(it)
             },
         )
         if (!isRecording) {
-            voiceMessage = "无法启动麦克风，请重试"
+            showVoiceMessage("无法启动麦克风，请重试")
         }
     }
 
@@ -427,16 +438,14 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
         voiceLevel = 0f
         if (cancelled) {
             offlineRecognizer.stop(cancelled = true)
-            partialText = ""
-            voiceMessage = "已取消语音输入"
+            questionFocusRequester.requestFocus()
         } else {
-            voiceMessage = "正在完成识别"
             offlineRecognizer.stop(cancelled = false)
         }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        voiceMessage = if (granted) "请再次按住麦克风说话" else "需要麦克风权限才能使用语音输入"
+        showVoiceMessage(if (granted) "请再次长按输入框说话" else "需要麦克风权限才能使用语音输入")
     }
 
     fun handlePressStart() {
@@ -450,143 +459,159 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(
-            value = vm.question,
-            onValueChange = { vm.question = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("你想问什么") },
-            placeholder = { Text("例如：这周适合推进新计划吗？") },
-            minLines = 2,
-            trailingIcon = {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                handlePressStart()
-                                var fingerDown = true
-                                while (fingerDown) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    isCancelling = isRecording && change.position.y < down.position.y - 72.dp.toPx()
-                                    fingerDown = change.pressed
-                                    change.consume()
-                                }
-                                finishRecording(isCancelling)
-                            }
-                        },
-                ) {
-                    Icon(
-                        Icons.Default.Mic,
-                        contentDescription = "按住语音输入",
-                        tint = when {
-                            isCancelling -> Rose
-                            isRecording -> Gold
-                            else -> TextSub
-                        },
-                    )
-                }
-            },
-        )
-        AnimatedVisibility(visible = isRecording || voiceMessage.isNotBlank()) {
-            Surface(
-                color = Panel,
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, if (isCancelling) Rose else Line),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        ) {
+            val reading = vm.latestReading
+            if (reading == null) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (isRecording) {
-                        VoiceLevelMeter(level = voiceLevel, cancelling = isCancelling)
-                    }
                     Text(
-                        text = when {
-                            isCancelling -> "松手取消"
-                            isRecording && partialText.isNotBlank() -> partialText
-                            else -> voiceMessage
-                        },
-                        color = if (isCancelling) Rose else TextSub,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
+                        "今天想问些什么？",
+                        color = TextMain,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
                     )
+                    suggestedQuestions.forEach { question ->
+                        Surface(
+                            onClick = { vm.question = question },
+                            color = PanelAlt,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Line),
+                        ) {
+                            Text(
+                                question,
+                                color = TextMain,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 8.dp),
+                ) {
+                    ReadingCard(reading)
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    vm.castCoins()
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink),
-            ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { vm.castCoins() }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Default.Casino, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
                 Text("三币起卦")
             }
-            Button(
-                onClick = {
-                    vm.drawAnswerBook()
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Rose, contentColor = Ink),
-            ) {
+            OutlinedButton(onClick = { vm.drawAnswerBook() }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Default.Book, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
                 Text("答案之书")
             }
         }
-        AnimatedVisibility(visible = vm.latestReading != null) {
-            vm.latestReading?.let { ReadingCard(it) }
-        }
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
-            shape = RoundedCornerShape(8.dp),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("使用方式", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("配置 AI Key 后，占卜完成会自动生成更完整的解释。", color = TextSub)
+        Box(modifier = Modifier.fillMaxWidth().height(104.dp)) {
+            Column(
+                modifier = Modifier.graphicsLayer { alpha = if (isRecording) 0f else 1f },
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                OutlinedTextField(
+                    value = vm.question,
+                    onValueChange = { vm.question = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(questionFocusRequester)
+                        .pointerInput(modelReady) {
+                            var dragY = 0f
+                            var cancelled = false
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    dragY = 0f
+                                    cancelled = false
+                                    handlePressStart()
+                                },
+                                onDrag = { change, amount ->
+                                    if (isRecording) {
+                                        change.consume()
+                                        dragY += amount.y
+                                        cancelled = dragY < -72.dp.toPx()
+                                        isCancelling = cancelled
+                                    }
+                                },
+                                onDragEnd = { finishRecording(cancelled) },
+                                onDragCancel = { finishRecording(cancelled = true) },
+                            )
+                        },
+                    placeholder = { Text("输入问题，或按住说话") },
+                    maxLines = 3,
+                )
+                Text(
+                    "按住输入框说话",
+                    color = TextSub,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+            if (isRecording) {
+                VoiceCapturePanel(
+                    level = voiceLevel,
+                    cancelling = isCancelling,
+                    modifier = Modifier.align(Alignment.Center),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun VoiceLevelMeter(level: Float, cancelling: Boolean) {
-    Canvas(
-        modifier = Modifier
+private fun VoiceCapturePanel(
+    level: Float,
+    cancelling: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val color = if (cancelling) Rose else Gold
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .height(32.dp),
+            .height(96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        val barCount = 21
-        val gap = size.width / (barCount * 2f)
-        val barWidth = gap.coerceAtLeast(2.dp.toPx())
-        val centerY = size.height / 2f
-        val color = if (cancelling) Rose else Gold
-        repeat(barCount) { index ->
-            val distance = kotlin.math.abs(index - barCount / 2f) / (barCount / 2f)
-            val envelope = 1f - distance * 0.7f
-            val variation = 0.72f + 0.28f * kotlin.math.sin(index * 1.9f)
-            val halfHeight = (3.dp.toPx() + level * centerY * envelope * variation).coerceAtMost(centerY)
-            val x = gap + index * gap * 2f
-            drawLine(
-                color = color,
-                start = Offset(x, centerY - halfHeight),
-                end = Offset(x, centerY + halfHeight),
-                strokeWidth = barWidth,
-                cap = StrokeCap.Round,
-            )
+        Text(
+            if (cancelling) "松手取消" else "松手完成，上滑取消",
+            color = color,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(10.dp))
+        Canvas(modifier = Modifier.fillMaxWidth(0.68f).height(30.dp)) {
+            val barCount = 31
+            val step = size.width / barCount
+            val centerY = size.height / 2f
+            repeat(barCount) { index ->
+                val distance = kotlin.math.abs(index - barCount / 2f) / (barCount / 2f)
+                val envelope = 1f - distance * 0.55f
+                val variation = 0.55f + 0.45f * kotlin.math.abs(kotlin.math.sin(index * 1.67f))
+                val halfHeight = (2.dp.toPx() + level * centerY * envelope * variation).coerceAtMost(centerY)
+                val x = step * (index + 0.5f)
+                drawLine(
+                    color = color,
+                    start = Offset(x, centerY - halfHeight),
+                    end = Offset(x, centerY + halfHeight),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
         }
     }
 }

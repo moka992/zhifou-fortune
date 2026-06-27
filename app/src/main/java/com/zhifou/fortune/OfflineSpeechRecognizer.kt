@@ -67,7 +67,6 @@ class OfflineSpeechRecognizer(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun start(
-        onPartial: (String) -> Unit,
         onFinal: (String) -> Unit,
         onLevel: (Float) -> Unit,
         onError: (String) -> Unit,
@@ -96,7 +95,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
             audioRecord = recorder
             recorder.startRecording()
             recordingThread = Thread {
-                processAudio(activeRecognizer, recorder, onPartial, onFinal, onLevel, onError)
+                captureThenRecognize(activeRecognizer, recorder, onFinal, onLevel, onError)
             }.apply {
                 name = "zhifou-offline-asr"
                 start()
@@ -136,46 +135,46 @@ class OfflineSpeechRecognizer(private val context: Context) {
         }
     }
 
-    private fun processAudio(
+    private fun captureThenRecognize(
         recognizer: OnlineRecognizer,
         recorder: AudioRecord,
-        onPartial: (String) -> Unit,
         onFinal: (String) -> Unit,
         onLevel: (Float) -> Unit,
         onError: (String) -> Unit,
     ) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-        val stream = recognizer.createStream()
         val buffer = ShortArray(1_600)
-        var lastText = ""
+        val recordedChunks = ArrayList<FloatArray>()
+        var stream: com.k2fsa.sherpa.onnx.OnlineStream? = null
         try {
             while (recording) {
-                val count = recorder.read(buffer, 0, buffer.size)
-                if (count <= 0) continue
-                val samples = FloatArray(count) { buffer[it] / 32768f }
-                stream.acceptWaveform(samples, SAMPLE_RATE)
-                while (recognizer.isReady(stream)) recognizer.decode(stream)
-
-                val text = recognizer.getResult(stream).text.trim()
-                if (text.isNotBlank() && text != lastText) {
-                    lastText = text
-                    mainHandler.post { if (!discardResult) onPartial(text) }
+                val count = try {
+                    recorder.read(buffer, 0, buffer.size)
+                } catch (error: Throwable) {
+                    if (!recording) break else throw error
                 }
-
+                if (count <= 0) continue
+                recordedChunks += FloatArray(count) { buffer[it] / 32768f }
                 var energy = 0.0
                 for (index in 0 until count) {
                     val value = buffer[index].toDouble() / 32768.0
                     energy += value * value
                 }
-                val rms = sqrt(energy / count).toFloat()
-                val level = (rms * 12f).coerceIn(0.06f, 1f)
+                val level = (sqrt(energy / count).toFloat() * 12f).coerceIn(0.06f, 1f)
                 mainHandler.post { if (recording) onLevel(level) }
             }
 
             if (!discardResult) {
-                stream.inputFinished()
-                while (recognizer.isReady(stream)) recognizer.decode(stream)
-                val finalText = recognizer.getResult(stream).text.trim().ifBlank { lastText }
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+                val decodeStream = recognizer.createStream()
+                stream = decodeStream
+                recordedChunks.forEach { samples ->
+                    decodeStream.acceptWaveform(samples, SAMPLE_RATE)
+                    while (recognizer.isReady(decodeStream)) recognizer.decode(decodeStream)
+                }
+                decodeStream.inputFinished()
+                while (recognizer.isReady(decodeStream)) recognizer.decode(decodeStream)
+                val finalText = recognizer.getResult(decodeStream).text.trim()
                 mainHandler.post { if (!discardResult) onFinal(finalText) }
             }
         } catch (_: Throwable) {
@@ -189,7 +188,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
             recorder.release()
             if (audioRecord === recorder) audioRecord = null
             if (recordingThread === Thread.currentThread()) recordingThread = null
-            stream.release()
+            stream?.release()
         }
     }
 

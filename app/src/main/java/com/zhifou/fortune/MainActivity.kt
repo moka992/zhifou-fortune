@@ -60,9 +60,9 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -81,9 +81,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -190,11 +193,10 @@ class MainActivity : ComponentActivity() {
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("首页", Icons.Default.Home),
-    Oracle("占卜", Icons.Default.AutoAwesome),
     Schedule("日程", Icons.AutoMirrored.Filled.EventNote),
-    History("记录", Icons.Default.History),
+    Oracle("占卜", Icons.Default.AutoAwesome),
     Tools("小工具", Icons.Default.Casino),
-    Settings("设置", Icons.Default.Settings),
+    Mine("我的", Icons.Default.AccountCircle),
 }
 
 @Composable
@@ -214,16 +216,70 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
         containerColor = Ink,
         topBar = { AppTopBar() },
         bottomBar = {
-            NavigationBar(containerColor = Panel, tonalElevation = 0.dp) {
-                Tab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
+            Box(modifier = Modifier.fillMaxWidth().height(144.dp)) {
+                NavigationBar(
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    containerColor = Panel,
+                    tonalElevation = 0.dp,
+                ) {
+                    Tab.entries.forEach { item ->
+                        NavigationBarItem(
+                            selected = tab == item,
+                            onClick = {
+                                tab = item
+                                if (item != Tab.Tools) showDiceTool = false
+                            },
+                            icon = {
+                                if (item == Tab.Oracle) {
+                                    Spacer(Modifier.size(32.dp))
+                                } else {
+                                    Icon(item.icon, contentDescription = item.label)
+                                }
+                            },
+                            label = if (item == Tab.Oracle) null else ({ Text(item.label) }),
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Gold,
+                                selectedTextColor = if (item == Tab.Oracle) Gold else TextMain,
+                                indicatorColor = if (item == Tab.Oracle) Color.Transparent else Gold.copy(alpha = 0.14f),
+                                unselectedIconColor = TextSub,
+                                unselectedTextColor = TextSub,
+                            ),
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Surface(
                         onClick = {
-                            tab = item
-                            if (item != Tab.Tools) showDiceTool = false
+                            tab = Tab.Oracle
+                            showDiceTool = false
                         },
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) },
+                        color = Gold,
+                        shape = CircleShape,
+                        border = if (tab == Tab.Oracle) BorderStroke(2.dp, Mint) else null,
+                        shadowElevation = 10.dp,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .graphicsLayer { translationY = -2.dp.toPx() },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Tab.Oracle.icon,
+                                contentDescription = Tab.Oracle.label,
+                                tint = Ink,
+                                modifier = Modifier.size(32.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        Tab.Oracle.label,
+                        color = if (tab == Tab.Oracle) Gold else TextSub,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.graphicsLayer { translationY = -1.dp.toPx() },
                     )
                 }
             }
@@ -240,8 +296,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                 Tab.Oracle -> OracleScreen(vm, offlineRecognizer)
                 Tab.Tools -> if (showDiceTool) DiceScreen(onBack = { showDiceTool = false }) else ToolsScreen(onOpenDice = { showDiceTool = true })
                 Tab.Schedule -> ScheduleScreen(vm)
-                Tab.History -> HistoryScreen(vm)
-                Tab.Settings -> SettingsScreen(vm)
+                Tab.Mine -> MineScreen(vm)
             }
         }
     }
@@ -1748,6 +1803,107 @@ private fun HistoryScreen(vm: FortuneViewModel) {
             ) {
                 items(vm.history, key = { it.id }) { ReadingCard(it, compact = true) }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MineScreen(vm: FortuneViewModel) {
+    var section by remember { mutableStateOf(MineSection.Profile) }
+    Column(Modifier.fillMaxSize()) {
+        PrimaryTabRow(
+            selectedTabIndex = section.ordinal,
+            containerColor = Ink,
+            contentColor = Gold,
+        ) {
+            MineSection.entries.forEach { item ->
+                Tab(
+                    selected = section == item,
+                    onClick = { section = item },
+                    text = { Text(item.label) },
+                )
+            }
+        }
+        when (section) {
+            MineSection.Profile -> MineProfile(vm, onOpenSettings = { section = MineSection.Settings })
+            MineSection.History -> HistoryScreen(vm)
+            MineSection.Settings -> SettingsScreen(vm)
+        }
+    }
+}
+
+private enum class MineSection(val label: String) {
+    Profile("我的"),
+    History("记录"),
+    Settings("设置"),
+}
+
+@Composable
+private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Surface(color = Gold.copy(alpha = 0.16f), shape = CircleShape, modifier = Modifier.size(64.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Gold, modifier = Modifier.size(42.dp))
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    vm.nickname.ifBlank { "知否用户" },
+                    color = TextMain,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text("本地账户", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+            }
+            TextButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("设置")
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProfileMetric("占卜记录", vm.history.size.toString(), Modifier.weight(1f))
+            ProfileMetric("日程事项", vm.scheduleItems.size.toString(), Modifier.weight(1f))
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("个人资料", color = TextMain, fontWeight = FontWeight.SemiBold)
+                Text("昵称", color = TextSub, style = MaterialTheme.typography.labelMedium)
+                Text(vm.nickname.ifBlank { "未设置" }, color = TextMain)
+                Text("生日或长期关键词", color = TextSub, style = MaterialTheme.typography.labelMedium)
+                Text(vm.birthHint.ifBlank { "未设置" }, color = TextMain)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(value, color = Gold, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(label, color = TextSub, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

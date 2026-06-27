@@ -12,7 +12,7 @@
 - Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and selectable D4/D6/D8/D10/D12/D20 dice
 - Local reading history
 - Offline solar/lunar calendar with swipe navigation, solar terms, traditional festivals, and date-specific schedules
-- Basic user profile settings
+- Local profile area with reading history and app settings
 
 ## Tech Stack
 

@@ -11,6 +11,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorEvent
 import android.hardware.Sensor
 import android.os.Bundle
+import android.view.ViewConfiguration
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,8 +30,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -103,6 +105,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -111,6 +114,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -129,6 +133,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import com.nlf.calendar.Solar
 import okhttp3.MediaType.Companion.toMediaType
@@ -200,6 +205,8 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     Tools("小工具", Icons.Default.Casino),
     Mine("我的", Icons.Default.AccountCircle),
 }
+
+private const val VOICE_CANCEL_DISTANCE_DP = 140
 
 @Composable
 private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
@@ -364,10 +371,18 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
 private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechRecognizer) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val voiceUiScope = rememberCoroutineScope()
+    val voiceHoldThresholdMs = remember {
+        (ViewConfiguration.getTapTimeout() + 100)
+            .coerceAtMost(ViewConfiguration.getLongPressTimeout())
+            .toLong()
+    }
     val questionFocusRequester = remember { FocusRequester() }
     var modelReady by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
+    var textEditing by remember { mutableStateOf(false) }
+    var keyboardEdited by remember { mutableStateOf(false) }
     var voiceLevel by remember { mutableStateOf(0f) }
     var questionBeforeRecording by remember { mutableStateOf("") }
     val suggestedQuestions = remember {
@@ -435,10 +450,10 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
         if (!isRecording) return
         isRecording = false
         isCancelling = false
+        textEditing = false
         voiceLevel = 0f
         if (cancelled) {
             offlineRecognizer.stop(cancelled = true)
-            questionFocusRequester.requestFocus()
         } else {
             offlineRecognizer.stop(cancelled = false)
         }
@@ -527,36 +542,74 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
             ) {
                 OutlinedTextField(
                     value = vm.question,
-                    onValueChange = { vm.question = it },
+                    onValueChange = {
+                        vm.question = it
+                        keyboardEdited = it.isNotBlank()
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(questionFocusRequester)
-                        .pointerInput(modelReady) {
-                            var dragY = 0f
-                            var cancelled = false
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    dragY = 0f
-                                    cancelled = false
-                                    handlePressStart()
-                                },
-                                onDrag = { change, amount ->
-                                    if (isRecording) {
-                                        change.consume()
-                                        dragY += amount.y
-                                        cancelled = dragY < -72.dp.toPx()
-                                        isCancelling = cancelled
+                        .onFocusChanged { state ->
+                            if (!state.isFocused) textEditing = false
+                        }
+                        .then(
+                            if (textEditing || keyboardEdited) {
+                                Modifier
+                            } else {
+                                Modifier.pointerInput(modelReady, voiceHoldThresholdMs) {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(
+                                            requireUnconsumed = false,
+                                            pass = PointerEventPass.Initial,
+                                        )
+                                        down.consume()
+                                        val releasedBeforeVoice = withTimeoutOrNull(voiceHoldThresholdMs) {
+                                            while (true) {
+                                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                val change = event.changes.firstOrNull { it.id == down.id }
+                                                    ?: return@withTimeoutOrNull true
+                                                change.consume()
+                                                if (!change.pressed) return@withTimeoutOrNull true
+                                            }
+                                        } == true
+
+                                        if (releasedBeforeVoice) {
+                                            textEditing = true
+                                            voiceUiScope.launch {
+                                                delay(20)
+                                                questionFocusRequester.requestFocus()
+                                                keyboardController?.show()
+                                            }
+                                            return@awaitEachGesture
+                                        }
+
+                                        handlePressStart()
+                                        var cancelled = false
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            val change = event.changes.firstOrNull { it.id == down.id }
+                                            if (change == null) {
+                                                finishRecording(cancelled = true)
+                                                break
+                                            }
+                                            change.consume()
+                                            cancelled = change.position.y < down.position.y - VOICE_CANCEL_DISTANCE_DP.dp.toPx()
+                                            isCancelling = cancelled
+                                            if (!change.pressed) {
+                                                finishRecording(cancelled)
+                                                break
+                                            }
+                                        }
                                     }
-                                },
-                                onDragEnd = { finishRecording(cancelled) },
-                                onDragCancel = { finishRecording(cancelled = true) },
-                            )
-                        },
+                                }
+                            }
+                        ),
                     placeholder = { Text("输入问题，或按住说话") },
                     maxLines = 3,
+                    readOnly = !textEditing && !keyboardEdited,
                 )
                 Text(
-                    "按住输入框说话",
+                    "轻触输入文字，按住输入语音",
                     color = TextSub,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -588,7 +641,7 @@ private fun VoiceCapturePanel(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            if (cancelling) "松手取消" else "松手完成，上滑取消",
+            if (cancelling) "松手取消发送" else "松手完成，上滑取消",
             color = color,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,

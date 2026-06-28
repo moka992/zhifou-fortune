@@ -19,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -26,6 +27,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -35,12 +37,15 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -52,9 +57,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.EventNote
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
@@ -65,6 +74,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -100,6 +110,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -120,7 +131,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -165,6 +178,12 @@ private val Mint = Color(0xFF7ED7C1)
 private val Rose = Color(0xFFE48A9A)
 private val TextMain = Color(0xFFF3F0E8)
 private val TextSub = Color(0xFFB7B2A6)
+private val ChatAssistant = Color(0xFFDDEEFF)
+private val ChatUser = Color(0xFFDDF4DF)
+private val ChatText = Color(0xFF172128)
+private val Danger = Color(0xFFE5484D)
+
+private val LinearDecelEasing = Easing { p -> 2f * p - p * p }
 
 class MainActivity : ComponentActivity() {
     @Suppress("DEPRECATION")
@@ -215,6 +234,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
     var showDiceTool by remember { mutableStateOf(false) }
+    var showWheelTool by remember { mutableStateOf(false) }
 
     DisposableEffect(offlineRecognizer) {
         onDispose {
@@ -224,7 +244,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
 
     Scaffold(
         containerColor = Ink,
-        topBar = { AppTopBar() },
+        topBar = { if (tab == Tab.Home) AppTopBar() },
         bottomBar = {
             Box(modifier = Modifier.fillMaxWidth().height(144.dp)) {
                 NavigationBar(
@@ -237,7 +257,10 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             selected = tab == item,
                             onClick = {
                                 tab = item
-                                if (item != Tab.Tools) showDiceTool = false
+                                if (item != Tab.Tools) {
+                                    showDiceTool = false
+                                    showWheelTool = false
+                                }
                             },
                             icon = {
                                 if (item == Tab.Oracle) {
@@ -304,7 +327,11 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
             when (tab) {
                 Tab.Home -> HomeScreen(vm, onOpenOracle = { tab = Tab.Oracle })
                 Tab.Oracle -> OracleScreen(vm, offlineRecognizer)
-                Tab.Tools -> if (showDiceTool) DiceScreen(onBack = { showDiceTool = false }) else ToolsScreen(onOpenDice = { showDiceTool = true })
+                Tab.Tools -> when {
+                    showWheelTool -> WheelScreen(vm, onBack = { showWheelTool = false })
+                    showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
+                    else -> ToolsScreen(onOpenDice = { showDiceTool = true }, onOpenWheel = { showWheelTool = true })
+                }
                 Tab.Schedule -> ScheduleScreen(vm)
                 Tab.Mine -> MineScreen(vm)
             }
@@ -368,6 +395,7 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechRecognizer) {
     val context = LocalContext.current
@@ -393,6 +421,38 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
             "近期的事业机会在哪里？",
             "现在应该坚持还是改变？",
         )
+    }
+    val oracleTimeline = vm.oracleTimeline
+    val timelineState = rememberLazyListState()
+    val selectedKeys = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+    val selectionMode = selectedKeys.isNotEmpty()
+    var confirmDeleteSelection by remember { mutableStateOf(false) }
+
+    fun entryKey(entry: OracleTimelineEntry) = when (entry) {
+        is OracleTimelineEntry.Reading -> "reading-${entry.reading.id}"
+        is OracleTimelineEntry.Chat -> "chat-${entry.message.id}"
+    }
+    fun toggleSelection(entry: OracleTimelineEntry) {
+        val key = entryKey(entry)
+        if (selectedKeys.containsKey(key)) selectedKeys.remove(key) else selectedKeys[key] = true
+    }
+    fun exitSelection() {
+        selectedKeys.clear()
+    }
+    fun deleteSelection() {
+        val readingIds = oracleTimeline
+            .filterIsInstance<OracleTimelineEntry.Reading>()
+            .filter { selectedKeys.containsKey("reading-${it.reading.id}") }
+            .map { it.reading.id }
+            .toSet()
+        val chatIds = oracleTimeline
+            .filterIsInstance<OracleTimelineEntry.Chat>()
+            .filter { selectedKeys.containsKey("chat-${it.message.id}") }
+            .map { it.message.id }
+            .toSet()
+        if (readingIds.isNotEmpty()) vm.deleteReadingsByIds(readingIds)
+        if (chatIds.isNotEmpty()) vm.deleteChatMessagesByIds(chatIds)
+        exitSelection()
     }
 
     fun showVoiceMessage(message: String) {
@@ -484,6 +544,26 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
         }
     }
 
+    fun sendChatMessage() {
+        when {
+            selectionMode -> showVoiceMessage("请先退出选择模式")
+            vm.question.isBlank() -> showVoiceMessage("请先输入问题")
+            vm.aiApiKey.isBlank() -> showVoiceMessage("请先在“我的 > 设置”中配置 AI 解读")
+            else -> {
+                keyboardController?.hide()
+                textEditing = false
+                keyboardEdited = false
+                vm.sendChatMessage()
+            }
+        }
+    }
+
+    LaunchedEffect(oracleTimeline.size, vm.chatSending) {
+        if (oracleTimeline.isNotEmpty()) {
+            timelineState.animateScrollToItem(timelineState.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         showVoiceMessage(if (granted) "请再次长按输入框说话" else "需要麦克风权限才能使用语音输入")
     }
@@ -507,132 +587,240 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
-            val reading = vm.latestReading
-            if (reading == null) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(bottom = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        "今天想问些什么？",
-                        color = TextMain,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    suggestedQuestions.forEach { question ->
-                        Surface(
-                            onClick = { vm.question = question },
-                            color = PanelAlt,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Line),
+            LazyColumn(
+                state = timelineState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (oracleTimeline.isEmpty()) {
+                    item(key = "suggestions") {
+                        Column(
+                            modifier = Modifier.padding(top = 48.dp, bottom = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
-                                question,
+                                "今天想问些什么？",
                                 color = TextMain,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            suggestedQuestions.forEach { question ->
+                                Surface(
+                                    onClick = { vm.question = question },
+                                    color = PanelAlt,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Line),
+                                ) {
+                                    Text(
+                                        question,
+                                        color = TextMain,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                items(oracleTimeline, key = { entry ->
+                    when (entry) {
+                        is OracleTimelineEntry.Reading -> "reading-${entry.reading.id}"
+                        is OracleTimelineEntry.Chat -> "chat-${entry.message.id}"
+                    }
+                }) { entry ->
+                    val key = entryKey(entry)
+                    val selected = selectedKeys.containsKey(key)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                enabled = true,
+                                onLongClick = {
+                                    if (!selectedKeys.containsKey(key)) selectedKeys[key] = true
+                                },
+                                onClick = {
+                                    if (selectionMode) toggleSelection(entry)
+                                },
+                            ),
+                    ) {
+                        if (selected) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(Gold.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, Gold, RoundedCornerShape(8.dp)),
+                            )
+                        }
+                        when (entry) {
+                            is OracleTimelineEntry.Reading -> ReadingCard(entry.reading, compact = true)
+                            is OracleTimelineEntry.Chat -> ChatBubble(entry.message)
+                        }
+                        if (selectionMode) {
+                            Icon(
+                                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                contentDescription = null,
+                                tint = if (selected) Gold else TextSub,
+                                modifier = Modifier
+                                    .padding(8.dp)
+                                    .align(Alignment.TopEnd),
                             )
                         }
                     }
                 }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 8.dp),
+                if (vm.chatSending) {
+                    item(key = "chat-loading") {
+                        ChatBubble(
+                            ChatMessage(
+                                id = Long.MIN_VALUE,
+                                role = "assistant",
+                                content = "正在思考…",
+                                createdAt = "",
+                            )
+                        )
+                    }
+                }
+                if (vm.chatStatus.isNotBlank()) {
+                    item(key = "chat-status") {
+                        Text(vm.chatStatus, color = Rose, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                item(key = "timeline-bottom") { Spacer(Modifier.height(4.dp)) }
+            }
+        }
+        if (selectionMode) {
+            Surface(
+                color = PanelAlt,
+                border = BorderStroke(1.dp, Line),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    ReadingCard(reading)
+                    TextButton(onClick = { exitSelection() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("取消")
+                    }
+                    Text(
+                        "已选 ${selectedKeys.size} 项",
+                        color = TextMain,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    TextButton(onClick = { confirmDeleteSelection = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("删除", color = Danger)
+                    }
                 }
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { vm.castCoins() }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Casino, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("三币起卦")
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { vm.castCoins() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Casino, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("三币起卦")
+                }
+                OutlinedButton(onClick = { vm.drawAnswerBook() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Book, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("答案之书")
+                }
             }
-            OutlinedButton(onClick = { vm.drawAnswerBook() }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Book, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("答案之书")
-            }
-        }
-        Box(modifier = Modifier.fillMaxWidth().height(104.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().height(104.dp)) {
             Column(
                 modifier = Modifier.graphicsLayer { alpha = if (isRecording) 0f else 1f },
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                OutlinedTextField(
-                    value = vm.question,
-                    onValueChange = {
-                        vm.question = it
-                        keyboardEdited = it.isNotBlank()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(questionFocusRequester)
-                        .onFocusChanged { state ->
-                            if (!state.isFocused) textEditing = false
-                        }
-                        .then(
-                            if (textEditing || keyboardEdited) {
-                                Modifier
-                            } else {
-                                Modifier.pointerInput(modelReady, vm.cloudSpeechEnabled, voiceHoldThresholdMs) {
-                                    awaitEachGesture {
-                                        val down = awaitFirstDown(
-                                            requireUnconsumed = false,
-                                            pass = PointerEventPass.Initial,
-                                        )
-                                        down.consume()
-                                        val releasedBeforeVoice = withTimeoutOrNull(voiceHoldThresholdMs) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedTextField(
+                        value = vm.question,
+                        onValueChange = {
+                            vm.question = it
+                            keyboardEdited = it.isNotBlank()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(questionFocusRequester)
+                            .onFocusChanged { state ->
+                                if (!state.isFocused) textEditing = false
+                            }
+                            .then(
+                                if (textEditing || keyboardEdited) {
+                                    Modifier
+                                } else {
+                                    Modifier.pointerInput(modelReady, vm.cloudSpeechEnabled, voiceHoldThresholdMs) {
+                                        awaitEachGesture {
+                                            val down = awaitFirstDown(
+                                                requireUnconsumed = false,
+                                                pass = PointerEventPass.Initial,
+                                            )
+                                            down.consume()
+                                            val releasedBeforeVoice = withTimeoutOrNull(voiceHoldThresholdMs) {
+                                                while (true) {
+                                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                                        ?: return@withTimeoutOrNull true
+                                                    change.consume()
+                                                    if (!change.pressed) return@withTimeoutOrNull true
+                                                }
+                                            } == true
+
+                                            if (releasedBeforeVoice) {
+                                                textEditing = true
+                                                voiceUiScope.launch {
+                                                    delay(20)
+                                                    questionFocusRequester.requestFocus()
+                                                    keyboardController?.show()
+                                                }
+                                                return@awaitEachGesture
+                                            }
+
+                                            handlePressStart()
+                                            var cancelled = false
                                             while (true) {
                                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                                 val change = event.changes.firstOrNull { it.id == down.id }
-                                                    ?: return@withTimeoutOrNull true
+                                                if (change == null) {
+                                                    finishRecording(cancelled = true)
+                                                    break
+                                                }
                                                 change.consume()
-                                                if (!change.pressed) return@withTimeoutOrNull true
-                                            }
-                                        } == true
-
-                                        if (releasedBeforeVoice) {
-                                            textEditing = true
-                                            voiceUiScope.launch {
-                                                delay(20)
-                                                questionFocusRequester.requestFocus()
-                                                keyboardController?.show()
-                                            }
-                                            return@awaitEachGesture
-                                        }
-
-                                        handlePressStart()
-                                        var cancelled = false
-                                        while (true) {
-                                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                                            val change = event.changes.firstOrNull { it.id == down.id }
-                                            if (change == null) {
-                                                finishRecording(cancelled = true)
-                                                break
-                                            }
-                                            change.consume()
-                                            cancelled = change.position.y < down.position.y - VOICE_CANCEL_DISTANCE_DP.dp.toPx()
-                                            isCancelling = cancelled
-                                            if (!change.pressed) {
-                                                finishRecording(cancelled)
-                                                break
+                                                cancelled = change.position.y < down.position.y - VOICE_CANCEL_DISTANCE_DP.dp.toPx()
+                                                isCancelling = cancelled
+                                                if (!change.pressed) {
+                                                    finishRecording(cancelled)
+                                                    break
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        ),
-                    placeholder = { Text("输入问题，或按住说话") },
-                    maxLines = 3,
-                    readOnly = !textEditing && !keyboardEdited,
-                )
+                            ),
+                        placeholder = { Text("输入问题，或按住说话") },
+                        maxLines = 3,
+                        readOnly = !textEditing && !keyboardEdited,
+                    )
+                    IconButton(
+                        onClick = ::sendChatMessage,
+                        enabled = vm.question.isNotBlank() && !vm.chatSending,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(Mint, RoundedCornerShape(8.dp)),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "发送给 AI",
+                            tint = ChatText,
+                        )
+                    }
+                }
                 Text(
                     "轻触输入文字，按住输入语音",
                     color = TextSub,
@@ -646,6 +834,51 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                     cancelling = isCancelling,
                     modifier = Modifier.align(Alignment.Center),
                 )
+            }
+        }
+        }
+    }
+    if (confirmDeleteSelection) {
+        ConfirmDeleteDialog(
+            title = "删除选中项",
+            message = "确定删除选中的 ${selectedKeys.size} 项记录吗？",
+            onConfirm = { deleteSelection() },
+            onDismiss = { confirmDeleteSelection = false },
+        )
+    }
+}
+
+@Composable
+private fun ChatBubble(message: ChatMessage) {
+    val isUser = message.role == "user"
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+    ) {
+        Surface(
+            color = if (isUser) ChatUser else ChatAssistant,
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth(0.84f),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    if (isUser) "你" else "知否研习",
+                    color = ChatText.copy(alpha = 0.68f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(message.content, color = ChatText, style = MaterialTheme.typography.bodyMedium)
+                if (message.createdAt.isNotBlank()) {
+                    Text(
+                        message.createdAt,
+                        color = ChatText.copy(alpha = 0.54f),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.align(Alignment.End),
+                    )
+                }
             }
         }
     }
@@ -695,7 +928,7 @@ private fun VoiceCapturePanel(
 }
 
 @Composable
-private fun ToolsScreen(onOpenDice: () -> Unit) {
+private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -726,6 +959,525 @@ private fun ToolsScreen(onOpenDice: () -> Unit) {
                 }
             }
         }
+        Surface(
+            onClick = onOpenWheel,
+            color = Panel,
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Line),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Image(
+                    painter = painterResource(id = R.drawable.tool_wheel_card),
+                    contentDescription = "转盘",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(170.dp),
+                )
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("转盘", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("自定义选项，摇动手机或拨动转盘随机抽取。", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+// 与 Canvas 绘制规则严格同源：扇区 i 中心绘制角度 = 270 + i*segDeg，指针在顶部=270°。
+// rotationZ 顺时针旋转 angle 度后，扇区 i 中心出现在 270 + i*segDeg + angle。
+// 指向指针（270）的板块：i*segDeg ≡ -angle (mod 360)。
+private fun winnerFromAngle(angle: Float, n: Int): Int {
+    if (n < 1) return 0
+    val segDeg = 360f / n
+    val normalized = ((-angle) % 360f + 360f) % 360f   // 0..360
+    val idx = ((normalized + segDeg / 2f) / segDeg).toInt() % n
+    return ((idx % n) + n) % n
+}
+
+private enum class WheelSubPage { Main, Settings, History }
+
+@Composable
+private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val segments = vm.wheelSegments
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = TextMain)
+    val palette = listOf(Gold, Rose, Mint, Color(0xFF6C8EAD), Color(0xFFB07AA1), Color(0xFFD9A566))
+
+    val angle = remember { Animatable(0f) }
+    val glow = remember { Animatable(0f) }
+    var spinning by remember { mutableStateOf(false) }
+    var spinStartMs by remember { mutableStateOf(0L) }
+    var spinJob by remember { mutableStateOf<Job?>(null) }
+    var winnerIndex by remember { mutableStateOf(-1) }
+    var wheelSubPage by remember { mutableStateOf(WheelSubPage.Main) }
+    var lastShakeAt by remember { mutableStateOf(0L) }
+
+    fun kick(direction: Float = 1f) {
+        val n = vm.wheelSegments.size
+        if (n < 2) return
+        spinJob?.cancel()
+        spinning = true
+        spinStartMs = System.currentTimeMillis()
+        winnerIndex = -1
+        val dir = if (direction >= 0f) 1f else -1f
+        spinJob = scope.launch {
+            // 两段线性减速，速度连续：前 3s v0->v1，后 1s v1->0。方向由 dir 决定。
+            val v0 = dir * 10f * 360f      // 初始角速度（度/秒，带方向）
+            val v1 = dir * 1.5f * 360f     // t=3s 时的角速度（度/秒，带方向）
+            val t1 = 3f
+            val t2 = 4f
+            var pos = angle.value
+            var v = v0
+            var lastSec = withFrameNanos { it / 1_000_000_000.0 }
+            while (true) {
+                val nowSec = withFrameNanos { it / 1_000_000_000.0 }
+                val dt = (nowSec - lastSec).toFloat().coerceIn(0f, 0.05f)
+                lastSec = nowSec
+                val t = (System.currentTimeMillis() - spinStartMs) / 1000f
+                if (t >= t2) break
+                v = if (t < t1) {
+                    v0 + (v1 - v0) * (t / t1)
+                } else {
+                    v1 * (1f - (t - t1) / (t2 - t1))
+                }
+                pos += v * dt
+                angle.snapTo(pos)
+            }
+            spinning = false
+            winnerIndex = winnerFromAngle(angle.value, n)
+            vm.wheelSegments.getOrNull(winnerIndex)?.let { vm.addWheelHistory(it) }
+        }
+        scope.launch {
+            glow.snapTo(0f)
+            glow.animateTo(1f, tween(durationMillis = 250))
+            glow.animateTo(0f, tween(durationMillis = 250))
+        }
+    }
+
+    // 慢速拖动松手后的惯性滑行：从松手速度线性衰减到 0，不产生判断结果。
+    fun coast(speedDegPerSec: Float) {
+        spinJob?.cancel()
+        val speed = speedDegPerSec.coerceIn(-3600f * 2f, 3600f * 2f)
+        if (speed.absoluteValue < 30f) return   // 太慢不滑
+        spinning = true
+        spinStartMs = System.currentTimeMillis()
+        spinJob = scope.launch {
+            val decel = 1800f            // 减速度（度/秒²）
+            val duration = speed.absoluteValue / decel
+            val dir = if (speed >= 0f) 1f else -1f
+            var pos = angle.value
+            var lastSec = withFrameNanos { it / 1_000_000_000.0 }
+            while (true) {
+                val nowSec = withFrameNanos { it / 1_000_000_000.0 }
+                val dt = (nowSec - lastSec).toFloat().coerceIn(0f, 0.05f)
+                lastSec = nowSec
+                val t = (System.currentTimeMillis() - spinStartMs) / 1000f
+                if (t >= duration) break
+                val v = dir * (speed.absoluteValue - decel * t).coerceAtLeast(0f)
+                pos += v * dt
+                angle.snapTo(pos)
+            }
+            spinning = false
+        }
+    }
+
+    fun tryAccelerate() {
+        if (!spinning) {
+            kick(1f)
+        } else if (System.currentTimeMillis() - spinStartMs < 3000L) {
+            kick(1f)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val x = event.values.getOrNull(0) ?: return
+                val y = event.values.getOrNull(1) ?: return
+                val z = event.values.getOrNull(2) ?: return
+                val force = sqrt(x * x + y * y + z * z)
+                val now = System.currentTimeMillis()
+                val threshold = if (spinning) 45f else 25f
+                if (force > threshold && now - lastShakeAt > 350L && wheelSubPage == WheelSubPage.Main) {
+                    lastShakeAt = now
+                    tryAccelerate()
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        if (accelerometer != null) {
+            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        }
+        onDispose { sensorManager?.unregisterListener(listener) }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TextButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("小工具")
+            }
+            Text("转盘", color = TextMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(72.dp))
+        }
+
+        when (wheelSubPage) {
+            WheelSubPage.Settings -> WheelSettingsView(vm)
+            WheelSubPage.History -> WheelHistoryView(vm)
+            WheelSubPage.Main -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .pointerInput(Unit) {
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        var prevAngle = 0.0
+                        var lastDragMs = 0L
+                        var lastDragDeg = 0.0
+                        var releaseSpeed = 0f   // 度/秒，带方向
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                prevAngle = Math.atan2((offset.y - cy).toDouble(), (offset.x - cx).toDouble())
+                                lastDragMs = System.currentTimeMillis()
+                                lastDragDeg = 0.0
+                                releaseSpeed = 0f
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                if (!spinning) {
+                                    val a = Math.atan2((change.position.y - cy).toDouble(), (change.position.x - cx).toDouble())
+                                    var d = Math.toDegrees(a - prevAngle)
+                                    while (d > 180.0) d -= 360.0
+                                    while (d < -180.0) d += 360.0
+                                    val df = d.toFloat()
+                                    scope.launch { angle.snapTo(angle.value + df) }
+                                    val nowMs = System.currentTimeMillis()
+                                    val dtMs = (nowMs - lastDragMs).coerceAtLeast(1L)
+                                    releaseSpeed = (df / dtMs * 1000f) * 0.4f + releaseSpeed * 0.6f
+                                    lastDragMs = nowMs
+                                    lastDragDeg = d
+                                    prevAngle = a
+                                }
+                            },
+                            onDragEnd = {
+                                val sp = releaseSpeed
+                                if (sp.absoluteValue >= 360f) {
+                                    // 快速滑动：正式旋转，产生结果，方向跟随手指。
+                                    kick(if (sp >= 0f) 1f else -1f)
+                                } else if (sp.absoluteValue >= 30f) {
+                                    // 慢速拖动：惯性滑行，不产生结果。
+                                    coast(sp)
+                                }
+                            },
+                            onDragCancel = { },
+                        )
+                    },
+            ) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { rotationZ = angle.value },
+                ) {
+                    val n = segments.size.coerceAtLeast(1)
+                    val segDeg = 360f / n
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    val r = (if (size.width < size.height) size.width else size.height) / 2f
+                    val topLeft = Offset(cx - r, cy - r)
+                    val arcSize = Size(r * 2f, r * 2f)
+                    for (i in 0 until n) {
+                        drawArc(
+                            color = palette[i % palette.size],
+                            startAngle = 270f - segDeg / 2f + i * segDeg,
+                            sweepAngle = segDeg,
+                            useCenter = true,
+                            topLeft = topLeft,
+                            size = arcSize,
+                        )
+                    }
+                    for (i in 0 until n) {
+                        val a = Math.toRadians((270f - segDeg / 2f + i * segDeg).toDouble())
+                        drawLine(
+                            color = Line,
+                            start = Offset(cx, cy),
+                            end = Offset(cx + (r * cos(a)).toFloat(), cy + (r * sin(a)).toFloat()),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                    }
+                    drawArc(
+                        color = Line,
+                        startAngle = 0f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = 2.dp.toPx()),
+                    )
+                    val labelR = r * 0.62f
+                    for (i in 0 until n) {
+                        val label = segments[i].take(6)
+                        if (label.isBlank()) continue
+                        val midRad = Math.toRadians((270f + i * segDeg).toDouble())
+                        val px = cx + (labelR * cos(midRad)).toFloat()
+                        val py = cy + (labelR * sin(midRad)).toFloat()
+                        val res = measurer.measure(label, labelStyle)
+                        drawText(res, topLeft = Offset(px - res.size.width / 2f, py - res.size.height / 2f))
+                    }
+                    if (winnerIndex in 0 until n && glow.value > 0f) {
+                        drawArc(
+                            color = Gold.copy(alpha = glow.value),
+                            startAngle = 270f - segDeg / 2f + winnerIndex * segDeg,
+                            sweepAngle = segDeg,
+                            useCenter = false,
+                            topLeft = topLeft,
+                            size = arcSize,
+                            style = Stroke(width = 6.dp.toPx()),
+                        )
+                    }
+                }
+                Canvas(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .size(width = 36.dp, height = 22.dp),
+                ) {
+                    val w = size.width
+                    val h = size.height
+                    val shadow = Path().apply {
+                        moveTo(w * 0.5f + 2f, h + 2f)
+                        lineTo(w * 0.12f + 2f, 2f + 2f)
+                        lineTo(w * 0.88f + 2f, 2f + 2f)
+                        close()
+                    }
+                    drawPath(shadow, Color(0x66000000))
+                    val tri = Path().apply {
+                        moveTo(w * 0.5f, h)
+                        lineTo(w * 0.12f, 2f)
+                        lineTo(w * 0.88f, 2f)
+                        close()
+                    }
+                    drawPath(tri, Danger)
+                }
+            }
+
+            val winnerLabel = segments.getOrNull(winnerIndex)
+            if (winnerLabel != null) {
+                Text("本次：$winnerLabel", color = Gold, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            } else {
+                Text("摇晃手机或拨动转盘开始", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    onClick = { wheelSubPage = WheelSubPage.Settings },
+                    color = Panel,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Line),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = TextSub, modifier = Modifier.size(18.dp))
+                        Text("设置", color = TextMain, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Surface(
+                    onClick = { wheelSubPage = WheelSubPage.History },
+                    color = Panel,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Line),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = TextSub, modifier = Modifier.size(18.dp))
+                        Text("历史", color = TextMain, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+private fun WheelSettingsView(vm: FortuneViewModel) {
+    val segments = vm.wheelSegments
+    var pendingDelete by remember { mutableStateOf(-1) }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("板块设置", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
+        Text("最少 2 个，最多 25 个，修改自动保存", color = TextSub, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth())
+        Text("快速选择板块数量", color = TextSub, style = MaterialTheme.typography.bodySmall)
+        val quickCounts = listOf(3, 4, 6, 8, 12, 16, 24)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+        ) {
+            quickCounts.forEach { count ->
+                Surface(
+                    onClick = { vm.setWheelSegmentCount(count) },
+                    color = if (segments.size == count) Gold else Panel,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Line),
+                ) {
+                    Text(
+                        count.toString(),
+                        color = if (segments.size == count) Ink else TextMain,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+        TextButton(onClick = { vm.resetWheelSegments() }) {
+            Icon(Icons.Default.Refresh, contentDescription = null, tint = TextSub)
+            Spacer(Modifier.width(4.dp))
+            Text("重置为「是/否」", color = TextSub)
+        }
+        segments.forEachIndexed { index, seg ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                border = BorderStroke(1.dp, Line),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = seg,
+                        onValueChange = { vm.updateWheelSegment(index, it) },
+                        label = { Text("第 ${index + 1} 块") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = { pendingDelete = index },
+                        enabled = segments.size > 2,
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = Danger)
+                    }
+                }
+            }
+        }
+        OutlinedButton(
+            onClick = { vm.addWheelSegment() },
+            enabled = segments.size < 25,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("添加板块")
+        }
+    }
+    if (pendingDelete >= 0) {
+        ConfirmDeleteDialog(
+            title = "删除板块",
+            message = "确定删除这块吗？",
+            onConfirm = { vm.deleteWheelSegment(pendingDelete) },
+            onDismiss = { pendingDelete = -1 },
+        )
+    }
+}
+
+@Composable
+private fun ConfirmDeleteDialog(
+    title: String,
+    message: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm()
+                onDismiss()
+            }) { Text("删除", color = Danger) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
+@Composable
+private fun WheelHistoryView(vm: FortuneViewModel) {
+    val history = vm.wheelHistory
+    var pendingDelete by remember { mutableStateOf<Long?>(null) }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("历史记录", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
+        if (history.isEmpty()) {
+            Text("还没有转盘记录", color = TextSub, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+        } else {
+            history.forEach { entry ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Panel),
+                    border = BorderStroke(1.dp, Line),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(entry.result, color = TextMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            Text(entry.createdAt, color = TextSub, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = { pendingDelete = entry.id }) {
+                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = Danger)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pendingDelete?.let { id ->
+        ConfirmDeleteDialog(
+            title = "删除记录",
+            message = "确定删除这条转盘记录吗？",
+            onConfirm = { vm.deleteWheelHistory(id) },
+            onDismiss = { pendingDelete = null },
+        )
     }
 }
 
@@ -1547,11 +2299,11 @@ private fun CalendarPanel(
                             val horizontalThreshold = 72.dp.toPx()
                             val verticalThreshold = 88.dp.toPx()
                             if (dragAxis == CalendarDragAxis.Horizontal && kotlin.math.abs(dragX) > horizontalThreshold) {
-                                showMonth(if (dragX < 0f) visibleMonth.plusMonths(1) else visibleMonth.minusMonths(1))
+                                showMonth(if (dragX < 0f) visibleMonth.plusYears(1) else visibleMonth.minusYears(1))
                                 calendarOffset = Offset(if (dragX < 0f) 56.dp.toPx() else -56.dp.toPx(), 0f)
                                 settleCalendar(durationMillis = 160)
                             } else if (dragAxis == CalendarDragAxis.Vertical && kotlin.math.abs(dragY) > verticalThreshold) {
-                                showMonth(if (dragY < 0f) visibleMonth.plusYears(1) else visibleMonth.minusYears(1))
+                                showMonth(if (dragY < 0f) visibleMonth.plusMonths(1) else visibleMonth.minusMonths(1))
                                 calendarOffset = Offset(0f, if (dragY < 0f) 36.dp.toPx() else -36.dp.toPx())
                                 settleCalendar(durationMillis = 150)
                             } else {
@@ -1847,6 +2599,7 @@ private fun ScheduleItemCard(
     onToggle: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    var confirm by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (item.done) PanelAlt else Panel),
         border = BorderStroke(1.dp, Line),
@@ -1872,15 +2625,24 @@ private fun ScheduleItemCard(
                 }
                 Text(item.createdAt, color = TextSub, style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = onDelete) {
+            IconButton(onClick = { confirm = true }) {
                 Icon(Icons.Default.Delete, contentDescription = "删除日程", tint = TextSub)
             }
         }
+    }
+    if (confirm) {
+        ConfirmDeleteDialog(
+            title = "删除日程",
+            message = "确定删除日程「${item.title}」吗？",
+            onConfirm = onDelete,
+            onDismiss = { confirm = false },
+        )
     }
 }
 
 @Composable
 private fun HistoryScreen(vm: FortuneViewModel) {
+    var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -1890,7 +2652,7 @@ private fun HistoryScreen(vm: FortuneViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("历史记录", color = TextMain, style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { vm.clearHistory() }, enabled = vm.history.isNotEmpty()) {
+            TextButton(onClick = { confirmClear = true }, enabled = vm.history.isNotEmpty()) {
                 Icon(Icons.Default.Delete, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
                 Text("清空")
@@ -1907,6 +2669,14 @@ private fun HistoryScreen(vm: FortuneViewModel) {
                 items(vm.history, key = { it.id }) { ReadingCard(it, compact = true) }
             }
         }
+    }
+    if (confirmClear) {
+        ConfirmDeleteDialog(
+            title = "清空记录",
+            message = "确定清空全部占卜记录吗？此操作不可恢复。",
+            onConfirm = { vm.clearHistory() },
+            onDismiss = { confirmClear = false },
+        )
     }
 }
 
@@ -2039,7 +2809,7 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("AI 解读", color = TextMain, fontWeight = FontWeight.SemiBold)
+                Text("AI 解读与对话", color = TextMain, fontWeight = FontWeight.SemiBold)
                 OutlinedTextField(
                     value = vm.aiApiKey,
                     onValueChange = { vm.updateAiApiKey(it) },
@@ -2064,7 +2834,7 @@ private fun SettingsScreen(vm: FortuneViewModel) {
                     singleLine = true,
                 )
                 Text(
-                    "AI Key、模型和接口地址只写入本机设置，不会进入 Git 仓库。未配置 Key 时应用仍可使用本地占卜。",
+                    "AI Key、模型和接口地址只写入本机设置，不会进入 Git 仓库。未配置 Key 时仍可使用本地占卜，但不能生成 AI 解读或对话回复。",
                     color = TextSub,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -2260,7 +3030,17 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var history by mutableStateOf(repo.loadHistory())
         private set
+    var chatMessages by mutableStateOf(repo.loadChatMessages())
+        private set
+    var chatSending by mutableStateOf(false)
+        private set
+    var chatStatus by mutableStateOf("")
+        private set
     var scheduleItems by mutableStateOf(repo.loadScheduleItems())
+        private set
+    var wheelSegments by mutableStateOf(repo.loadWheelSegments())
+        private set
+    var wheelHistory by mutableStateOf(repo.loadWheelHistory())
         private set
     var nickname by mutableStateOf(repo.nickname)
         private set
@@ -2284,6 +3064,26 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var cloudSpeechEndpoint by mutableStateOf(repo.cloudSpeechEndpoint)
         private set
+
+    val recentOracleReadings: List<FortuneReading>
+        get() {
+            val cutoff = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1_000
+            return history
+                .asSequence()
+                .filter { it.kind == "铜钱卦" || it.kind == "答案之书" }
+                .filter { it.id >= cutoff }
+                .sortedByDescending { it.id }
+                .take(5)
+                .toList()
+        }
+
+    val oracleTimeline: List<OracleTimelineEntry>
+        get() {
+            val readings = recentOracleReadings.asReversed()
+            return (readings.map { OracleTimelineEntry.Reading(it) } +
+                chatMessages.map { OracleTimelineEntry.Chat(it) })
+                .sortedBy { it.timestamp }
+        }
 
     fun castCoins() {
         save(oracle.coin(question))
@@ -2346,9 +3146,60 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         repo.cloudSpeechEndpoint = cloudSpeechEndpoint
     }
 
+    fun sendChatMessage() {
+        val content = question.trim()
+        if (content.isBlank() || aiApiKey.isBlank() || chatSending) return
+
+        val userMessage = ChatMessage(
+            id = System.currentTimeMillis(),
+            role = "user",
+            content = content,
+            createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")),
+        )
+        chatMessages = repo.saveChatMessages(chatMessages + userMessage)
+        question = ""
+        chatStatus = ""
+        chatSending = true
+
+        viewModelScope.launch {
+            val result = AiChatClient.reply(
+                endpoint = aiEndpoint,
+                apiKey = aiApiKey,
+                model = aiModel,
+                messages = chatMessages,
+            )
+            result.fold(
+                onSuccess = { content ->
+                    val assistantMessage = ChatMessage(
+                        id = maxOf(System.currentTimeMillis(), userMessage.id + 1),
+                        role = "assistant",
+                        content = content,
+                        createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")),
+                    )
+                    chatMessages = repo.saveChatMessages(chatMessages + assistantMessage)
+                    chatStatus = ""
+                },
+                onFailure = { error ->
+                    chatStatus = "AI 回复失败：${error.message ?: "请检查网络或接口配置"}"
+                },
+            )
+            chatSending = false
+        }
+    }
+
     fun clearHistory() {
         repo.clearHistory()
         history = emptyList()
+    }
+
+    fun deleteReadingsByIds(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        history = repo.saveHistory(history.filterNot { it.id in ids })
+    }
+
+    fun deleteChatMessagesByIds(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        chatMessages = repo.saveChatMessages(chatMessages.filterNot { it.id in ids })
     }
 
     fun addScheduleItem(date: LocalDate) {
@@ -2376,6 +3227,61 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteScheduleItem(id: Long) {
         scheduleItems = repo.saveScheduleItems(scheduleItems.filterNot { it.id == id })
+    }
+
+    fun addWheelSegment() {
+        if (wheelSegments.size < 25) {
+            wheelSegments = repo.saveWheelSegments(wheelSegments + "选项 ${wheelSegments.size + 1}")
+        }
+    }
+
+    fun updateWheelSegment(index: Int, value: String) {
+        if (index !in wheelSegments.indices) return
+        wheelSegments = repo.saveWheelSegments(
+            wheelSegments.toMutableList().also { it[index] = value }
+        )
+    }
+
+    fun deleteWheelSegment(index: Int) {
+        if (wheelSegments.size > 2 && index in wheelSegments.indices) {
+            wheelSegments = repo.saveWheelSegments(
+                wheelSegments.toMutableList().also { it.removeAt(index) }
+            )
+        }
+    }
+
+    fun setWheelSegmentCount(target: Int) {
+        val n = target.coerceIn(2, 25)
+        val current = wheelSegments.toMutableList()
+        while (current.size < n) {
+            current.add("选项 ${current.size + 1}")
+        }
+        if (current.size > n) {
+            current.subList(n, current.size).clear()
+        }
+        wheelSegments = repo.saveWheelSegments(current)
+    }
+
+    fun resetWheelSegments() {
+        wheelSegments = repo.saveWheelSegments(listOf("是", "否"))
+    }
+
+    fun addWheelHistory(result: String) {
+        if (result.isBlank()) return
+        val entry = WheelHistoryEntry(
+            id = System.currentTimeMillis(),
+            result = result,
+            createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
+        )
+        wheelHistory = repo.saveWheelHistory(listOf(entry) + wheelHistory)
+    }
+
+    fun deleteWheelHistory(id: Long) {
+        wheelHistory = repo.saveWheelHistory(wheelHistory.filterNot { it.id == id })
+    }
+
+    fun clearWheelHistory() {
+        wheelHistory = repo.saveWheelHistory(emptyList())
     }
 
     private fun save(reading: FortuneReading) {
@@ -2428,6 +3334,31 @@ data class ScheduleItem(
     val createdAt: String,
     val done: Boolean = false,
 )
+
+data class WheelHistoryEntry(
+    val id: Long,
+    val result: String,
+    val createdAt: String,
+)
+
+data class ChatMessage(
+    val id: Long,
+    val role: String,
+    val content: String,
+    val createdAt: String,
+)
+
+sealed interface OracleTimelineEntry {
+    val timestamp: Long
+
+    data class Reading(val reading: FortuneReading) : OracleTimelineEntry {
+        override val timestamp: Long get() = reading.id
+    }
+
+    data class Chat(val message: ChatMessage) : OracleTimelineEntry {
+        override val timestamp: Long get() = message.id
+    }
+}
 
 class FortuneRepository(context: Context) {
     private val prefs = context.getSharedPreferences("zhifou_fortune", Context.MODE_PRIVATE)
@@ -2505,8 +3436,36 @@ class FortuneRepository(context: Context) {
         return next
     }
 
+    fun saveHistory(items: List<FortuneReading>): List<FortuneReading> {
+        val next = items.take(80)
+        val array = JSONArray()
+        next.forEach { array.put(it.toJson()) }
+        prefs.edit().putString("history", array.toString()).apply()
+        return next
+    }
+
     fun clearHistory() {
         prefs.edit().remove("history").apply()
+    }
+
+    fun loadChatMessages(): List<ChatMessage> {
+        val raw = prefs.getString("ai_chat_messages", "[]") ?: "[]"
+        return runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length())
+                .map { index -> array.getJSONObject(index).toChatMessage() }
+                .filter { it.role == "user" || it.role == "assistant" }
+                .filter { it.content.isNotBlank() }
+                .takeLast(30)
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveChatMessages(messages: List<ChatMessage>): List<ChatMessage> {
+        val next = messages.takeLast(30)
+        val array = JSONArray()
+        next.forEach { array.put(it.toJson()) }
+        prefs.edit().putString("ai_chat_messages", array.toString()).apply()
+        return next
     }
 
     fun loadScheduleItems(): List<ScheduleItem> {
@@ -2522,6 +3481,48 @@ class FortuneRepository(context: Context) {
         val array = JSONArray()
         next.forEach { array.put(it.toJson()) }
         prefs.edit().putString("schedule_items", array.toString()).apply()
+        return next
+    }
+
+    fun loadWheelSegments(): List<String> {
+        val raw = prefs.getString("wheel_segments", "[]") ?: "[]"
+        val list = runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).map { array.getString(it) }
+        }.getOrDefault(emptyList())
+        return if (list.size < 2) listOf("是", "否") else list
+    }
+
+    fun saveWheelSegments(items: List<String>): List<String> {
+        val next = items.take(25)
+        val array = JSONArray()
+        next.forEach { array.put(it) }
+        prefs.edit().putString("wheel_segments", array.toString()).apply()
+        return next
+    }
+
+    fun loadWheelHistory(): List<WheelHistoryEntry> {
+        val raw = prefs.getString("wheel_history", "[]") ?: "[]"
+        return runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).map { index ->
+                val obj = array.getJSONObject(index)
+                WheelHistoryEntry(
+                    id = obj.optLong("id"),
+                    result = obj.optString("result"),
+                    createdAt = obj.optString("createdAt"),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveWheelHistory(items: List<WheelHistoryEntry>): List<WheelHistoryEntry> {
+        val next = items.take(200)
+        val array = JSONArray()
+        next.forEach { entry ->
+            array.put(JSONObject().put("id", entry.id).put("result", entry.result).put("createdAt", entry.createdAt))
+        }
+        prefs.edit().putString("wheel_history", array.toString()).apply()
         return next
     }
 }
@@ -2570,6 +3571,82 @@ private fun JSONObject.toScheduleItem(): ScheduleItem = ScheduleItem(
     createdAt = optString("createdAt"),
     done = optBoolean("done", false),
 )
+
+private fun ChatMessage.toJson(): JSONObject = JSONObject()
+    .put("id", id)
+    .put("role", role)
+    .put("content", content)
+    .put("createdAt", createdAt)
+
+private fun JSONObject.toChatMessage(): ChatMessage = ChatMessage(
+    id = optLong("id"),
+    role = optString("role"),
+    content = optString("content"),
+    createdAt = optString("createdAt"),
+)
+
+private object AiChatClient {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .build()
+    private val jsonType = "application/json; charset=utf-8".toMediaType()
+
+    suspend fun reply(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        messages: List<ChatMessage>,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val requestMessages = JSONArray().put(
+                JSONObject()
+                    .put("role", "system")
+                    .put("content", CHAT_SYSTEM_PROMPT)
+            )
+            messages.takeLast(20).forEach { message ->
+                requestMessages.put(
+                    JSONObject()
+                        .put("role", message.role)
+                        .put("content", message.content.take(2_000))
+                )
+            }
+            val body = JSONObject()
+                .put("model", model.ifBlank { "gpt-4o-mini" })
+                .put("temperature", 0.55)
+                .put("messages", requestMessages)
+                .put("max_tokens", 1_000)
+            val request = Request.Builder()
+                .url(endpoint.ifBlank { "https://api.openai.com/v1/chat/completions" })
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(body.toString().toRequestBody(jsonType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("HTTP ${response.code}")
+                }
+                val responseBody = response.body?.string().orEmpty()
+                JSONObject(responseBody)
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+                    .ifBlank { error("接口没有返回有效内容") }
+            }
+        }
+    }
+
+    private const val CHAT_SYSTEM_PROMPT = """
+        你是“知否研习”，一位从事中国哲学、宗教学与传统文化研究的研究生导师，熟悉《周易》《道德经》《心经》、道教史、佛教思想史与相关学术研究，也理解传统道士的文化实践视角。
+        与用户自然对话，优先澄清问题，再给出有依据、可理解的分析。严格区分经典原文、学术解释、宗教信仰与民俗经验；不伪造经文、出处、历史人物观点或学术共识。引用经典时尽量注明篇章，无法确认原文时明确说明是意译。
+        尊重不同宗教与无宗教立场，不制造恐惧，不宣称能确定预测未来，不诱导迷信消费。涉及医疗、法律、金融或心理危机时，只提供一般文化讨论并建议寻求合格专业人士。
+        默认使用简体中文，用户使用英文时可以用英文或中英双语回答。回答应专业、克制、清楚，不堆砌玄虚术语。
+    """
+}
 
 private object AiInterpreter {
     private val client = OkHttpClient.Builder()

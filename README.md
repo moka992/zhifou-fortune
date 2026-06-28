@@ -8,6 +8,7 @@
 - Three-coin I Ching divination
 - Answer Book oracle prompts
 - AI-powered interpretation through an OpenAI-compatible endpoint
+- AI conversation with locally retained recent messages and a Chinese philosophy and religious studies research persona
 - Offline multilingual voice input with Chinese-English mixed-language support
 - Optional OpenAI-compatible audio transcription backend, disabled by default
 - Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and selectable D4/D6/D8/D10/D12/D20 dice
@@ -61,6 +62,8 @@ AI interpretation can be configured inside the app settings with:
 - API key
 - Model name
 - OpenAI-compatible chat completions endpoint
+
+The same chat completions configuration powers AI conversation. The oracle screen displays up to five coin-oracle and Answer Book results from the previous three days. AI conversation is capped at the most recent 30 local messages.
 
 An optional OpenAI-compatible audio transcription endpoint can be configured separately. It is disabled by default and no API key is included in the source tree or APK.
 

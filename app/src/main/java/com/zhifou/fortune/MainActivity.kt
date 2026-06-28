@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -143,11 +144,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -195,6 +202,10 @@ private val TextSub = Color(0xFFB7B2A6)
 private val ChatAssistant = Color(0xFFDDEEFF)
 private val ChatUser = Color(0xFFDDF4DF)
 private val ChatText = Color(0xFF172128)
+// 深色模式气泡：比 Panel 略亮、与深色背景协调；文字用浅色。
+private val ChatBubbleAssistantDark = Color(0xFF2A3340)
+private val ChatBubbleUserDark = Color(0xFF28342C)
+private val ChatTextDark = Color(0xFFECE8DF)
 private val Danger = Color(0xFFE5484D)
 
 private val LinearDecelEasing = Easing { p -> 2f * p - p * p }
@@ -862,15 +873,139 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
     }
 }
 
+// 零依赖 Markdown 渲染：行内 **加粗** *斜体* `代码`；块级 #/##/### 标题、- 列表、> 引用、``` 代码块、--- 分隔线。
+// onLight=true 用于浅色气泡（聊天，深色文字+深色 accent）；false 用于深色背景（占卜卡，浅色文字+金色 accent）。
+@Composable
+private fun MarkdownText(
+    text: String,
+    color: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    onLight: Boolean = false,
+) {
+    val accent = if (onLight) color.copy(alpha = 0.85f) else Gold
+    val quoteColor = if (onLight) color.copy(alpha = 0.7f) else TextSub
+    val codeBg = if (onLight) color.copy(alpha = 0.08f) else TextMain.copy(alpha = 0.06f)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val lines = text.split("\n")
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            when {
+                line.startsWith("```") -> {
+                    val lang = line.removePrefix("```").trim()
+                    val code = StringBuilder()
+                    i++
+                    while (i < lines.size && !lines[i].startsWith("```")) {
+                        code.append(lines[i]).append("\n")
+                        i++
+                    }
+                    i++ // skip closing ```
+                    Surface(color = codeBg, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            code.toString().trimEnd('\n'),
+                            color = color,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                }
+                line.startsWith("### ") -> {
+                    Text(parseInline(line.removePrefix("### "), color, style, accent), color = color, style = style.merge(SpanStyle(fontWeight = FontWeight.SemiBold, fontSize = style.fontSize * 0.95f)))
+                }
+                line.startsWith("## ") -> {
+                    Text(parseInline(line.removePrefix("## "), color, style, accent), color = color, style = style.merge(SpanStyle(fontWeight = FontWeight.Bold, fontSize = style.fontSize * 1.1f)))
+                }
+                line.startsWith("# ") -> {
+                    Text(parseInline(line.removePrefix("# "), color, style, accent), color = color, style = style.merge(SpanStyle(fontWeight = FontWeight.Bold, fontSize = style.fontSize * 1.25f)))
+                }
+                line.startsWith("> ") -> {
+                    Surface(color = color.copy(alpha = 0.05f), modifier = Modifier.fillMaxWidth().padding(start = 0.dp)) {
+                        Row {
+                            Box(modifier = Modifier.width(3.dp).height(IntrinsicSize.Min).background(accent.copy(alpha = 0.6f)))
+                            Text(
+                                parseInline(line.removePrefix("> "), quoteColor, style, accent),
+                                style = style.copy(color = quoteColor),
+                                modifier = Modifier.padding(start = 10.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                            )
+                        }
+                    }
+                }
+                line.startsWith("- ") || line.startsWith("* ") -> {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text("•", color = accent, style = style, modifier = Modifier.padding(end = 6.dp))
+                        Text(parseInline(line.drop(2), color, style, accent), color = color, style = style, modifier = Modifier.weight(1f))
+                    }
+                }
+                Regex("^\\d+\\.\\s").containsMatchIn(line) -> {
+                    val m = Regex("^(\\d+)\\.\\s").find(line)!!
+                    val num = m.groupValues[1]
+                    val rest = line.substring(m.range.last + 1)
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text("$num.", color = accent, style = style, modifier = Modifier.padding(end = 6.dp))
+                        Text(parseInline(rest, color, style, accent), color = color, style = style, modifier = Modifier.weight(1f))
+                    }
+                }
+                line.trim() == "---" || line.trim() == "***" -> {
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(color.copy(alpha = 0.18f)))
+                }
+                line.isBlank() -> Unit
+                else -> {
+                    Text(parseInline(line, color, style, accent), color = color, style = style)
+                }
+            }
+            i++
+        }
+    }
+}
+
+// 行内：**加粗** *斜体* `代码`（代码优先，避免 ** 被误吞）。顺序处理。
+private fun parseInline(text: String, baseColor: Color, baseStyle: TextStyle, accent: Color): AnnotatedString {
+    val boldStyle = SpanStyle(fontWeight = FontWeight.Bold)
+    val italicStyle = SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+    val codeStyle = SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, background = baseColor.copy(alpha = 0.10f))
+    return buildAnnotatedString {
+        var i = 0
+        val s = text
+        while (i < s.length) {
+            when {
+                s.startsWith("**", i) -> {
+                    val end = s.indexOf("**", i + 2)
+                    if (end >= 0) {
+                        withStyle(boldStyle) { append(s.substring(i + 2, end)) }
+                        i = end + 2
+                    } else { append(s[i]); i++ }
+                }
+                s.startsWith("`", i) -> {
+                    val end = s.indexOf('`', i + 1)
+                    if (end >= 0) {
+                        withStyle(codeStyle) { append(s.substring(i + 1, end)) }
+                        i = end + 1
+                    } else { append(s[i]); i++ }
+                }
+                s.startsWith("*", i) -> {
+                    val end = s.indexOf('*', i + 1)
+                    if (end >= 0 && end > i + 1) {
+                        withStyle(italicStyle) { append(s.substring(i + 1, end)) }
+                        i = end + 1
+                    } else { append(s[i]); i++ }
+                }
+                else -> { append(s[i]); i++ }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatBubble(message: ChatMessage) {
     val isUser = message.role == "user"
+    val bubbleColor = if (isUser) ChatBubbleUserDark else ChatBubbleAssistantDark
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
         Surface(
-            color = if (isUser) ChatUser else ChatAssistant,
+            color = bubbleColor,
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth(0.84f),
         ) {
@@ -880,15 +1015,15 @@ private fun ChatBubble(message: ChatMessage) {
             ) {
                 Text(
                     if (isUser) "你" else "知否研习",
-                    color = ChatText.copy(alpha = 0.68f),
+                    color = ChatTextDark.copy(alpha = 0.68f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(message.content, color = ChatText, style = MaterialTheme.typography.bodyMedium)
+                MarkdownText(message.content, color = ChatTextDark, style = MaterialTheme.typography.bodyMedium, onLight = false)
                 if (message.createdAt.isNotBlank()) {
                     Text(
                         message.createdAt,
-                        color = ChatText.copy(alpha = 0.54f),
+                        color = ChatTextDark.copy(alpha = 0.54f),
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.align(Alignment.End),
                     )
@@ -3029,7 +3164,7 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
                 Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("AI 解读", color = Mint, fontWeight = FontWeight.SemiBold)
-                        Text(reading.aiInterpretation, color = TextMain, style = MaterialTheme.typography.bodyMedium)
+                        MarkdownText(reading.aiInterpretation, color = TextMain, style = MaterialTheme.typography.bodyMedium, onLight = false)
                     }
                 }
             }

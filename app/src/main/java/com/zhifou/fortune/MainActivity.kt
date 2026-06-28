@@ -32,6 +32,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -101,6 +102,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -109,9 +113,14 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -159,6 +168,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -190,53 +201,113 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-private val Ink = Color(0xFF111318)
-private val Panel = Color(0xFF1B1F27)
-private val PanelAlt = Color(0xFF242832)
-private val Line = Color(0xFF343A46)
-private val Gold = Color(0xFFE2C16B)
-private val Mint = Color(0xFF7ED7C1)
-private val Rose = Color(0xFFE48A9A)
-private val TextMain = Color(0xFFF3F0E8)
-private val TextSub = Color(0xFFB7B2A6)
-private val ChatAssistant = Color(0xFFDDEEFF)
-private val ChatUser = Color(0xFFDDF4DF)
-private val ChatText = Color(0xFF172128)
-// 深色模式气泡：比 Panel 略亮、与深色背景协调；文字用浅色。
-private val ChatBubbleAssistantDark = Color(0xFF2A3340)
-private val ChatBubbleUserDark = Color(0xFF28342C)
-private val ChatTextDark = Color(0xFFECE8DF)
-private val Danger = Color(0xFFE5484D)
-
 private val LinearDecelEasing = Easing { p -> 2f * p - p * p }
+
+// 主题调色板：深/浅各一套，通过 LocalFortunePalette 注入。
+@Immutable
+data class FortunePalette(
+    val ink: Color,
+    val panel: Color,
+    val panelAlt: Color,
+    val line: Color,
+    val gold: Color,
+    val mint: Color,
+    val rose: Color,
+    val danger: Color,
+    val textMain: Color,
+    val textSub: Color,
+    val chatBubbleAssistant: Color,
+    val chatBubbleUser: Color,
+    val chatText: Color,
+    val isLight: Boolean,
+)
+
+val DarkPalette = FortunePalette(
+    ink = Color(0xFF111318),
+    panel = Color(0xFF1B1F27),
+    panelAlt = Color(0xFF242832),
+    line = Color(0xFF343A46),
+    gold = Color(0xFFE2C16B),
+    mint = Color(0xFF7ED7C1),
+    rose = Color(0xFFE48A9A),
+    danger = Color(0xFFE5484D),
+    textMain = Color(0xFFF3F0E8),
+    textSub = Color(0xFFB7B2A6),
+    chatBubbleAssistant = Color(0xFF2A3340),
+    chatBubbleUser = Color(0xFF28342C),
+    chatText = Color(0xFFECE8DF),
+    isLight = false,
+)
+
+val LightPalette = FortunePalette(
+    ink = Color(0xFFF2EEE5),
+    panel = Color(0xFFFAF7F0),
+    panelAlt = Color(0xFFEFE9DC),
+    line = Color(0xFFE0DBD0),
+    gold = Color(0xFF8A6A1E),
+    mint = Color(0xFF2E8F7A),
+    rose = Color(0xFFB5546A),
+    danger = Color(0xFFC7323A),
+    textMain = Color(0xFF2A2620),
+    textSub = Color(0xFF6B655B),
+    chatBubbleAssistant = Color(0xFFDDEEFF),
+    chatBubbleUser = Color(0xFFDDF4DF),
+    chatText = Color(0xFF172128),
+    isLight = true,
+)
+
+val LocalFortunePalette = staticCompositionLocalOf { DarkPalette }
+
+enum class ThemeMode { Dark, Light, System }
+
+@Suppress("DEPRECATION")
+private fun applySystemBars(window: android.view.Window, dark: Boolean) {
+    val controller = WindowInsetsControllerCompat(window, window.decorView)
+    controller.isAppearanceLightStatusBars = !dark
+    controller.isAppearanceLightNavigationBars = !dark
+    window.statusBarColor = android.graphics.Color.TRANSPARENT
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+}
 
 class MainActivity : ComponentActivity() {
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(17, 19, 24)
-        window.navigationBarColor = android.graphics.Color.rgb(27, 31, 39)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            window.decorView.systemUiVisibility = 0
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
+        val repo = FortuneRepository(applicationContext)
+        val initialDark = when (repo.themeMode) {
+            ThemeMode.Dark -> true
+            ThemeMode.Light -> false
+            ThemeMode.System -> (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        applySystemBars(window, initialDark)
+        val window = this.window
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    background = Ink,
-                    surface = Panel,
-                    primary = Gold,
-                    secondary = Mint,
-                    tertiary = Rose,
-                    onBackground = TextMain,
-                    onSurface = TextMain,
-                    onPrimary = Ink,
-                ),
-            ) {
-                Surface(Modifier.fillMaxSize(), color = Ink) {
-                    FortuneApp()
+            val vm: FortuneViewModel = viewModel()
+            val resolvedDark = when (vm.themeMode) {
+                ThemeMode.Dark -> true
+                ThemeMode.Light -> false
+                ThemeMode.System -> isSystemInDarkTheme()
+            }
+            val C = if (resolvedDark) DarkPalette else LightPalette
+            SideEffect { applySystemBars(window, resolvedDark) }
+            CompositionLocalProvider(LocalFortunePalette provides C) {
+                MaterialTheme(
+                    colorScheme = if (resolvedDark) darkColorScheme(
+                        background = C.ink, surface = C.panel, primary = C.gold,
+                        secondary = C.mint, tertiary = C.rose,
+                        onBackground = C.textMain, onSurface = C.textMain, onPrimary = C.ink,
+                    ) else lightColorScheme(
+                        background = C.ink, surface = C.panel, primary = C.gold,
+                        secondary = C.mint, tertiary = C.rose,
+                        onBackground = C.textMain, onSurface = C.textMain, onPrimary = C.textMain,
+                    ),
+                ) {
+                    Surface(Modifier.fillMaxSize(), color = C.ink) {
+                        FortuneApp(vm)
+                    }
                 }
             }
         }
@@ -255,6 +326,7 @@ private const val VOICE_CANCEL_DISTANCE_DP = 140
 
 @Composable
 private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
+    val C = LocalFortunePalette.current
     val context = LocalContext.current
     val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
@@ -268,13 +340,13 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     }
 
     Scaffold(
-        containerColor = Ink,
+        containerColor = C.ink,
         topBar = { if (tab == Tab.Home) AppTopBar() },
         bottomBar = {
             Box(modifier = Modifier.fillMaxWidth().height(144.dp)) {
                 NavigationBar(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                    containerColor = Panel,
+                    containerColor = C.panel,
                     tonalElevation = 0.dp,
                 ) {
                     Tab.entries.forEach { item ->
@@ -296,11 +368,11 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             },
                             label = if (item == Tab.Oracle) null else ({ Text(item.label) }),
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Gold,
-                                selectedTextColor = if (item == Tab.Oracle) Gold else TextMain,
-                                indicatorColor = if (item == Tab.Oracle) Color.Transparent else Gold.copy(alpha = 0.14f),
-                                unselectedIconColor = TextSub,
-                                unselectedTextColor = TextSub,
+                                selectedIconColor = C.gold,
+                                selectedTextColor = if (item == Tab.Oracle) C.gold else C.textMain,
+                                indicatorColor = if (item == Tab.Oracle) Color.Transparent else C.gold.copy(alpha = 0.14f),
+                                unselectedIconColor = C.textSub,
+                                unselectedTextColor = C.textSub,
                             ),
                         )
                     }
@@ -315,9 +387,9 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             tab = Tab.Oracle
                             showDiceTool = false
                         },
-                        color = Gold,
+                        color = C.gold,
                         shape = CircleShape,
-                        border = if (tab == Tab.Oracle) BorderStroke(2.dp, Mint) else null,
+                        border = if (tab == Tab.Oracle) BorderStroke(2.dp, C.mint) else null,
                         shadowElevation = 10.dp,
                         modifier = Modifier
                             .size(64.dp)
@@ -327,14 +399,14 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             Icon(
                                 Tab.Oracle.icon,
                                 contentDescription = Tab.Oracle.label,
-                                tint = Ink,
+                                tint = C.ink,
                                 modifier = Modifier.size(32.dp),
                             )
                         }
                     }
                     Text(
                         Tab.Oracle.label,
-                        color = if (tab == Tab.Oracle) Gold else TextSub,
+                        color = if (tab == Tab.Oracle) C.gold else C.textSub,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.graphicsLayer { translationY = -1.dp.toPx() },
@@ -346,7 +418,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Ink)
+                .background(C.ink)
                 .padding(padding),
         ) {
             when (tab) {
@@ -372,24 +444,26 @@ private fun rememberTabState() = androidx.compose.runtime.remember {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppTopBar() {
+    val C = LocalFortunePalette.current
     CenterAlignedTopAppBar(
         title = {
             Text(
                 "知否运势",
-                color = TextMain,
+                color = C.textMain,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
         },
         colors = androidx.compose.material3.TopAppBarDefaults.centerAlignedTopAppBarColors(
-            containerColor = Ink,
-            titleContentColor = TextMain,
+            containerColor = C.ink,
+            titleContentColor = C.textMain,
         ),
     )
 }
 
 @Composable
 private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
+    val C = LocalFortunePalette.current
     val today = vm.todayReading
     Column(
         modifier = Modifier
@@ -404,7 +478,7 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
             Button(
                 onClick = { vm.refreshToday() },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold),
+                colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else Color(0xFF111318)),
             ) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -423,6 +497,7 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechRecognizer) {
+    val C = LocalFortunePalette.current
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val voiceUiScope = rememberCoroutineScope()
@@ -625,20 +700,20 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                         ) {
                             Text(
                                 "今天想问些什么？",
-                                color = TextMain,
+                                color = C.textMain,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             suggestedQuestions.forEach { question ->
                                 Surface(
                                     onClick = { vm.question = question },
-                                    color = PanelAlt,
+                                    color = C.panelAlt,
                                     shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.dp, Line),
+                                    border = BorderStroke(1.dp, C.line),
                                 ) {
                                     Text(
                                         question,
-                                        color = TextMain,
+                                        color = C.textMain,
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                     )
@@ -672,8 +747,8 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
-                                    .background(Gold.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                                    .border(1.dp, Gold, RoundedCornerShape(8.dp)),
+                                    .background(C.gold.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, C.gold, RoundedCornerShape(8.dp)),
                             )
                         }
                         when (entry) {
@@ -684,7 +759,7 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                             Icon(
                                 if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                                 contentDescription = null,
-                                tint = if (selected) Gold else TextSub,
+                                tint = if (selected) C.gold else C.textSub,
                                 modifier = Modifier
                                     .padding(8.dp)
                                     .align(Alignment.TopEnd),
@@ -706,7 +781,7 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                 }
                 if (vm.chatStatus.isNotBlank()) {
                     item(key = "chat-status") {
-                        Text(vm.chatStatus, color = Rose, style = MaterialTheme.typography.bodySmall)
+                        Text(vm.chatStatus, color = C.rose, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 item(key = "timeline-bottom") { Spacer(Modifier.height(4.dp)) }
@@ -714,8 +789,8 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
         }
         if (selectionMode) {
             Surface(
-                color = PanelAlt,
-                border = BorderStroke(1.dp, Line),
+                color = C.panelAlt,
+                border = BorderStroke(1.dp, C.line),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -731,13 +806,13 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                     }
                     Text(
                         "已选 ${selectedKeys.size} 项",
-                        color = TextMain,
+                        color = C.textMain,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     TextButton(onClick = { confirmDeleteSelection = true }) {
                         Icon(Icons.Default.Delete, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("删除", color = Danger)
+                        Text("删除", color = C.danger)
                     }
                 }
             }
@@ -837,18 +912,18 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                         enabled = vm.question.isNotBlank() && !vm.chatSending,
                         modifier = Modifier
                             .size(52.dp)
-                            .background(Mint, RoundedCornerShape(8.dp)),
+                            .background(C.mint, RoundedCornerShape(8.dp)),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = "发送给 AI",
-                            tint = ChatText,
+                            tint = C.chatText,
                         )
                     }
                 }
                 Text(
                     "轻触输入文字，按住输入语音",
-                    color = TextSub,
+                    color = C.textSub,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
@@ -883,9 +958,10 @@ private fun MarkdownText(
     modifier: Modifier = Modifier,
     onLight: Boolean = false,
 ) {
-    val accent = if (onLight) color.copy(alpha = 0.85f) else Gold
-    val quoteColor = if (onLight) color.copy(alpha = 0.7f) else TextSub
-    val codeBg = if (onLight) color.copy(alpha = 0.08f) else TextMain.copy(alpha = 0.06f)
+    val C = LocalFortunePalette.current
+    val accent = if (onLight) color.copy(alpha = 0.85f) else C.gold
+    val quoteColor = if (onLight) color.copy(alpha = 0.7f) else C.textSub
+    val codeBg = if (onLight) color.copy(alpha = 0.08f) else C.textMain.copy(alpha = 0.06f)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val lines = text.split("\n")
         var i = 0
@@ -998,8 +1074,9 @@ private fun parseInline(text: String, baseColor: Color, baseStyle: TextStyle, ac
 
 @Composable
 private fun ChatBubble(message: ChatMessage) {
+    val C = LocalFortunePalette.current
     val isUser = message.role == "user"
-    val bubbleColor = if (isUser) ChatBubbleUserDark else ChatBubbleAssistantDark
+    val bubbleColor = if (isUser) C.chatBubbleUser else C.chatBubbleAssistant
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -1015,15 +1092,15 @@ private fun ChatBubble(message: ChatMessage) {
             ) {
                 Text(
                     if (isUser) "你" else "知否研习",
-                    color = ChatTextDark.copy(alpha = 0.68f),
+                    color = C.chatText.copy(alpha = 0.68f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                MarkdownText(message.content, color = ChatTextDark, style = MaterialTheme.typography.bodyMedium, onLight = false)
+                MarkdownText(message.content, color = C.chatText, style = MaterialTheme.typography.bodyMedium, onLight = C.isLight)
                 if (message.createdAt.isNotBlank()) {
                     Text(
                         message.createdAt,
-                        color = ChatTextDark.copy(alpha = 0.54f),
+                        color = C.chatText.copy(alpha = 0.54f),
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.align(Alignment.End),
                     )
@@ -1039,7 +1116,8 @@ private fun VoiceCapturePanel(
     cancelling: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val color = if (cancelling) Rose else Gold
+    val C = LocalFortunePalette.current
+    val color = if (cancelling) C.rose else C.gold
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1078,6 +1156,7 @@ private fun VoiceCapturePanel(
 
 @Composable
 private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
+    val C = LocalFortunePalette.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1085,12 +1164,12 @@ private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("小工具", color = TextMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text("小工具", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Surface(
             onClick = onOpenDice,
-            color = Panel,
+            color = C.panel,
             shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, Line),
+            border = BorderStroke(1.dp, C.line),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1103,16 +1182,16 @@ private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
                         .height(170.dp),
                 )
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("摇骰子", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("选择骰子个数和面数，合上骰盅后摇动手机或点击按钮。", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                    Text("摇骰子", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("选择骰子个数和面数，合上骰盅后摇动手机或点击按钮。", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
         Surface(
             onClick = onOpenWheel,
-            color = Panel,
+            color = C.panel,
             shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, Line),
+            border = BorderStroke(1.dp, C.line),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1125,8 +1204,8 @@ private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
                         .height(170.dp),
                 )
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("转盘", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("自定义选项，摇动手机或拨动转盘随机抽取。", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                    Text("转盘", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("自定义选项，摇动手机或拨动转盘随机抽取。", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -1148,12 +1227,13 @@ private enum class WheelSubPage { Main, Settings, History }
 
 @Composable
 private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
+    val C = LocalFortunePalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val segments = vm.wheelSegments
     val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = TextMain)
-    val palette = listOf(Gold, Rose, Mint, Color(0xFF6C8EAD), Color(0xFFB07AA1), Color(0xFFD9A566))
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = C.textMain)
+    val palette = listOf(C.gold, C.rose, C.mint, Color(0xFF6C8EAD), Color(0xFFB07AA1), Color(0xFFD9A566))
 
     val angle = remember { Animatable(0f) }
     val glow = remember { Animatable(0f) }
@@ -1284,7 +1364,7 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.width(4.dp))
                 Text("小工具")
             }
-            Text("转盘", color = TextMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("转盘", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.width(72.dp))
         }
 
@@ -1366,14 +1446,14 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                     for (i in 0 until n) {
                         val a = Math.toRadians((270f - segDeg / 2f + i * segDeg).toDouble())
                         drawLine(
-                            color = Line,
+                            color = C.line,
                             start = Offset(cx, cy),
                             end = Offset(cx + (r * cos(a)).toFloat(), cy + (r * sin(a)).toFloat()),
                             strokeWidth = 1.dp.toPx(),
                         )
                     }
                     drawArc(
-                        color = Line,
+                        color = C.line,
                         startAngle = 0f,
                         sweepAngle = 360f,
                         useCenter = false,
@@ -1393,7 +1473,7 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                     }
                     if (winnerIndex in 0 until n && glow.value > 0f) {
                         drawArc(
-                            color = Gold.copy(alpha = glow.value),
+                            color = C.gold.copy(alpha = glow.value),
                             startAngle = 270f - segDeg / 2f + winnerIndex * segDeg,
                             sweepAngle = segDeg,
                             useCenter = false,
@@ -1423,15 +1503,15 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                         lineTo(w * 0.88f, 2f)
                         close()
                     }
-                    drawPath(tri, Danger)
+                    drawPath(tri, C.danger)
                 }
             }
 
             val winnerLabel = segments.getOrNull(winnerIndex)
             if (winnerLabel != null) {
-                Text("本次：$winnerLabel", color = Gold, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("本次：$winnerLabel", color = C.gold, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             } else {
-                Text("摇晃手机或拨动转盘开始", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                Text("摇晃手机或拨动转盘开始", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
 
             Row(
@@ -1439,32 +1519,32 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
             ) {
                 Surface(
                     onClick = { wheelSubPage = WheelSubPage.Settings },
-                    color = Panel,
+                    color = C.panel,
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Line),
+                    border = BorderStroke(1.dp, C.line),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(Icons.Default.Settings, contentDescription = null, tint = TextSub, modifier = Modifier.size(18.dp))
-                        Text("设置", color = TextMain, style = MaterialTheme.typography.bodyMedium)
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = C.textSub, modifier = Modifier.size(18.dp))
+                        Text("设置", color = C.textMain, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 Surface(
                     onClick = { wheelSubPage = WheelSubPage.History },
-                    color = Panel,
+                    color = C.panel,
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Line),
+                    border = BorderStroke(1.dp, C.line),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = TextSub, modifier = Modifier.size(18.dp))
-                        Text("历史", color = TextMain, style = MaterialTheme.typography.bodyMedium)
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = C.textSub, modifier = Modifier.size(18.dp))
+                        Text("历史", color = C.textMain, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
@@ -1475,15 +1555,16 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun WheelSettingsView(vm: FortuneViewModel) {
+    val C = LocalFortunePalette.current
     val segments = vm.wheelSegments
     var pendingDelete by remember { mutableStateOf(-1) }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("板块设置", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
-        Text("最少 2 个，最多 25 个，修改自动保存", color = TextSub, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth())
-        Text("快速选择板块数量", color = TextSub, style = MaterialTheme.typography.bodySmall)
+        Text("板块设置", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
+        Text("最少 2 个，最多 25 个，修改自动保存", color = C.textSub, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth())
+        Text("快速选择板块数量", color = C.textSub, style = MaterialTheme.typography.bodySmall)
         val quickCounts = listOf(3, 4, 6, 8, 12, 16, 24)
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1494,13 +1575,13 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             quickCounts.forEach { count ->
                 Surface(
                     onClick = { vm.setWheelSegmentCount(count) },
-                    color = if (segments.size == count) Gold else Panel,
+                    color = if (segments.size == count) C.gold else C.panel,
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Line),
+                    border = BorderStroke(1.dp, C.line),
                 ) {
                     Text(
                         count.toString(),
-                        color = if (segments.size == count) Ink else TextMain,
+                        color = if (segments.size == count) C.ink else C.textMain,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1509,14 +1590,14 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             }
         }
         TextButton(onClick = { vm.resetWheelSegments() }) {
-            Icon(Icons.Default.Refresh, contentDescription = null, tint = TextSub)
+            Icon(Icons.Default.Refresh, contentDescription = null, tint = C.textSub)
             Spacer(Modifier.width(4.dp))
-            Text("重置为「是/否」", color = TextSub)
+            Text("重置为「是/否」", color = C.textSub)
         }
         segments.forEachIndexed { index, seg ->
             Card(
-                colors = CardDefaults.cardColors(containerColor = Panel),
-                border = BorderStroke(1.dp, Line),
+                colors = CardDefaults.cardColors(containerColor = C.panel),
+                border = BorderStroke(1.dp, C.line),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1536,7 +1617,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
                         onClick = { pendingDelete = index },
                         enabled = segments.size > 2,
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = Danger)
+                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = C.danger)
                     }
                 }
             }
@@ -1568,6 +1649,7 @@ private fun ConfirmDeleteDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val C = LocalFortunePalette.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -1576,7 +1658,7 @@ private fun ConfirmDeleteDialog(
             TextButton(onClick = {
                 onConfirm()
                 onDismiss()
-            }) { Text("删除", color = Danger) }
+            }) { Text("删除", color = C.danger) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
@@ -1586,20 +1668,21 @@ private fun ConfirmDeleteDialog(
 
 @Composable
 private fun WheelHistoryView(vm: FortuneViewModel) {
+    val C = LocalFortunePalette.current
     val history = vm.wheelHistory
     var pendingDelete by remember { mutableStateOf<Long?>(null) }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("历史记录", color = TextMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
+        Text("历史记录", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
         if (history.isEmpty()) {
-            Text("还没有转盘记录", color = TextSub, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+            Text("还没有转盘记录", color = C.textSub, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
         } else {
             history.forEach { entry ->
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Panel),
-                    border = BorderStroke(1.dp, Line),
+                    colors = CardDefaults.cardColors(containerColor = C.panel),
+                    border = BorderStroke(1.dp, C.line),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1609,11 +1692,11 @@ private fun WheelHistoryView(vm: FortuneViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(entry.result, color = TextMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            Text(entry.createdAt, color = TextSub, style = MaterialTheme.typography.bodySmall)
+                            Text(entry.result, color = C.textMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            Text(entry.createdAt, color = C.textSub, style = MaterialTheme.typography.bodySmall)
                         }
                         IconButton(onClick = { pendingDelete = entry.id }) {
-                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = Danger)
+                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = C.danger)
                         }
                     }
                 }
@@ -1632,6 +1715,7 @@ private fun WheelHistoryView(vm: FortuneViewModel) {
 
 @Composable
 private fun DiceScreen(onBack: () -> Unit) {
+    val C = LocalFortunePalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rotations = remember { List(6) { Animatable(0f) } }
@@ -1733,8 +1817,8 @@ private fun DiceScreen(onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -1753,7 +1837,7 @@ private fun DiceScreen(onBack: () -> Unit) {
                         Spacer(Modifier.width(4.dp))
                         Text("小工具")
                     }
-                    Text("摇骰子", color = TextMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("摇骰子", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.width(72.dp))
                 }
                 Row(
@@ -1821,14 +1905,14 @@ private fun DiceScreen(onBack: () -> Unit) {
                         cupClosed && canReveal -> "向上滑开骰盅查看结果"
                         else -> resultText
                     },
-                    color = if (rolling || cupClosed) TextSub else Gold,
+                    color = if (rolling || cupClosed) C.textSub else C.gold,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Button(
                     onClick = { startCupRoll() },
                     enabled = !rolling,
-                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Ink),
+                    colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else C.ink),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Default.Casino, contentDescription = null)
@@ -1837,7 +1921,7 @@ private fun DiceScreen(onBack: () -> Unit) {
                 }
                 Text(
                     "可下滑合上骰盅，点击按钮或摇动手机开始；声音结束后上滑打开。",
-                    color = TextSub,
+                    color = C.textSub,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -1845,12 +1929,12 @@ private fun DiceScreen(onBack: () -> Unit) {
 
         if (history.isNotEmpty()) {
             Card(
-                colors = CardDefaults.cardColors(containerColor = PanelAlt),
+                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("最近结果", color = TextMain, fontWeight = FontWeight.SemiBold)
+                    Text("最近结果", color = C.textMain, fontWeight = FontWeight.SemiBold)
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         history.forEach { value -> Badge(value) }
                     }
@@ -1869,9 +1953,10 @@ private fun DiceDropdown(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val C = LocalFortunePalette.current
     var expanded by remember { mutableStateOf(false) }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = TextSub, style = MaterialTheme.typography.labelMedium)
+        Text(label, color = C.textSub, style = MaterialTheme.typography.labelMedium)
         Box {
             OutlinedButton(
                 onClick = { expanded = true },
@@ -1879,7 +1964,7 @@ private fun DiceDropdown(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text(value, color = TextMain, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, color = C.textMain, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { (rawValue, text) ->
@@ -1901,6 +1986,7 @@ private fun DiceCupOverlay(
     rolling: Boolean,
     canReveal: Boolean,
 ) {
+    val C = LocalFortunePalette.current
     val shakeAnimation = rememberInfiniteTransition(label = "diceCupShake")
     val animatedShake by shakeAnimation.animateFloat(
         initialValue = -5f,
@@ -1912,6 +1998,11 @@ private fun DiceCupOverlay(
         label = "diceCupShakeOffset",
     )
     val shakeOffset = if (rolling) animatedShake else 0f
+    // 拟物骰盅配色：深色模式用深木纹，浅色模式用浅木/暖灰，与各自背景协调。
+    val trayColor = if (C.isLight) Color(0xFFC8B79A) else Color(0xFF2A2420)
+    val cupTop = if (C.isLight) Color(0xFFD8C7A8) else Color(0xFF776041)
+    val cupBottom = if (C.isLight) Color(0xFFB59E78) else Color(0xFF362A20)
+    val cupShadow = if (C.isLight) Color(0xFF9C8A66).copy(alpha = 0.66f) else Color(0xAA111318)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1922,14 +2013,14 @@ private fun DiceCupOverlay(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val trayHeight = size.height * 0.18f
             drawRoundRect(
-                color = Color(0xFF2A2420),
+                color = trayColor,
                 topLeft = Offset(size.width * 0.08f, size.height * 0.74f),
                 size = Size(size.width * 0.84f, trayHeight),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(24.dp.toPx(), 24.dp.toPx()),
             )
             drawRoundRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF776041), Color(0xFF362A20)),
+                    colors = listOf(cupTop, cupBottom),
                     startY = size.height * 0.08f,
                     endY = size.height * 0.86f,
                 ),
@@ -1948,12 +2039,12 @@ private fun DiceCupOverlay(
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx(), 22.dp.toPx()),
             )
             drawOval(
-                color = Gold.copy(alpha = 0.86f),
+                color = C.gold.copy(alpha = 0.86f),
                 topLeft = Offset(size.width * 0.38f, size.height * 0.02f),
                 size = Size(size.width * 0.24f, size.height * 0.12f),
             )
             drawRoundRect(
-                color = Color(0xAA111318),
+                color = cupShadow,
                 topLeft = Offset(size.width * 0.22f, size.height * 0.82f),
                 size = Size(size.width * 0.56f, size.height * 0.12f),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx(), 18.dp.toPx()),
@@ -1966,13 +2057,13 @@ private fun DiceCupOverlay(
                     canReveal -> "上滑查看"
                     else -> "骰盅已合上"
                 },
-                color = TextMain,
+                color = C.textMain,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 if (rolling) "沙沙声结束后打开" else "下滑可再次合上",
-                color = TextSub,
+                color = C.textSub,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -2052,8 +2143,9 @@ private fun DiceVisual(
     rolling: Boolean,
     modifier: Modifier = Modifier.size(160.dp),
 ) {
+    val C = LocalFortunePalette.current
     val tilt = if (rolling) sin(rotation / 18f) * 7f else sin(rotation / 42f) * 2.5f
-    val shapeColor = diceShapeColor(sides)
+    val shapeColor = diceShapeColor(sides, accent = C.gold)
     Box(contentAlignment = Alignment.Center, modifier = modifier) {
         Box(
             contentAlignment = Alignment.Center,
@@ -2089,7 +2181,7 @@ private fun DiceVisual(
     }
 }
 
-private fun diceShapeColor(sides: Int): Color {
+private fun diceShapeColor(sides: Int, accent: Color): Color {
     return when (sides) {
         4 -> Color(0xFF23A84A)
         6 -> Color(0xFF2AB7C9)
@@ -2097,7 +2189,7 @@ private fun diceShapeColor(sides: Int): Color {
         10 -> Color(0xFFE23A8C)
         12 -> Color(0xFFE33327)
         20 -> Color(0xFFFF7400)
-        else -> Gold
+        else -> accent
     }
 }
 
@@ -2237,6 +2329,7 @@ private fun shadeColor(color: Color, shade: Float): Color {
 
 @Composable
 private fun ScheduleScreen(vm: FortuneViewModel) {
+    val C = LocalFortunePalette.current
     val today = remember { LocalDate.now() }
     var selectedDate by remember { mutableStateOf(today) }
     val selectedItems = remember(vm.scheduleItems, selectedDate) {
@@ -2257,14 +2350,14 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
         )
 
         Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "记录 ${selectedDate.monthValue}月${selectedDate.dayOfMonth}日",
-                    color = TextMain,
+                    color = C.textMain,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -2288,7 +2381,7 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
                     onClick = { vm.addScheduleItem(selectedDate) },
                     enabled = vm.scheduleTitle.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Gold),
+                    colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else Color(0xFF111318)),
                 ) {
                     Icon(Icons.AutoMirrored.Filled.EventNote, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -2299,17 +2392,17 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
 
         Text(
             "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日日程",
-            color = TextMain,
+            color = C.textMain,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
         if (selectedItems.isEmpty()) {
             Card(
-                colors = CardDefaults.cardColors(containerColor = PanelAlt),
+                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("当日还没有日程。", color = TextSub, modifier = Modifier.padding(16.dp))
+                Text("当日还没有日程。", color = C.textSub, modifier = Modifier.padding(16.dp))
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2331,6 +2424,7 @@ private fun CalendarPanel(
     selectedDate: LocalDate,
     onSelectedDateChange: (LocalDate) -> Unit,
 ) {
+    val C = LocalFortunePalette.current
     val today = remember { LocalDate.now() }
     val animationScope = rememberCoroutineScope()
     var visibleMonth by remember { mutableStateOf(YearMonth.from(today)) }
@@ -2367,17 +2461,17 @@ private fun CalendarPanel(
     }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = Panel),
-        border = BorderStroke(1.dp, Line),
+        colors = CardDefaults.cardColors(containerColor = C.panel),
+        border = BorderStroke(1.dp, C.line),
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("今天", color = TextSub, style = MaterialTheme.typography.labelLarge)
+                Text("今天", color = C.textSub, style = MaterialTheme.typography.labelLarge)
                 Text(
                     formatFullCalendarDate(today),
-                    color = TextMain,
+                    color = C.textMain,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -2387,7 +2481,7 @@ private fun CalendarPanel(
                     TextButton(onClick = { picker = CalendarPicker.Year }) {
                         Text(
                             "${visibleMonth.year}年",
-                            color = Gold,
+                            color = C.gold,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -2395,7 +2489,7 @@ private fun CalendarPanel(
                     TextButton(onClick = { picker = CalendarPicker.Month }) {
                         Text(
                             "${visibleMonth.monthValue}月",
-                            color = Gold,
+                            color = C.gold,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -2505,6 +2599,7 @@ private fun CalendarMonthGrid(
     onSelectedDateChange: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val C = LocalFortunePalette.current
     // 命中缓存则同步返回（0ms），未命中则后台算（~250ms）。
     val days by produceState<List<CalendarDateInfo>>(initialValue = monthInfoCache.get(month) ?: emptyList(), month) {
         value = withContext(Dispatchers.Default) { computeMonthInfo(month) }
@@ -2514,7 +2609,7 @@ private fun CalendarMonthGrid(
             weekLabels.forEach { label ->
                 Text(
                     label,
-                    color = TextSub,
+                    color = C.textSub,
                     style = MaterialTheme.typography.labelMedium,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f),
@@ -2567,18 +2662,19 @@ private fun CalendarDayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val C = LocalFortunePalette.current
     val date = info.date
     val inMonth = date.monthValue == visibleMonth.monthValue
     val isToday = date == today
     val isSelected = date == selectedDate
     val bgColor = when {
-        isSelected -> Gold.copy(alpha = 0.18f)
-        isToday -> Mint.copy(alpha = 0.14f)
+        isSelected -> C.gold.copy(alpha = 0.18f)
+        isToday -> C.mint.copy(alpha = 0.14f)
         else -> Color.Transparent
     }
     val borderColor = when {
-        isSelected -> Gold
-        isToday -> Mint
+        isSelected -> C.gold
+        isToday -> C.mint
         else -> Color.Transparent
     }
     Box(
@@ -2602,9 +2698,9 @@ private fun CalendarDayCell(
             Text(
                 date.dayOfMonth.toString(),
                 color = when {
-                    !inMonth -> TextSub.copy(alpha = 0.42f)
-                    isSelected -> Gold
-                    else -> TextMain
+                    !inMonth -> C.textSub.copy(alpha = 0.42f)
+                    isSelected -> C.gold
+                    else -> C.textMain
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
@@ -2614,9 +2710,9 @@ private fun CalendarDayCell(
             Text(
                 info.cellLabel,
                 color = when {
-                    !inMonth -> TextSub.copy(alpha = 0.36f)
-                    info.solarTerm.isNotBlank() || info.traditionalFestivals.isNotEmpty() -> Gold
-                    else -> TextSub
+                    !inMonth -> C.textSub.copy(alpha = 0.36f)
+                    info.solarTerm.isNotBlank() || info.traditionalFestivals.isNotEmpty() -> C.gold
+                    else -> C.textSub
                 },
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
@@ -2624,7 +2720,7 @@ private fun CalendarDayCell(
                 overflow = TextOverflow.Ellipsis,
             )
             if (hasSchedule) {
-                Box(Modifier.size(3.dp).background(Mint, CircleShape))
+                Box(Modifier.size(3.dp).background(C.mint, CircleShape))
             }
         }
     }
@@ -2632,29 +2728,30 @@ private fun CalendarDayCell(
 
 @Composable
 private fun DateDetail(info: CalendarDateInfo, scheduleItems: List<ScheduleItem>) {
-    Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+    val C = LocalFortunePalette.current
+    Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 "${info.date.monthValue}月${info.date.dayOfMonth}日 周${info.weekday}",
-                color = TextMain,
+                color = C.textMain,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text("公历 ${info.date.year}年 · 当年第${info.date.dayOfYear}天", color = TextSub)
+            Text("公历 ${info.date.year}年 · 当年第${info.date.dayOfYear}天", color = C.textSub)
             Text(
                 "农历 ${info.ganZhiYear}年 · 生肖${info.zodiac} · ${info.lunarMonth}${info.lunarDay}",
-                color = TextSub,
+                color = C.textSub,
             )
             if (info.solarTerm.isNotBlank()) {
-                CalendarDetailRow(label = "节气", value = info.solarTerm, accent = Gold)
+                CalendarDetailRow(label = "节气", value = info.solarTerm, accent = C.gold)
             }
             if (info.traditionalFestivals.isNotEmpty()) {
-                CalendarDetailRow(label = "传统节日", value = info.traditionalFestivals.joinToString("、"), accent = Rose)
+                CalendarDetailRow(label = "传统节日", value = info.traditionalFestivals.joinToString("、"), accent = C.rose)
             }
             CalendarDetailRow(
                 label = "日程",
                 value = if (scheduleItems.isEmpty()) "暂无事项" else scheduleItems.joinToString(" · ") { it.title },
-                accent = Mint,
+                accent = C.mint,
             )
         }
     }
@@ -2662,9 +2759,10 @@ private fun DateDetail(info: CalendarDateInfo, scheduleItems: List<ScheduleItem>
 
 @Composable
 private fun CalendarDetailRow(label: String, value: String, accent: Color) {
+    val C = LocalFortunePalette.current
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
         Text(label, color = accent, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(68.dp))
-        Text(value, color = TextMain, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(value, color = C.textMain, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
 }
 
@@ -2677,6 +2775,7 @@ private fun CalendarValuePicker(
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
+    val C = LocalFortunePalette.current
     val selectedIndex = values.indexOf(selected).coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
     AlertDialog(
@@ -2687,14 +2786,14 @@ private fun CalendarValuePicker(
                 items(values, key = { it }) { value ->
                     Surface(
                         onClick = { onSelect(value) },
-                        color = if (value == selected) Gold.copy(alpha = 0.18f) else Color.Transparent,
+                        color = if (value == selected) C.gold.copy(alpha = 0.18f) else Color.Transparent,
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 label(value),
-                                color = if (value == selected) Gold else TextMain,
+                                color = if (value == selected) C.gold else C.textMain,
                                 fontWeight = if (value == selected) FontWeight.SemiBold else FontWeight.Normal,
                             )
                         }
@@ -2821,10 +2920,11 @@ private fun ScheduleItemCard(
     onToggle: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val C = LocalFortunePalette.current
     var confirm by remember { mutableStateOf(false) }
     Card(
-        colors = CardDefaults.cardColors(containerColor = if (item.done) PanelAlt else Panel),
-        border = BorderStroke(1.dp, Line),
+        colors = CardDefaults.cardColors(containerColor = if (item.done) C.panelAlt else C.panel),
+        border = BorderStroke(1.dp, C.line),
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -2837,18 +2937,18 @@ private fun ScheduleItemCard(
                 Icon(
                     if (item.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = if (item.done) "标记未完成" else "标记完成",
-                    tint = if (item.done) Mint else TextSub,
+                    tint = if (item.done) C.mint else C.textSub,
                 )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(item.title, color = TextMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text(item.title, color = C.textMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                 if (item.note.isNotBlank()) {
-                    Text(item.note, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                    Text(item.note, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
                 }
-                Text(item.createdAt, color = TextSub, style = MaterialTheme.typography.bodySmall)
+                Text(item.createdAt, color = C.textSub, style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = { confirm = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "删除日程", tint = TextSub)
+                Icon(Icons.Default.Delete, contentDescription = "删除日程", tint = C.textSub)
             }
         }
     }
@@ -2864,6 +2964,7 @@ private fun ScheduleItemCard(
 
 @Composable
 private fun HistoryScreen(vm: FortuneViewModel) {
+    val C = LocalFortunePalette.current
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -2873,7 +2974,7 @@ private fun HistoryScreen(vm: FortuneViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("历史记录", color = TextMain, style = MaterialTheme.typography.titleMedium)
+            Text("历史记录", color = C.textMain, style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = { confirmClear = true }, enabled = vm.history.isNotEmpty()) {
                 Icon(Icons.Default.Delete, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
@@ -2905,12 +3006,13 @@ private fun HistoryScreen(vm: FortuneViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MineScreen(vm: FortuneViewModel) {
+    val C = LocalFortunePalette.current
     var section by remember { mutableStateOf(MineSection.Profile) }
     Column(Modifier.fillMaxSize()) {
         PrimaryTabRow(
             selectedTabIndex = section.ordinal,
-            containerColor = Ink,
-            contentColor = Gold,
+            containerColor = C.ink,
+            contentColor = C.gold,
         ) {
             MineSection.entries.forEach { item ->
                 Tab(
@@ -2936,6 +3038,7 @@ private enum class MineSection(val label: String) {
 
 @Composable
 private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
+    val C = LocalFortunePalette.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2948,19 +3051,19 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Surface(color = Gold.copy(alpha = 0.16f), shape = CircleShape, modifier = Modifier.size(64.dp)) {
+            Surface(color = C.gold.copy(alpha = 0.16f), shape = CircleShape, modifier = Modifier.size(64.dp)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Gold, modifier = Modifier.size(42.dp))
+                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = C.gold, modifier = Modifier.size(42.dp))
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     vm.nickname.ifBlank { "知否用户" },
-                    color = TextMain,
+                    color = C.textMain,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text("本地账户", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                Text("本地账户", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
             TextButton(onClick = onOpenSettings) {
                 Icon(Icons.Default.Settings, contentDescription = null)
@@ -2973,17 +3076,17 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
             ProfileMetric("日程事项", vm.scheduleItems.size.toString(), Modifier.weight(1f))
         }
         Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("个人资料", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("昵称", color = TextSub, style = MaterialTheme.typography.labelMedium)
-                Text(vm.nickname.ifBlank { "未设置" }, color = TextMain)
-                Text("生日或长期关键词", color = TextSub, style = MaterialTheme.typography.labelMedium)
-                Text(vm.birthHint.ifBlank { "未设置" }, color = TextMain)
+                Text("个人资料", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                Text("昵称", color = C.textSub, style = MaterialTheme.typography.labelMedium)
+                Text(vm.nickname.ifBlank { "未设置" }, color = C.textMain)
+                Text("生日或长期关键词", color = C.textSub, style = MaterialTheme.typography.labelMedium)
+                Text(vm.birthHint.ifBlank { "未设置" }, color = C.textMain)
             }
         }
     }
@@ -2991,20 +3094,23 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun ProfileMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), modifier = modifier) {
+    val C = LocalFortunePalette.current
+    Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), modifier = modifier) {
         Column(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(value, color = Gold, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text(label, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+            Text(value, color = C.gold, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(label, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 @Composable
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 private fun SettingsScreen(vm: FortuneViewModel) {
+    val C = LocalFortunePalette.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -3012,6 +3118,25 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("主题", color = C.textMain, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    val labels = listOf("深色" to ThemeMode.Dark, "浅色" to ThemeMode.Light, "跟随系统" to ThemeMode.System)
+                    labels.forEachIndexed { i, (label, mode) ->
+                        SegmentedButton(
+                            selected = vm.themeMode == mode,
+                            onClick = { vm.updateThemeMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, labels.size),
+                        ) { Text(label) }
+                    }
+                }
+            }
+        }
         OutlinedTextField(
             value = vm.nickname,
             onValueChange = { vm.updateNickname(it) },
@@ -3026,12 +3151,12 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             placeholder = { Text("用于稳定生成每日运势，可留空") },
         )
         Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("AI 解读与对话", color = TextMain, fontWeight = FontWeight.SemiBold)
+                Text("AI 解读与对话", color = C.textMain, fontWeight = FontWeight.SemiBold)
                 OutlinedTextField(
                     value = vm.aiApiKey,
                     onValueChange = { vm.updateAiApiKey(it) },
@@ -3057,14 +3182,14 @@ private fun SettingsScreen(vm: FortuneViewModel) {
                 )
                 Text(
                     "AI Key、模型和接口地址只写入本机设置，不会进入 Git 仓库。未配置 Key 时仍可使用本地占卜，但不能生成 AI 解读或对话回复。",
-                    color = TextSub,
+                    color = C.textSub,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
         Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3074,8 +3199,8 @@ private fun SettingsScreen(vm: FortuneViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("AI 语音转写", color = TextMain, fontWeight = FontWeight.SemiBold)
-                        Text("试验性 OpenAI-compatible 接口", color = TextSub, style = MaterialTheme.typography.bodySmall)
+                        Text("AI 语音转写", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                        Text("试验性 OpenAI-compatible 接口", color = C.textSub, style = MaterialTheme.typography.bodySmall)
                     }
                     Switch(
                         checked = vm.cloudSpeechEnabled,
@@ -3109,7 +3234,7 @@ private fun SettingsScreen(vm: FortuneViewModel) {
                         )
                         Text(
                             "开启后，录音会发送到所配置的第三方服务。关闭时始终使用应用内离线模型。配置只保存在本机。",
-                            color = TextSub,
+                            color = C.textSub,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -3117,13 +3242,13 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             }
         }
         Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            border = BorderStroke(1.dp, Line),
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("应用定位", color = TextMain, fontWeight = FontWeight.SemiBold)
-                Text("知否运势是安装即用的手机端应用，所有基础记录都保存在本机。后续可以继续扩展账号同步、AI 解读、提醒和会员能力。", color = TextSub)
+                Text("应用定位", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                Text("知否运势是安装即用的手机端应用，所有基础记录都保存在本机。后续可以继续扩展账号同步、AI 解读、提醒和会员能力。", color = C.textSub)
             }
         }
     }
@@ -3131,9 +3256,10 @@ private fun SettingsScreen(vm: FortuneViewModel) {
 
 @Composable
 private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
+    val C = LocalFortunePalette.current
     Card(
-        colors = CardDefaults.cardColors(containerColor = Panel),
-        border = BorderStroke(1.dp, Line),
+        colors = CardDefaults.cardColors(containerColor = C.panel),
+        border = BorderStroke(1.dp, C.line),
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -3147,24 +3273,24 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(reading.title, color = TextMain, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(reading.timeLabel, color = TextSub, style = MaterialTheme.typography.bodySmall)
+                    Text(reading.title, color = C.textMain, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(reading.timeLabel, color = C.textSub, style = MaterialTheme.typography.bodySmall)
                 }
                 Badge(reading.kind)
             }
             if (reading.question.isNotBlank()) {
-                Text("问：${reading.question}", color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                Text("问：${reading.question}", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
-            Text(reading.body, color = TextMain, style = MaterialTheme.typography.bodyLarge)
-            Text(reading.advice, color = Gold, style = MaterialTheme.typography.bodyMedium)
+            Text(reading.body, color = C.textMain, style = MaterialTheme.typography.bodyLarge)
+            Text(reading.advice, color = C.gold, style = MaterialTheme.typography.bodyMedium)
             if (reading.aiStatus.isNotBlank()) {
-                Text(reading.aiStatus, color = TextSub, style = MaterialTheme.typography.bodyMedium)
+                Text(reading.aiStatus, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
             if (reading.aiInterpretation.isNotBlank()) {
-                Surface(color = PanelAlt, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
+                Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, C.line)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("AI 解读", color = Mint, fontWeight = FontWeight.SemiBold)
-                        MarkdownText(reading.aiInterpretation, color = TextMain, style = MaterialTheme.typography.bodyMedium, onLight = false)
+                        Text("AI 解读", color = C.mint, fontWeight = FontWeight.SemiBold)
+                        MarkdownText(reading.aiInterpretation, color = C.textMain, style = MaterialTheme.typography.bodyMedium, onLight = C.isLight)
                     }
                 }
             }
@@ -3174,18 +3300,20 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
 
 @Composable
 private fun Badge(text: String) {
-    Surface(color = PanelAlt, shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Line)) {
-        Text(text, color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+    val C = LocalFortunePalette.current
+    Surface(color = C.panelAlt, shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, C.line)) {
+        Text(text, color = C.gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
     }
 }
 
 @Composable
 private fun FortuneDial(score: Int) {
+    val C = LocalFortunePalette.current
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Panel),
+        colors = CardDefaults.cardColors(containerColor = C.panel),
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, Line),
+        border = BorderStroke(1.dp, C.line),
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
@@ -3197,7 +3325,7 @@ private fun FortuneDial(score: Int) {
                     val stroke = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round)
                     drawArc(Color(0xFF303640), -220f, 260f, false, style = stroke, size = Size(size.width, size.height))
                     drawArc(
-                        brush = Brush.sweepGradient(listOf(Mint, Gold, Rose, Mint)),
+                        brush = Brush.sweepGradient(listOf(C.mint, C.gold, C.rose, C.mint)),
                         startAngle = -220f,
                         sweepAngle = 260f * (score / 100f),
                         useCenter = false,
@@ -3205,11 +3333,11 @@ private fun FortuneDial(score: Int) {
                         size = Size(size.width, size.height),
                     )
                 }
-                Text("$score", color = TextMain, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("$score", color = C.textMain, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("今日能量", color = TextMain, style = MaterialTheme.typography.titleMedium)
-                Text("结合日期与个人关键词生成，适合每天打开一次。", color = TextSub)
+                Text("今日能量", color = C.textMain, style = MaterialTheme.typography.titleMedium)
+                Text("结合日期与个人关键词生成，适合每天打开一次。", color = C.textSub)
             }
         }
     }
@@ -3217,19 +3345,20 @@ private fun FortuneDial(score: Int) {
 
 @Composable
 private fun InsightStrip() {
+    val C = LocalFortunePalette.current
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         listOf("事业", "关系", "财务").forEachIndexed { index, label ->
             Card(
-                colors = CardDefaults.cardColors(containerColor = PanelAlt),
+                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.weight(1f),
             ) {
                 Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val color = listOf(Mint, Rose, Gold)[index]
+                    val color = listOf(C.mint, C.rose, C.gold)[index]
                     Box(Modifier.size(8.dp).background(color, CircleShape))
                     Spacer(Modifier.height(8.dp))
-                    Text(label, color = TextMain)
-                    Text(listOf("稳中推进", "先听后说", "控制变量")[index], color = TextSub, style = MaterialTheme.typography.bodySmall)
+                    Text(label, color = C.textMain)
+                    Text(listOf("稳中推进", "先听后说", "控制变量")[index], color = C.textSub, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -3238,8 +3367,9 @@ private fun InsightStrip() {
 
 @Composable
 private fun EmptyState(text: String) {
+    val C = LocalFortunePalette.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = TextSub)
+        Text(text, color = C.textSub)
     }
 }
 
@@ -3304,6 +3434,8 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var birthHint by mutableStateOf(repo.birthHint)
         private set
+    var themeMode by mutableStateOf(repo.themeMode)
+        private set
     var todayReading by mutableStateOf(oracle.today(nickname, birthHint))
         private set
     var scheduleTitle by mutableStateOf("")
@@ -3361,6 +3493,11 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         nickname = value
         repo.nickname = value
         refreshToday()
+    }
+
+    fun updateThemeMode(value: ThemeMode) {
+        themeMode = value
+        repo.themeMode = value
     }
 
     fun updateBirthHint(value: String) {
@@ -3624,6 +3761,10 @@ class FortuneRepository(context: Context) {
     var nickname: String
         get() = prefs.getString("nickname", "") ?: ""
         set(value) = prefs.edit().putString("nickname", value).apply()
+
+    var themeMode: ThemeMode
+        get() = runCatching { ThemeMode.valueOf(prefs.getString("theme_mode", ThemeMode.System.name) ?: ThemeMode.System.name) }.getOrDefault(ThemeMode.System)
+        set(value) = prefs.edit().putString("theme_mode", value.name).apply()
 
     var birthHint: String
         get() = prefs.getString("birth_hint", "") ?: ""

@@ -9,23 +9,26 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineRecognizer
-import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
 
 private const val SAMPLE_RATE = 16_000
-private const val MODEL_DIR = "asr/sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16"
+private const val MODEL_DIR = "asr/sherpa-onnx-whisper-tiny-int8"
+private const val ENCODER_FILE = "$MODEL_DIR/tiny-encoder.int8.onnx"
+private const val DECODER_FILE = "$MODEL_DIR/tiny-decoder.int8.onnx"
+private const val TOKENS_FILE = "$MODEL_DIR/tiny-tokens.txt"
 
 class OfflineSpeechRecognizer(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelLock = Any()
 
     @Volatile
-    private var recognizer: OnlineRecognizer? = null
+    private var recognizer: OfflineRecognizer? = null
 
     @Volatile
     private var recording = false
@@ -40,25 +43,26 @@ class OfflineSpeechRecognizer(private val context: Context) {
         runCatching {
             synchronized(modelLock) {
                 if (recognizer != null) return@synchronized
-                val modelConfig = OnlineModelConfig(
-                    transducer = OnlineTransducerModelConfig(
-                        encoder = "$MODEL_DIR/encoder-epoch-99-avg-1.int8.onnx",
-                        decoder = "$MODEL_DIR/decoder-epoch-99-avg-1.onnx",
-                        joiner = "$MODEL_DIR/joiner-epoch-99-avg-1.int8.onnx",
+                listOf(ENCODER_FILE, DECODER_FILE, TOKENS_FILE).forEach(::requireAsset)
+                val modelConfig = OfflineModelConfig(
+                    whisper = OfflineWhisperModelConfig(
+                        encoder = ENCODER_FILE,
+                        decoder = DECODER_FILE,
+                        language = "",
+                        task = "transcribe",
+                        tailPaddings = -1,
                     ),
-                    tokens = "$MODEL_DIR/tokens.txt",
+                    tokens = TOKENS_FILE,
                     numThreads = 1,
                     provider = "cpu",
-                    modelType = "zipformer",
                 )
-                recognizer = OnlineRecognizer(
+                recognizer = OfflineRecognizer(
                     assetManager = context.assets,
-                    config = OnlineRecognizerConfig(
+                    config = OfflineRecognizerConfig(
                         featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
                         modelConfig = modelConfig,
-                        enableEndpoint = false,
                         decodingMethod = "greedy_search",
-                        maxActivePaths = 1,
+                        maxActivePaths = 4,
                     ),
                 )
             }
@@ -67,11 +71,12 @@ class OfflineSpeechRecognizer(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun start(
+        cloudConfig: CloudSpeechConfig? = null,
         onFinal: (String) -> Unit,
         onLevel: (Float) -> Unit,
         onError: (String) -> Unit,
     ): Boolean {
-        val activeRecognizer = recognizer ?: return false
+        val activeRecognizer = if (cloudConfig == null) recognizer ?: return false else recognizer
         if (recording || recordingThread?.isAlive == true) return false
 
         val minBufferSize = AudioRecord.getMinBufferSize(
@@ -95,7 +100,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
             audioRecord = recorder
             recorder.startRecording()
             recordingThread = Thread {
-                captureThenRecognize(activeRecognizer, recorder, onFinal, onLevel, onError)
+                captureThenRecognize(activeRecognizer, cloudConfig, recorder, onFinal, onLevel, onError)
             }.apply {
                 name = "zhifou-offline-asr"
                 start()
@@ -136,7 +141,8 @@ class OfflineSpeechRecognizer(private val context: Context) {
     }
 
     private fun captureThenRecognize(
-        recognizer: OnlineRecognizer,
+        recognizer: OfflineRecognizer?,
+        cloudConfig: CloudSpeechConfig?,
         recorder: AudioRecord,
         onFinal: (String) -> Unit,
         onLevel: (Float) -> Unit,
@@ -145,7 +151,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
         val buffer = ShortArray(1_600)
         val recordedChunks = ArrayList<FloatArray>()
-        var stream: com.k2fsa.sherpa.onnx.OnlineStream? = null
+        var stream: com.k2fsa.sherpa.onnx.OfflineStream? = null
         try {
             while (recording) {
                 val count = try {
@@ -166,19 +172,32 @@ class OfflineSpeechRecognizer(private val context: Context) {
 
             if (!discardResult) {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
-                val decodeStream = recognizer.createStream()
-                stream = decodeStream
-                recordedChunks.forEach { samples ->
-                    decodeStream.acceptWaveform(samples, SAMPLE_RATE)
-                    while (recognizer.isReady(decodeStream)) recognizer.decode(decodeStream)
+                val finalText = if (cloudConfig != null) {
+                    OpenAiCompatibleSpeechTranscriber(cloudConfig)
+                        .transcribe(mergeChunks(recordedChunks), SAMPLE_RATE)
+                        .getOrThrow()
+                        .trim()
+                } else {
+                    requireNotNull(recognizer)
+                    val decodeStream = recognizer.createStream()
+                    stream = decodeStream
+                    recordedChunks.forEach { samples ->
+                        decodeStream.acceptWaveform(samples, SAMPLE_RATE)
+                    }
+                    recognizer.decode(decodeStream)
+                    recognizer.getResult(decodeStream).text.trim()
                 }
-                decodeStream.inputFinished()
-                while (recognizer.isReady(decodeStream)) recognizer.decode(decodeStream)
-                val finalText = recognizer.getResult(decodeStream).text.trim()
                 mainHandler.post { if (!discardResult) onFinal(finalText) }
             }
-        } catch (_: Throwable) {
-            if (!discardResult) mainHandler.post { onError("离线语音识别失败，请重试") }
+        } catch (error: Throwable) {
+            if (!discardResult) {
+                val message = if (cloudConfig == null) {
+                    "离线语音识别失败，请重试"
+                } else {
+                    error.message ?: "AI 语音识别失败，请检查接口配置"
+                }
+                mainHandler.post { onError(message) }
+            }
         } finally {
             try {
                 recorder.stop()
@@ -190,6 +209,22 @@ class OfflineSpeechRecognizer(private val context: Context) {
             if (recordingThread === Thread.currentThread()) recordingThread = null
             stream?.release()
         }
+    }
+
+    private fun requireAsset(path: String) {
+        context.assets.open(path).use { stream ->
+            check(stream.read() >= 0) { "语音模型文件为空：$path" }
+        }
+    }
+
+    private fun mergeChunks(chunks: List<FloatArray>): FloatArray {
+        val merged = FloatArray(chunks.sumOf { it.size })
+        var offset = 0
+        chunks.forEach { chunk ->
+            chunk.copyInto(merged, destinationOffset = offset)
+            offset += chunk.size
+        }
+        return merged
     }
 
     @SuppressLint("MissingPermission")

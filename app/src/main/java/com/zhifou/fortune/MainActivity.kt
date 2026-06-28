@@ -35,9 +35,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +55,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -107,21 +113,26 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
@@ -131,6 +142,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -146,6 +158,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
@@ -161,6 +174,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
 import kotlin.math.cos
@@ -2186,10 +2200,24 @@ private fun CalendarPanel(
     val animationScope = rememberCoroutineScope()
     var visibleMonth by remember { mutableStateOf(YearMonth.from(today)) }
     var picker by remember { mutableStateOf<CalendarPicker?>(null) }
-    var calendarOffset by remember { mutableStateOf(Offset.Zero) }
-    var calendarAnimationJob by remember { mutableStateOf<Job?>(null) }
-    val days = remember(visibleMonth) { calendarCells(visibleMonth).map(::calendarDateInfo) }
+    val centerPage = 6000
+    val pagerState = rememberPagerState(initialPage = centerPage) { 12001 }
     val scheduledDates = remember(scheduleItems) { scheduleItems.mapTo(hashSetOf()) { it.date } }
+    // 进页时预计算当月及前后各两月，翻页大概率命中缓存。
+    LaunchedEffect(Unit) {
+        listOf(-2, -1, 1, 2, 0).forEach { delta ->
+            prefetchMonthInfo(YearMonth.from(today).plusMonths(delta.toLong()))
+        }
+    }
+    // 翻页后，预计算新当月前后各两月，保持缓存领先于滑动。
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            val base = YearMonth.from(today).plusMonths((page - centerPage).toLong())
+            listOf(-2, -1, 1, 2).forEach { delta ->
+                prefetchMonthInfo(base.plusMonths(delta.toLong()))
+            }
+        }
+    }
     val selectedInfo = remember(selectedDate) { calendarDateInfo(selectedDate) }
     val showToday = visibleMonth != YearMonth.from(today) || selectedDate != today
 
@@ -2198,6 +2226,9 @@ private fun CalendarPanel(
         val safeMonth = YearMonth.of(safeYear, month.monthValue)
         visibleMonth = safeMonth
         onSelectedDateChange(safeMonth.atDay(selectedDate.dayOfMonth.coerceAtMost(safeMonth.lengthOfMonth())))
+        val monthsBetween = ChronoUnit.MONTHS.between(YearMonth.from(today), safeMonth)
+        val targetPage = (centerPage + monthsBetween).toInt().coerceIn(0, 12000)
+        animationScope.launch { pagerState.animateScrollToPage(targetPage) }
     }
 
     Card(
@@ -2237,112 +2268,64 @@ private fun CalendarPanel(
                 }
                 if (showToday) {
                     TextButton(onClick = {
-                        visibleMonth = YearMonth.from(today)
                         onSelectedDateChange(today)
+                        animationScope.launch {
+                            pagerState.animateScrollToPage(centerPage)
+                        }
                     }, modifier = Modifier.align(Alignment.CenterEnd)) { Text("今日") }
                 }
             }
-            Column(
-                modifier = Modifier
-                    .graphicsLayer {
-                        translationX = calendarOffset.x
-                        translationY = calendarOffset.y
-                    }
-                    .pointerInput(visibleMonth, selectedDate) {
-                    var dragX = 0f
-                    var dragY = 0f
-                    var dragAxis: CalendarDragAxis? = null
-
-                    fun settleCalendar(target: Offset = Offset.Zero, durationMillis: Int = 140) {
-                        val start = calendarOffset
-                        calendarAnimationJob?.cancel()
-                        calendarAnimationJob = animationScope.launch {
-                            animate(
-                                initialValue = 0f,
-                                targetValue = 1f,
-                                animationSpec = tween(durationMillis, easing = FastOutSlowInEasing),
-                            ) { progress, _ ->
-                                calendarOffset = Offset(
-                                    x = start.x + (target.x - start.x) * progress,
-                                    y = start.y + (target.y - start.y) * progress,
-                                )
-                            }
-                        }
-                    }
-
-                    detectDragGestures(
-                        onDragStart = {
-                            dragX = 0f
-                            dragY = 0f
-                            dragAxis = null
-                            calendarAnimationJob?.cancel()
-                            calendarOffset = Offset.Zero
-                        },
-                        onDrag = { change, amount ->
-                            change.consume()
-                            dragX += amount.x
-                            dragY += amount.y
-                            if (dragAxis == null && kotlin.math.abs(dragX) + kotlin.math.abs(dragY) > 16.dp.toPx()) {
-                                dragAxis = if (kotlin.math.abs(dragX) > kotlin.math.abs(dragY)) {
-                                    CalendarDragAxis.Horizontal
-                                } else {
-                                    CalendarDragAxis.Vertical
-                                }
-                            }
-                            calendarOffset = when (dragAxis) {
-                                CalendarDragAxis.Horizontal -> Offset(dragX.coerceIn(-180.dp.toPx(), 180.dp.toPx()), 0f)
-                                CalendarDragAxis.Vertical -> Offset(0f, dragY.coerceIn(-120.dp.toPx(), 120.dp.toPx()))
-                                null -> Offset.Zero
-                            }
-                        },
-                        onDragEnd = {
-                            val horizontalThreshold = 72.dp.toPx()
-                            val verticalThreshold = 88.dp.toPx()
-                            if (dragAxis == CalendarDragAxis.Horizontal && kotlin.math.abs(dragX) > horizontalThreshold) {
-                                showMonth(if (dragX < 0f) visibleMonth.plusYears(1) else visibleMonth.minusYears(1))
-                                calendarOffset = Offset(if (dragX < 0f) 56.dp.toPx() else -56.dp.toPx(), 0f)
-                                settleCalendar(durationMillis = 160)
-                            } else if (dragAxis == CalendarDragAxis.Vertical && kotlin.math.abs(dragY) > verticalThreshold) {
-                                showMonth(if (dragY < 0f) visibleMonth.plusMonths(1) else visibleMonth.minusMonths(1))
-                                calendarOffset = Offset(0f, if (dragY < 0f) 36.dp.toPx() else -36.dp.toPx())
-                                settleCalendar(durationMillis = 150)
-                            } else {
-                                settleCalendar(durationMillis = 120)
-                            }
-                        },
-                        onDragCancel = { settleCalendar(durationMillis = 120) },
-                    )
-                },
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf("一", "二", "三", "四", "五", "六", "日").forEach { label ->
-                        Text(
-                            label,
-                            color = TextSub,
-                            style = MaterialTheme.typography.labelMedium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+            LaunchedEffect(pagerState.currentPage) {
+                val month = YearMonth.from(today).plusMonths((pagerState.currentPage - centerPage).toLong())
+                if (month != visibleMonth) {
+                    visibleMonth = month
                 }
-                days.chunked(7).forEach { week ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        week.forEach { info ->
-                            CalendarDayCell(
-                                info = info,
-                                visibleMonth = visibleMonth,
-                                selectedDate = selectedDate,
-                                today = today,
-                                hasSchedule = info.date.toString() in scheduledDates,
-                                onClick = {
-                                    visibleMonth = YearMonth.from(info.date)
-                                    onSelectedDateChange(info.date)
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
+            }
+            val yearDragScope = rememberCoroutineScope()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(392.dp)
+                    .clipToBounds()
+                    .pointerInput(visibleMonth) {
+                        var dragX = 0f
+                        detectDragGestures(
+                            onDragStart = { dragX = 0f },
+                            onDrag = { change, amount ->
+                                if (kotlin.math.abs(amount.x) > kotlin.math.abs(amount.y)) {
+                                    change.consume()
+                                    dragX += amount.x
+                                }
+                            },
+                            onDragEnd = {
+                                if (kotlin.math.abs(dragX) > 72.dp.toPx()) {
+                                    val delta = if (dragX < 0f) 12 else -12
+                                    yearDragScope.launch {
+                                        pagerState.animateScrollToPage(pagerState.currentPage + delta)
+                                    }
+                                }
+                            },
+                            onDragCancel = { dragX = 0f },
+                        )
+                    },
+            ) {
+                VerticalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = 0,
+                ) { page ->
+                    val month = YearMonth.from(today).plusMonths((page - centerPage).toLong())
+                    CalendarMonthGrid(
+                        month = month,
+                        selectedDate = selectedDate,
+                        today = today,
+                        scheduledDates = scheduledDates,
+                        onSelectedDateChange = {
+                            visibleMonth = YearMonth.from(it)
+                            onSelectedDateChange(it)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
             DateDetail(info = selectedInfo, scheduleItems = scheduleItems.filter { it.date == selectedDate.toString() })
@@ -2376,6 +2359,69 @@ private fun CalendarPanel(
     }
 }
 
+private val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
+
+@Composable
+private fun CalendarMonthGrid(
+    month: YearMonth,
+    selectedDate: LocalDate,
+    today: LocalDate,
+    scheduledDates: Set<String>,
+    onSelectedDateChange: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 命中缓存则同步返回（0ms），未命中则后台算（~250ms）。
+    val days by produceState<List<CalendarDateInfo>>(initialValue = monthInfoCache.get(month) ?: emptyList(), month) {
+        value = withContext(Dispatchers.Default) { computeMonthInfo(month) }
+    }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            weekLabels.forEach { label ->
+                Text(
+                    label,
+                    color = TextSub,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        if (days.isEmpty()) {
+            calendarCells(month).chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    week.forEach { date ->
+                        CalendarDayCell(
+                            info = CalendarDateInfo(date, "", "", "", "", "", "", emptyList()),
+                            visibleMonth = month,
+                            selectedDate = selectedDate,
+                            today = today,
+                            hasSchedule = date.toString() in scheduledDates,
+                            onClick = { onSelectedDateChange(date) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        } else {
+            days.chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    week.forEach { info ->
+                        CalendarDayCell(
+                            info = info,
+                            visibleMonth = month,
+                            selectedDate = selectedDate,
+                            today = today,
+                            hasSchedule = info.date.toString() in scheduledDates,
+                            onClick = { onSelectedDateChange(info.date) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun CalendarDayCell(
     info: CalendarDateInfo,
@@ -2390,23 +2436,31 @@ private fun CalendarDayCell(
     val inMonth = date.monthValue == visibleMonth.monthValue
     val isToday = date == today
     val isSelected = date == selectedDate
-    Surface(
-        onClick = onClick,
-        color = when {
-            isSelected -> Gold.copy(alpha = 0.18f)
-            isToday -> Mint.copy(alpha = 0.14f)
-            else -> Color.Transparent
-        },
-        shape = RoundedCornerShape(8.dp),
-        border = when {
-            isSelected -> BorderStroke(1.dp, Gold)
-            isToday -> BorderStroke(1.dp, Mint)
-            else -> null
-        },
-        modifier = modifier.height(58.dp),
+    val bgColor = when {
+        isSelected -> Gold.copy(alpha = 0.18f)
+        isToday -> Mint.copy(alpha = 0.14f)
+        else -> Color.Transparent
+    }
+    val borderColor = when {
+        isSelected -> Gold
+        isToday -> Mint
+        else -> Color.Transparent
+    }
+    Box(
+        modifier = modifier
+            .height(58.dp)
+            .background(bgColor, RoundedCornerShape(8.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 6.dp, horizontal = 2.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 6.dp, horizontal = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -2524,6 +2578,39 @@ private fun calendarCells(month: YearMonth): List<LocalDate> {
     return List(42) { start.plusDays(it.toLong()) }
 }
 
+// 按月缓存农历/节气计算结果，避免翻页时反复计算（lunar 库单月 ~250ms）。
+private val monthInfoCache = android.util.LruCache<YearMonth, List<CalendarDateInfo>>(64)
+
+private fun computeMonthInfo(month: YearMonth): List<CalendarDateInfo> {
+    monthInfoCache.get(month)?.let { return it }
+    val result = calendarCells(month).map(::calendarDateInfo)
+    monthInfoCache.put(month, result)
+    return result
+}
+
+private fun prefetchMonthInfo(month: YearMonth) {
+    if (monthInfoCache.get(month) != null) return
+    CoroutineScope(Dispatchers.Default).launch { computeMonthInfo(month) }
+}
+
+// 菱形缓存范围：以 center(年,月) 为中心，包含本年全年、前/后年 center月±3、前前/后后年 center月±1。
+private fun diamondMonths(center: YearMonth): List<YearMonth> {
+    val result = LinkedHashSet<YearMonth>()
+    // 本年全年
+    for (m in 1..12) result.add(YearMonth.of(center.year, m))
+    // 前/后年：center.month ±3（跨年自然处理）
+    for (d in -3..3) {
+        result.add(center.minusYears(1).plusMonths(d.toLong()))
+        result.add(center.plusYears(1).plusMonths(d.toLong()))
+    }
+    // 前前/后后年：center.month ±1
+    for (d in -1..1) {
+        result.add(center.minusYears(2).plusMonths(d.toLong()))
+        result.add(center.plusYears(2).plusMonths(d.toLong()))
+    }
+    return result.toList()
+}
+
 private enum class CalendarPicker { Year, Month }
 
 private enum class CalendarDragAxis { Horizontal, Vertical }
@@ -2551,7 +2638,7 @@ private val TRADITIONAL_FESTIVAL_NAMES = setOf(
     "除夕",
 )
 
-private data class CalendarDateInfo(
+internal data class CalendarDateInfo(
     val date: LocalDate,
     val weekday: String,
     val ganZhiYear: String,
@@ -3024,6 +3111,42 @@ private fun EmptyState(text: String) {
 class FortuneViewModel(application: Application) : AndroidViewModel(application) {
     private val repo = FortuneRepository(application)
     private val oracle = FortuneOracle()
+
+    init { ensureCalendarCache() }
+
+    private var calendarCacheWarmed = false
+
+    // 把持久化的菱形缓存载入内存；若缓存年份与当前年不符（每月1号/跨年），后台重建。
+    private fun ensureCalendarCache() {
+        val now = LocalDate.now()
+        val center = YearMonth.of(now.year, now.monthValue)
+        // 先把已有持久化缓存载入内存，命中即免计算。
+        val cachedYear = repo.loadCalendarCacheYear()
+        val cached = repo.loadCalendarCache()
+        cached.forEach { (key, cells) ->
+            runCatching { YearMonth.parse(key) }.getOrNull()?.let { monthInfoCache.put(it, cells) }
+        }
+        calendarCacheWarmed = true
+        if (cachedYear != now.year || cached.isEmpty()) {
+            rebuildDiamondCache(center)
+        }
+    }
+
+    private fun rebuildDiamondCache(center: YearMonth) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val months = diamondMonths(center)
+            val map = HashMap<String, List<CalendarDateInfo>>()
+            months.forEach { month ->
+                // 每月串行计算，避免抢占后台线程影响体验；计算结果即时入内存缓存。
+                val cells = computeMonthInfo(month)
+                monthInfoCache.put(month, cells)
+                map[month.toString()] = cells
+                // 主动让出，平衡占用
+                kotlinx.coroutines.yield()
+            }
+            repo.saveCalendarCache(center.year, map)
+        }
+    }
 
     var question by mutableStateOf("")
     var latestReading by mutableStateOf<FortuneReading?>(null)
@@ -3524,6 +3647,65 @@ class FortuneRepository(context: Context) {
         }
         prefs.edit().putString("wheel_history", array.toString()).apply()
         return next
+    }
+
+    // 菱形日历缓存的持久化：{"year":2026,"months":{"2026-06":[{...cell},...]}}
+    fun loadCalendarCacheYear(): Int {
+        return prefs.getInt("calendar_cache_year", 0)
+    }
+
+    internal fun loadCalendarCache(): Map<String, List<CalendarDateInfo>> {
+        val raw = prefs.getString("calendar_cache", "{}") ?: "{}"
+        return runCatching {
+            val root = JSONObject(raw)
+            val months = root.optJSONObject("months") ?: return@runCatching emptyMap()
+            val result = HashMap<String, List<CalendarDateInfo>>()
+            val keys = months.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val arr = months.getJSONArray(key)
+                val list = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    val festivals = o.optJSONArray("festivals")
+                    CalendarDateInfo(
+                        date = LocalDate.parse(o.getString("date")),
+                        weekday = o.optString("weekday"),
+                        ganZhiYear = o.optString("ganZhiYear"),
+                        zodiac = o.optString("zodiac"),
+                        lunarMonth = o.optString("lunarMonth"),
+                        lunarDay = o.optString("lunarDay"),
+                        solarTerm = o.optString("solarTerm"),
+                        traditionalFestivals = if (festivals == null) emptyList() else (0 until festivals.length()).map { festivals.getString(it) },
+                    )
+                }
+                result[key] = list
+            }
+            result
+        }.getOrDefault(emptyMap())
+    }
+
+    internal fun saveCalendarCache(year: Int, months: Map<String, List<CalendarDateInfo>>) {
+        val root = JSONObject().put("year", year)
+        val monthsObj = JSONObject()
+        months.forEach { (key, cells) ->
+            val arr = JSONArray()
+            cells.forEach { info ->
+                val fest = JSONArray()
+                info.traditionalFestivals.forEach { fest.put(it) }
+                arr.put(JSONObject()
+                    .put("date", info.date.toString())
+                    .put("weekday", info.weekday)
+                    .put("ganZhiYear", info.ganZhiYear)
+                    .put("zodiac", info.zodiac)
+                    .put("lunarMonth", info.lunarMonth)
+                    .put("lunarDay", info.lunarDay)
+                    .put("solarTerm", info.solarTerm)
+                    .put("festivals", fest))
+            }
+            monthsObj.put(key, arr)
+        }
+        root.put("months", monthsObj)
+        prefs.edit().putInt("calendar_cache_year", year).putString("calendar_cache", root.toString()).apply()
     }
 }
 

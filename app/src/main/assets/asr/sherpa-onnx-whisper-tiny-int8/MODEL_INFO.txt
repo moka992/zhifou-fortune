@@ -1,0 +1,9 @@
+Model: Whisper tiny multilingual INT8 export for sherpa-onnx
+Source: https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny
+Upstream: https://github.com/openai/whisper
+License: MIT
+
+SHA-256:
+d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925  tiny-decoder.int8.onnx
+d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434  tiny-encoder.int8.onnx
+b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126  tiny-tokens.txt

@@ -86,6 +86,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
@@ -408,15 +409,38 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
         }
     }
 
-    LaunchedEffect(offlineRecognizer) {
-        val result = offlineRecognizer.prepare()
-        modelReady = result.isSuccess
-        if (result.isFailure) showVoiceMessage("离线语音模型加载失败")
+    LaunchedEffect(offlineRecognizer, vm.cloudSpeechEnabled) {
+        if (vm.cloudSpeechEnabled) {
+            modelReady = true
+        } else {
+            val result = offlineRecognizer.prepare()
+            modelReady = result.isSuccess
+            if (result.isFailure) showVoiceMessage("离线语音模型加载失败，请重新安装应用")
+        }
     }
 
     fun startRecording() {
         if (isRecording) return
-        if (!modelReady) {
+        val cloudConfig = if (vm.cloudSpeechEnabled) {
+            when {
+                vm.cloudSpeechApiKey.isBlank() -> {
+                    showVoiceMessage("请先在“我的 > 设置”中填写语音接口 API Key")
+                    return
+                }
+                vm.cloudSpeechEndpoint.isBlank() || vm.cloudSpeechModel.isBlank() -> {
+                    showVoiceMessage("请先完整配置 AI 语音接口")
+                    return
+                }
+                else -> CloudSpeechConfig(
+                    endpoint = vm.cloudSpeechEndpoint,
+                    apiKey = vm.cloudSpeechApiKey,
+                    model = vm.cloudSpeechModel,
+                )
+            }
+        } else {
+            null
+        }
+        if (cloudConfig == null && !modelReady) {
             showVoiceMessage("离线语音模型正在加载，请稍后再试")
             return
         }
@@ -425,6 +449,7 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
         isCancelling = false
         voiceLevel = 0.06f
         isRecording = offlineRecognizer.start(
+            cloudConfig = cloudConfig,
             onFinal = { text ->
                 voiceLevel = 0f
                 if (text.isBlank()) {
@@ -556,7 +581,7 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                             if (textEditing || keyboardEdited) {
                                 Modifier
                             } else {
-                                Modifier.pointerInput(modelReady, voiceHoldThresholdMs) {
+                                Modifier.pointerInput(modelReady, vm.cloudSpeechEnabled, voiceHoldThresholdMs) {
                                     awaitEachGesture {
                                         val down = awaitFirstDown(
                                             requireUnconsumed = false,
@@ -2050,6 +2075,60 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             border = BorderStroke(1.dp, Line),
             shape = RoundedCornerShape(8.dp),
         ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("AI 语音转写", color = TextMain, fontWeight = FontWeight.SemiBold)
+                        Text("试验性 OpenAI-compatible 接口", color = TextSub, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(
+                        checked = vm.cloudSpeechEnabled,
+                        onCheckedChange = { vm.updateCloudSpeechEnabled(it) },
+                    )
+                }
+                AnimatedVisibility(vm.cloudSpeechEnabled) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = vm.cloudSpeechApiKey,
+                            onValueChange = { vm.updateCloudSpeechApiKey(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("语音接口 API Key") },
+                            placeholder = { Text("仅保存在本机") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = vm.cloudSpeechModel,
+                            onValueChange = { vm.updateCloudSpeechModel(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("语音模型") },
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = vm.cloudSpeechEndpoint,
+                            onValueChange = { vm.updateCloudSpeechEndpoint(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("音频转写 endpoint") },
+                            singleLine = true,
+                        )
+                        Text(
+                            "开启后，录音会发送到所配置的第三方服务。关闭时始终使用应用内离线模型。配置只保存在本机。",
+                            color = TextSub,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(8.dp),
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("应用定位", color = TextMain, fontWeight = FontWeight.SemiBold)
                 Text("知否运势是安装即用的手机端应用，所有基础记录都保存在本机。后续可以继续扩展账号同步、AI 解读、提醒和会员能力。", color = TextSub)
@@ -2197,6 +2276,14 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var aiEndpoint by mutableStateOf(repo.aiEndpoint)
         private set
+    var cloudSpeechEnabled by mutableStateOf(repo.cloudSpeechEnabled)
+        private set
+    var cloudSpeechApiKey by mutableStateOf(repo.cloudSpeechApiKey)
+        private set
+    var cloudSpeechModel by mutableStateOf(repo.cloudSpeechModel)
+        private set
+    var cloudSpeechEndpoint by mutableStateOf(repo.cloudSpeechEndpoint)
+        private set
 
     fun castCoins() {
         save(oracle.coin(question))
@@ -2237,6 +2324,26 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     fun updateAiEndpoint(value: String) {
         aiEndpoint = value.trim()
         repo.aiEndpoint = aiEndpoint
+    }
+
+    fun updateCloudSpeechEnabled(value: Boolean) {
+        cloudSpeechEnabled = value
+        repo.cloudSpeechEnabled = value
+    }
+
+    fun updateCloudSpeechApiKey(value: String) {
+        cloudSpeechApiKey = value.trim()
+        repo.cloudSpeechApiKey = cloudSpeechApiKey
+    }
+
+    fun updateCloudSpeechModel(value: String) {
+        cloudSpeechModel = value.trim()
+        repo.cloudSpeechModel = cloudSpeechModel
+    }
+
+    fun updateCloudSpeechEndpoint(value: String) {
+        cloudSpeechEndpoint = value.trim()
+        repo.cloudSpeechEndpoint = cloudSpeechEndpoint
     }
 
     fun clearHistory() {
@@ -2346,6 +2453,30 @@ class FortuneRepository(context: Context) {
             ?: "https://api.openai.com/v1/chat/completions"
         set(value) = prefs.edit()
             .putString("ai_endpoint", value.ifBlank { "https://api.openai.com/v1/chat/completions" })
+            .apply()
+
+    var cloudSpeechEnabled: Boolean
+        get() = prefs.getBoolean("cloud_speech_enabled", false)
+        set(value) = prefs.edit().putBoolean("cloud_speech_enabled", value).apply()
+
+    var cloudSpeechApiKey: String
+        get() = prefs.getString("cloud_speech_api_key", "") ?: ""
+        set(value) = prefs.edit().putString("cloud_speech_api_key", value).apply()
+
+    var cloudSpeechModel: String
+        get() = prefs.getString("cloud_speech_model", "whisper-1") ?: "whisper-1"
+        set(value) = prefs.edit().putString("cloud_speech_model", value.ifBlank { "whisper-1" }).apply()
+
+    var cloudSpeechEndpoint: String
+        get() = prefs.getString(
+            "cloud_speech_endpoint",
+            "https://api.openai.com/v1/audio/transcriptions",
+        ) ?: "https://api.openai.com/v1/audio/transcriptions"
+        set(value) = prefs.edit()
+            .putString(
+                "cloud_speech_endpoint",
+                value.ifBlank { "https://api.openai.com/v1/audio/transcriptions" },
+            )
             .apply()
 
     fun loadHistory(): List<FortuneReading> {

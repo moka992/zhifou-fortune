@@ -10,3 +10,5 @@ captures/
 *.apk
 *.aab
 *.keystore
+app/src/main/assets/asr/sherpa-onnx-whisper-tiny-int8/*.onnx
+app/src/main/assets/asr/sherpa-onnx-whisper-tiny-int8/tiny-tokens.txt

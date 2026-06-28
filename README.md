@@ -8,7 +8,8 @@
 - Three-coin I Ching divination
 - Answer Book oracle prompts
 - AI-powered interpretation through an OpenAI-compatible endpoint
-- Offline Chinese-English voice input for divination questions
+- Offline multilingual voice input with Chinese-English mixed-language support
+- Optional OpenAI-compatible audio transcription backend, disabled by default
 - Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and selectable D4/D6/D8/D10/D12/D20 dice
 - Local reading history
 - Offline solar/lunar calendar with swipe navigation, solar terms, traditional festivals, and date-specific schedules
@@ -20,7 +21,7 @@
 - Jetpack Compose
 - Material 3
 - lunar-java for offline Chinese calendar calculations
-- Sherpa-ONNX with an INT8 bilingual Zipformer model
+- Sherpa-ONNX with an INT8 Whisper tiny multilingual model
 - Android Gradle Plugin 8.6.1
 - minSdk 26
 - targetSdk 35
@@ -34,6 +35,14 @@
 - Android SDK Platform 35
 
 ### Build
+
+Download the speech model assets, which are intentionally excluded from Git:
+
+```bash
+./scripts/fetch_whisper_model.sh
+```
+
+Then build the application:
 
 ```bash
 ./gradlew :app:assembleDebug
@@ -53,16 +62,18 @@ AI interpretation can be configured inside the app settings with:
 - Model name
 - OpenAI-compatible chat completions endpoint
 
+An optional OpenAI-compatible audio transcription endpoint can be configured separately. It is disabled by default and no API key is included in the source tree or APK.
+
 ## Permissions
 
 The app uses the following Android permissions:
 
-- `INTERNET`: used for optional AI interpretation.
-- `RECORD_AUDIO`: used for on-device voice input. Microphone audio is processed locally and is not uploaded by the speech recognition feature.
+- `INTERNET`: used for optional AI interpretation and optional cloud speech transcription.
+- `RECORD_AUDIO`: used for voice input. Audio remains on the device in the default offline mode; it is uploaded only when the user explicitly enables and configures cloud speech transcription.
 
 ## Offline Speech Recognition
 
-Voice input runs locally with a bundled Chinese-English model. Long-press the question field to record, release to transcribe in the background, or slide up before releasing to cancel and return to text editing. No speech service account or network connection is required.
+Voice input runs locally by default with an INT8 Whisper tiny model bundled into the APK at build time. The model binaries are excluded from Git because of their size and can be restored with `scripts/fetch_whisper_model.sh`. Long-press the question field to record, release to transcribe in the background, or slide up before releasing to cancel and return to text editing. No speech service account or network connection is required for offline mode after installation.
 
 The current native package targets `arm64-v8a`, which covers the supported Android phone range while keeping the APK smaller than a universal build.
 

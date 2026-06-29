@@ -14,11 +14,13 @@ import android.os.Bundle
 import android.view.ViewConfiguration
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
@@ -42,6 +44,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +71,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.EventNote
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.Icons
@@ -80,6 +84,7 @@ import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
@@ -166,6 +171,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -269,6 +275,18 @@ private fun applySystemBars(window: android.view.Window, dark: Boolean) {
     window.navigationBarColor = android.graphics.Color.TRANSPARENT
 }
 
+// 按压反馈：按下时缩放 0.97，松开回弹（redesign: physical press feedback）。
+// 用法：Button(interactionSource = src, modifier = Modifier.pressScale(src))
+@Composable
+private fun pressScaleModifier(interaction: MutableInteractionSource): Modifier {
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, animationSpec = tween(120), label = "pressScale")
+    return Modifier.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
 class MainActivity : ComponentActivity() {
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -333,6 +351,9 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     var showDiceTool by remember { mutableStateOf(false) }
     var showWheelTool by remember { mutableStateOf(false) }
 
+    BackHandler(enabled = showDiceTool) { showDiceTool = false }
+    BackHandler(enabled = showWheelTool) { showWheelTool = false }
+
     DisposableEffect(offlineRecognizer) {
         onDispose {
             Thread({ offlineRecognizer.close() }, "zhifou-asr-cleanup").start()
@@ -369,8 +390,8 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             label = if (item == Tab.Oracle) null else ({ Text(item.label) }),
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = C.gold,
-                                selectedTextColor = if (item == Tab.Oracle) C.gold else C.textMain,
-                                indicatorColor = if (item == Tab.Oracle) Color.Transparent else C.gold.copy(alpha = 0.14f),
+                                selectedTextColor = C.gold,
+                                indicatorColor = if (item == Tab.Oracle) Color.Transparent else C.gold.copy(alpha = 0.22f),
                                 unselectedIconColor = C.textSub,
                                 unselectedTextColor = C.textSub,
                             ),
@@ -450,8 +471,7 @@ private fun AppTopBar() {
             Text(
                 "知否运势",
                 color = C.textMain,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.5).sp, fontWeight = FontWeight.SemiBold),
             )
         },
         colors = androidx.compose.material3.TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -475,16 +495,23 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
         FortuneDial(score = today.score)
         ReadingCard(reading = today)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            val pressSrc = remember { MutableInteractionSource() }
             Button(
                 onClick = { vm.refreshToday() },
-                modifier = Modifier.weight(1f),
+                interactionSource = pressSrc,
+                modifier = Modifier.weight(1f).then(pressScaleModifier(pressSrc)),
                 colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else Color(0xFF111318)),
             ) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("今日运势")
             }
-            FilledTonalButton(onClick = onOpenOracle, modifier = Modifier.weight(1f)) {
+            val oracleSrc = remember { MutableInteractionSource() }
+            FilledTonalButton(
+                onClick = onOpenOracle,
+                interactionSource = oracleSrc,
+                modifier = Modifier.weight(1f).then(pressScaleModifier(oracleSrc)),
+            ) {
                 Icon(Icons.Default.AutoAwesome, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("去占卜")
@@ -679,7 +706,7 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(
@@ -769,19 +796,15 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                 }
                 if (vm.chatSending) {
                     item(key = "chat-loading") {
-                        ChatBubble(
-                            ChatMessage(
-                                id = Long.MIN_VALUE,
-                                role = "assistant",
-                                content = "正在思考…",
-                                createdAt = "",
-                            )
-                        )
+                        ThinkingBubble()
                     }
                 }
                 if (vm.chatStatus.isNotBlank()) {
                     item(key = "chat-status") {
-                        Text(vm.chatStatus, color = C.rose, style = MaterialTheme.typography.bodySmall)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = C.rose, modifier = Modifier.size(14.dp))
+                            Text(vm.chatStatus, color = C.rose, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
                 item(key = "timeline-bottom") { Spacer(Modifier.height(4.dp)) }
@@ -818,12 +841,26 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = { vm.castCoins() }, modifier = Modifier.weight(1f)) {
+                val coinsSrc = remember { MutableInteractionSource() }
+                OutlinedButton(
+                    onClick = { vm.castCoins() },
+                    interactionSource = coinsSrc,
+                    modifier = Modifier.weight(1f).then(pressScaleModifier(coinsSrc)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
+                    border = BorderStroke(1.dp, C.line),
+                ) {
                     Icon(Icons.Default.Casino, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("三币起卦")
                 }
-                OutlinedButton(onClick = { vm.drawAnswerBook() }, modifier = Modifier.weight(1f)) {
+                val bookSrc = remember { MutableInteractionSource() }
+                OutlinedButton(
+                    onClick = { vm.drawAnswerBook() },
+                    interactionSource = bookSrc,
+                    modifier = Modifier.weight(1f).then(pressScaleModifier(bookSrc)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
+                    border = BorderStroke(1.dp, C.line),
+                ) {
                     Icon(Icons.Default.Book, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("答案之书")
@@ -907,12 +944,15 @@ private fun OracleScreen(vm: FortuneViewModel, offlineRecognizer: OfflineSpeechR
                         maxLines = 3,
                         readOnly = !textEditing && !keyboardEdited,
                     )
+                    val sendSrc = remember { MutableInteractionSource() }
                     IconButton(
                         onClick = ::sendChatMessage,
                         enabled = vm.question.isNotBlank() && !vm.chatSending,
+                        interactionSource = sendSrc,
                         modifier = Modifier
                             .size(52.dp)
-                            .background(C.mint, RoundedCornerShape(8.dp)),
+                            .background(C.mint, RoundedCornerShape(8.dp))
+                            .then(pressScaleModifier(sendSrc)),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
@@ -1105,6 +1145,44 @@ private fun ChatBubble(message: ChatMessage) {
                         modifier = Modifier.align(Alignment.End),
                     )
                 }
+            }
+        }
+    }
+}
+
+// 加载态：三个呼吸跳动的圆点，比静态"正在思考…"更有活力（redesign: animated loading）。
+@Composable
+private fun ThinkingBubble() {
+    val C = LocalFortunePalette.current
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val dots = listOf(0, 1, 2).map { i ->
+        transition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 600, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+                initialStartOffset = androidx.compose.animation.core.StartOffset(i * 180),
+            ),
+            label = "dot$i",
+        )
+    }
+    Surface(
+        color = C.chatBubbleAssistant,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(0.84f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            dots.forEach { d ->
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .background(C.chatText.copy(alpha = d.value), CircleShape),
+                )
             }
         }
     }
@@ -1626,6 +1704,8 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             onClick = { vm.addWheelSegment() },
             enabled = segments.size < 25,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
+            border = BorderStroke(1.dp, C.line),
         ) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(6.dp))
@@ -1963,6 +2043,8 @@ private fun DiceDropdown(
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
+                border = BorderStroke(1.dp, C.line),
             ) {
                 Text(value, color = C.textMain, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -2963,18 +3045,11 @@ private fun ScheduleItemCard(
 }
 
 @Composable
-private fun HistoryScreen(vm: FortuneViewModel) {
+private fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("历史记录", color = C.textMain, style = MaterialTheme.typography.titleMedium)
+        SubScreenHeader(title = "历史记录", onBack = onBack) {
             TextButton(onClick = { confirmClear = true }, enabled = vm.history.isNotEmpty()) {
                 Icon(Icons.Default.Delete, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
@@ -2982,7 +3057,7 @@ private fun HistoryScreen(vm: FortuneViewModel) {
             }
         }
         if (vm.history.isEmpty()) {
-            EmptyState("还没有占卜记录")
+            EmptyState("还没有占卜记录", "起一卦或抽一次答案之书后，结果会出现在这里")
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -3003,41 +3078,25 @@ private fun HistoryScreen(vm: FortuneViewModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MineScreen(vm: FortuneViewModel) {
-    val C = LocalFortunePalette.current
     var section by remember { mutableStateOf(MineSection.Profile) }
-    Column(Modifier.fillMaxSize()) {
-        PrimaryTabRow(
-            selectedTabIndex = section.ordinal,
-            containerColor = C.ink,
-            contentColor = C.gold,
-        ) {
-            MineSection.entries.forEach { item ->
-                Tab(
-                    selected = section == item,
-                    onClick = { section = item },
-                    text = { Text(item.label) },
-                )
-            }
-        }
-        when (section) {
-            MineSection.Profile -> MineProfile(vm, onOpenSettings = { section = MineSection.Settings })
-            MineSection.History -> HistoryScreen(vm)
-            MineSection.Settings -> SettingsScreen(vm)
-        }
+    BackHandler(enabled = section != MineSection.Profile) { section = MineSection.Profile }
+    when (section) {
+        MineSection.Profile -> MineProfile(
+            vm,
+            onOpenSettings = { section = MineSection.Settings },
+            onOpenHistory = { section = MineSection.History },
+        )
+        MineSection.History -> HistoryScreen(vm, onBack = { section = MineSection.Profile })
+        MineSection.Settings -> SettingsScreen(vm, onBack = { section = MineSection.Profile })
     }
 }
 
-private enum class MineSection(val label: String) {
-    Profile("我的"),
-    History("记录"),
-    Settings("设置"),
-}
+private enum class MineSection { Profile, History, Settings }
 
 @Composable
-private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
+private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
     val C = LocalFortunePalette.current
     Column(
         modifier = Modifier
@@ -3060,21 +3119,17 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
                 Text(
                     vm.nickname.ifBlank { "知否用户" },
                     color = C.textMain,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.5).sp, fontWeight = FontWeight.SemiBold),
                 )
                 Text("本地账户", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
-            TextButton(onClick = onOpenSettings) {
-                Icon(Icons.Default.Settings, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("设置")
-            }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ProfileMetric("占卜记录", vm.history.size.toString(), Modifier.weight(1f))
+            ProfileMetric("占卜记录", vm.history.size.toString(), Modifier.weight(1f), onClick = onOpenHistory)
             ProfileMetric("日程事项", vm.scheduleItems.size.toString(), Modifier.weight(1f))
         }
+        SettingsEntryRow(icon = Icons.AutoMirrored.Filled.List, title = "占卜记录", subtitle = "查看历史占卜与解读", onClick = onOpenHistory)
+        SettingsEntryRow(icon = Icons.Default.Settings, title = "设置", subtitle = "昵称、AI 解读与对话、主题", onClick = onOpenSettings)
         Card(
             colors = CardDefaults.cardColors(containerColor = C.panel),
             border = BorderStroke(1.dp, C.line),
@@ -3093,9 +3148,15 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun ProfileMetric(label: String, value: String, modifier: Modifier = Modifier) {
+private fun ProfileMetric(label: String, value: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val C = LocalFortunePalette.current
-    Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), modifier = modifier) {
+    Surface(
+        onClick = onClick ?: {},
+        color = C.panelAlt,
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier,
+        enabled = onClick != null,
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -3107,17 +3168,64 @@ private fun ProfileMetric(label: String, value: String, modifier: Modifier = Mod
     }
 }
 
+// 二级页面顶部：返回按钮 + 标题 + 可选右侧操作。
+@Composable
+private fun SubScreenHeader(title: String, onBack: () -> Unit, actions: @Composable () -> Unit) {
+    val C = LocalFortunePalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = C.textMain)
+        }
+        Text(title, color = C.textMain, style = MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.5).sp, fontWeight = FontWeight.SemiBold))
+        Spacer(Modifier.weight(1f))
+        actions()
+    }
+}
+
+// 一级页里的入口行：左图标 + 标题/副标题 + 右箭头（替代顶部 tab，更清晰的导航入口）。
+@Composable
+private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    val C = LocalFortunePalette.current
+    Surface(
+        onClick = onClick,
+        color = C.panel,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, C.line),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = C.gold, modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = C.textMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, color = C.textSub, style = MaterialTheme.typography.bodySmall)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
+        }
+    }
+}
+
 @Composable
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-private fun SettingsScreen(vm: FortuneViewModel) {
+private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    Column(Modifier.fillMaxSize()) {
+        SubScreenHeader(title = "设置", onBack = onBack) {}
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = C.panel),
             border = BorderStroke(1.dp, C.line),
@@ -3252,6 +3360,7 @@ private fun SettingsScreen(vm: FortuneViewModel) {
             }
         }
     }
+    }
 }
 
 @Composable
@@ -3323,7 +3432,7 @@ private fun FortuneDial(score: Int) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(112.dp)) {
                 Canvas(Modifier.fillMaxSize()) {
                     val stroke = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round)
-                    drawArc(Color(0xFF303640), -220f, 260f, false, style = stroke, size = Size(size.width, size.height))
+                    drawArc(C.panelAlt, -220f, 260f, false, style = stroke, size = Size(size.width, size.height))
                     drawArc(
                         brush = Brush.sweepGradient(listOf(C.mint, C.gold, C.rose, C.mint)),
                         startAngle = -220f,
@@ -3346,19 +3455,61 @@ private fun FortuneDial(score: Int) {
 @Composable
 private fun InsightStrip() {
     val C = LocalFortunePalette.current
+    val labels = listOf("事业", "关系", "财务")
+    val subs = listOf("稳中推进", "先听后说", "控制变量")
+    val dots = listOf(C.mint, C.rose, C.gold)
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        listOf("事业", "关系", "财务").forEachIndexed { index, label ->
+        labels.forEachIndexed { index, label ->
             Card(
                 colors = CardDefaults.cardColors(containerColor = C.panelAlt),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.weight(1f),
             ) {
-                Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val color = listOf(C.mint, C.rose, C.gold)[index]
-                    Box(Modifier.size(8.dp).background(color, CircleShape))
-                    Spacer(Modifier.height(8.dp))
-                    Text(label, color = C.textMain)
-                    Text(listOf("稳中推进", "先听后说", "控制变量")[index], color = C.textSub, style = MaterialTheme.typography.bodySmall)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(112.dp)
+                        .padding(horizontal = 14.dp),
+                ) {
+                    // 标题组（圆点 + 标题）水平居中，垂直位于卡片约 20% 处。
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val dotColor = dots[index]
+                        Box(
+                            Modifier.size(8.dp).background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(dotColor, dotColor.copy(alpha = 0.55f)),
+                                    center = androidx.compose.ui.geometry.Offset(8f, 8f),
+                                    radius = 12f,
+                                ),
+                                shape = CircleShape,
+                            ),
+                        )
+                        Text(
+                            label,
+                            color = C.textMain,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.5).sp,
+                        )
+                    }
+                    // 副标题居中，位于标题组下方，留出呼吸空间；极轻微主题色倾向。
+                    val subColor = androidx.compose.ui.graphics.lerp(
+                        C.textSub, dots[index], if (C.isLight) 0.18f else 0.22f,
+                    )
+                    Text(
+                        subs[index],
+                        color = subColor,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 64.dp),
+                    )
                 }
             }
         }
@@ -3366,10 +3517,16 @@ private fun InsightStrip() {
 }
 
 @Composable
-private fun EmptyState(text: String) {
+private fun EmptyState(text: String, hint: String = "") {
     val C = LocalFortunePalette.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = C.textSub)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = C.line, modifier = Modifier.size(34.dp))
+            Text(text, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+            if (hint.isNotBlank()) {
+                Text(hint, color = C.textSub.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }
 

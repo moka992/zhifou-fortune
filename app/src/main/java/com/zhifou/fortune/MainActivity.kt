@@ -149,6 +149,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1798,8 +1800,7 @@ private fun DiceScreen(onBack: () -> Unit) {
     val C = LocalFortunePalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val rotations = remember { List(6) { Animatable(0f) } }
-    val bounces = remember { List(6) { Animatable(0f) } }
+    val physicsWorld = remember { DicePhysicsWorld() }
     var diceCount by remember { mutableStateOf(1) }
     var diceSides by remember { mutableStateOf(6) }
     var faces by remember { mutableStateOf(listOf(1)) }
@@ -1810,6 +1811,17 @@ private fun DiceScreen(onBack: () -> Unit) {
     var dragTotal by remember { mutableStateOf(0f) }
     var lastShakeAt by remember { mutableStateOf(0L) }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    LaunchedEffect(physicsWorld) {
+        while (true) {
+            physicsWorld.step(1f / 60f)
+            delay(16)
+        }
+    }
+
+    DisposableEffect(physicsWorld) {
+        onDispose { physicsWorld.stop() }
+    }
 
     fun playShakeSound() {
         try {
@@ -1829,33 +1841,11 @@ private fun DiceScreen(onBack: () -> Unit) {
             rolling = true
             cupClosed = true
             canReveal = false
+            physicsWorld.startRoll(roll)
             playShakeSound()
-            repeat(8) { step ->
-                faces = List(roll.quantity) { Random.nextInt(1, roll.sides + 1) }
-                roll.rolls.indices.forEach { index ->
-                    bounces[index].snapTo(if ((step + index) % 2 == 0) 0.55f else 0.15f)
-                }
-                rotations.take(roll.quantity).forEachIndexed { index, animatable ->
-                    launch {
-                        animatable.animateTo(
-                            targetValue = animatable.value + 18f + step * 2f + index * 6f,
-                            animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
-                        )
-                    }
-                }
-                delay(90)
-            }
-            delay(80)
+            delay(1_650)
             faces = roll.rolls
             resultText = roll.displayText
-            roll.rolls.indices.forEach { index ->
-                launch {
-                    bounces[index].animateTo(0f, animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing))
-                }
-                launch {
-                    rotations[index].animateTo(rotations[index].value + 8f + index * 3f, animationSpec = tween(durationMillis = 120))
-                }
-            }
             history = (listOf(roll.displayText) + history).take(6)
             canReveal = true
             rolling = false
@@ -1874,7 +1864,7 @@ private fun DiceScreen(onBack: () -> Unit) {
                 val now = System.currentTimeMillis()
                 if (force > 20f && now - lastShakeAt > 1200L && !rolling) {
                     lastShakeAt = now
-                    startCupRoll()
+                    scope.launch { startCupRoll() }
                 }
             }
 
@@ -1971,8 +1961,7 @@ private fun DiceScreen(onBack: () -> Unit) {
                     DiceStage(
                         faces = displayedFaces,
                         sides = diceSides,
-                        rotations = rotations.map { it.value },
-                        bounces = bounces.map { it.value },
+                        physicsWorld = physicsWorld,
                         rolling = rolling,
                     )
                     if (cupClosed) {
@@ -2178,42 +2167,482 @@ private fun rollDice(quantity: Int, sides: Int): DiceRollResult {
 private fun DiceStage(
     faces: List<Int>,
     sides: Int,
-    rotations: List<Float>,
-    bounces: List<Float>,
+    physicsWorld: DicePhysicsWorld,
     rolling: Boolean,
 ) {
-    val rows = faces.chunked(3)
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (faces.size <= 3) 12.dp else 8.dp),
-        modifier = Modifier.fillMaxWidth(),
+    PhysicsDiceStage(
+        fallbackFaces = faces,
+        sides = sides,
+        world = physicsWorld,
+        rolling = rolling,
+    )
+}
+
+@Composable
+private fun PhysicsDiceStage(
+    fallbackFaces: List<Int>,
+    sides: Int,
+    world: DicePhysicsWorld,
+    rolling: Boolean,
+) {
+    val C = LocalFortunePalette.current
+    val mesh = remember(sides) { buildPhysicsMesh(sides) }
+    val dice = world.renderState
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(250.dp),
     ) {
-        rows.forEachIndexed { rowIndex, row ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                row.forEachIndexed { columnIndex, face ->
-                    val index = rowIndex * 3 + columnIndex
-                    DiceVisual(
-                        face = face,
-                        sides = sides,
-                        rotation = rotations.getOrElse(index) { 0f },
-                        bounce = bounces.getOrElse(index) { 0f },
-                        rolling = rolling,
-                        modifier = Modifier.size(
-                            when (faces.size) {
-                                1 -> 208.dp
-                                2, 3 -> 132.dp
-                                else -> 108.dp
-                            },
-                        ),
-                    )
+        drawRoundRect(
+            color = C.panelAlt.copy(alpha = 0.76f),
+            topLeft = Offset(size.width * 0.05f, size.height * 0.08f),
+            size = Size(size.width * 0.9f, size.height * 0.82f),
+            cornerRadius = CornerRadius(24.dp.toPx(), 24.dp.toPx()),
+        )
+        drawRoundRect(
+            color = C.line.copy(alpha = 0.42f),
+            topLeft = Offset(size.width * 0.08f, size.height * 0.12f),
+            size = Size(size.width * 0.84f, size.height * 0.74f),
+            cornerRadius = CornerRadius(20.dp.toPx(), 20.dp.toPx()),
+            style = Stroke(width = 1.dp.toPx()),
+        )
+
+        val bodies = if (dice.isEmpty()) {
+            fallbackFaces.mapIndexed { index, face ->
+                PhysicsDieRender(
+                    position = Vec3((index - (fallbackFaces.size - 1) / 2f) * 0.45f, 0.34f, 0f),
+                    rotation = Quat.identity,
+                    result = face,
+                )
+            }
+        } else {
+            dice
+        }
+        val triangleBatch = ArrayList<PhysicsRenderTriangle>(bodies.size * mesh.size)
+        bodies.forEach { die ->
+            mesh.forEach { triangle ->
+                val a = die.position + die.rotation.rotate(triangle.a)
+                val b = die.position + die.rotation.rotate(triangle.b)
+                val c = die.position + die.rotation.rotate(triangle.c)
+                val pa = projectDicePoint(a, size)
+                val pb = projectDicePoint(b, size)
+                val pc = projectDicePoint(c, size)
+                val area = (pb.x - pa.x) * (pc.y - pa.y) - (pb.y - pa.y) * (pc.x - pa.x)
+                val normal = (b - a).cross(c - a).normalized()
+                val shade = (0.66f + normal.dot(Vec3(-0.32f, 0.78f, 0.55f)) * 0.34f).coerceIn(0.34f, 1f)
+                triangleBatch += PhysicsRenderTriangle(
+                    a = pa,
+                    b = pb,
+                    c = pc,
+                    depth = (pa.depth + pb.depth + pc.depth) / 3f,
+                    area = area,
+                    color = shadeColor(diceColorForSides(sides, C.gold), shade),
+                )
+            }
+            val shadow = projectDicePoint(Vec3(die.position.x, 0.01f, die.position.z), size)
+            drawOval(
+                color = Color.Black.copy(alpha = 0.28f),
+                topLeft = Offset(shadow.x - 34.dp.toPx(), shadow.y - 7.dp.toPx()),
+                size = Size(68.dp.toPx(), 14.dp.toPx()),
+            )
+        }
+
+        triangleBatch
+            .asSequence()
+            .filter { kotlin.math.abs(it.area) > 0.4f }
+            .sortedByDescending { it.depth }
+            .forEach { triangle ->
+                val path = Path().apply {
+                    moveTo(triangle.a.x, triangle.a.y)
+                    lineTo(triangle.b.x, triangle.b.y)
+                    lineTo(triangle.c.x, triangle.c.y)
+                    close()
+                }
+                drawPath(path, triangle.color)
+                drawPath(path, Color.White.copy(alpha = 0.12f), style = Stroke(width = 0.8.dp.toPx()))
+            }
+
+        if (!rolling) {
+            bodies.forEach { die ->
+                val labelPoint = projectDicePoint(
+                    die.position + die.rotation.rotate(Vec3(0f, 0.38f, 0f)),
+                    size,
+                )
+                drawDiceLabel(die.result.toString(), labelPoint, C)
+            }
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDiceLabel(
+    value: String,
+    point: DiceScreenPoint,
+    palette: FortunePalette,
+) {
+    drawIntoCanvas { canvas ->
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (palette.isLight) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+            textSize = 24.dp.toPx()
+            textAlign = android.graphics.Paint.Align.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        canvas.nativeCanvas.drawText(value, point.x, point.y + paint.textSize * 0.35f, paint)
+    }
+}
+
+private data class Vec3(var x: Float, var y: Float, var z: Float) {
+    operator fun plus(other: Vec3) = Vec3(x + other.x, y + other.y, z + other.z)
+    operator fun minus(other: Vec3) = Vec3(x - other.x, y - other.y, z - other.z)
+    operator fun times(value: Float) = Vec3(x * value, y * value, z * value)
+    fun dot(other: Vec3) = x * other.x + y * other.y + z * other.z
+    fun cross(other: Vec3) = Vec3(
+        y * other.z - z * other.y,
+        z * other.x - x * other.z,
+        x * other.y - y * other.x,
+    )
+    fun length() = sqrt(x * x + y * y + z * z)
+    fun normalized(): Vec3 {
+        val length = length()
+        return if (length < 0.0001f) Vec3(0f, 1f, 0f) else this * (1f / length)
+    }
+}
+
+private data class Quat(var w: Float, var x: Float, var y: Float, var z: Float) {
+    operator fun times(other: Quat) = Quat(
+        w * other.w - x * other.x - y * other.y - z * other.z,
+        w * other.x + x * other.w + y * other.z - z * other.y,
+        w * other.y - x * other.z + y * other.w + z * other.x,
+        w * other.z + x * other.y - y * other.x + z * other.w,
+    )
+
+    fun normalized(): Quat {
+        val length = sqrt(w * w + x * x + y * y + z * z).coerceAtLeast(0.0001f)
+        return Quat(w / length, x / length, y / length, z / length)
+    }
+
+    fun rotate(vector: Vec3): Vec3 {
+        val rotated = this * Quat(0f, vector.x, vector.y, vector.z) * conjugate()
+        return Vec3(rotated.x, rotated.y, rotated.z)
+    }
+
+    fun integrate(angularVelocity: Vec3, dt: Float): Quat {
+        val derivative = Quat(0f, angularVelocity.x, angularVelocity.y, angularVelocity.z) * this
+        return Quat(
+            w + derivative.w * 0.5f * dt,
+            x + derivative.x * 0.5f * dt,
+            y + derivative.y * 0.5f * dt,
+            z + derivative.z * 0.5f * dt,
+        ).normalized()
+    }
+
+    private fun conjugate() = Quat(w, -x, -y, -z)
+
+    companion object {
+        val identity = Quat(1f, 0f, 0f, 0f)
+    }
+}
+
+private data class PhysicsDieRender(
+    val position: Vec3,
+    val rotation: Quat,
+    val result: Int,
+)
+
+private data class PhysicsTriangle3d(val a: Vec3, val b: Vec3, val c: Vec3)
+
+private data class DiceScreenPoint(val x: Float, val y: Float, val depth: Float)
+
+private data class PhysicsRenderTriangle(
+    val a: DiceScreenPoint,
+    val b: DiceScreenPoint,
+    val c: DiceScreenPoint,
+    val depth: Float,
+    val area: Float,
+    val color: Color,
+)
+
+private class DicePhysicsWorld {
+    private data class Body(
+        val position: Vec3,
+        var velocity: Vec3,
+        var rotation: Quat,
+        var angularVelocity: Vec3,
+        val result: Int,
+        var radius: Float,
+    )
+
+    private val bodies = ArrayList<Body>(6)
+    private var elapsed = 0f
+    private var active = false
+
+    var renderState by mutableStateOf<List<PhysicsDieRender>>(emptyList())
+        private set
+
+    fun startRoll(roll: DiceRollResult) {
+        bodies.clear()
+        elapsed = 0f
+        active = true
+        roll.rolls.forEachIndexed { index, result ->
+            val row = index / 3
+            val column = index % 3
+            bodies += Body(
+                position = Vec3((column - 1) * 0.38f, 0.56f + row * 0.03f, (row - 0.5f) * 0.28f),
+                velocity = Vec3(
+                    (Random.nextFloat() - 0.5f) * 4.8f,
+                    3.6f + Random.nextFloat() * 2.2f,
+                    (Random.nextFloat() - 0.5f) * 3.8f,
+                ),
+                rotation = Quat(
+                    Random.nextFloat(),
+                    Random.nextFloat(),
+                    Random.nextFloat(),
+                    Random.nextFloat(),
+                ).normalized(),
+                angularVelocity = Vec3(
+                    (Random.nextFloat() - 0.5f) * 22f,
+                    (Random.nextFloat() - 0.5f) * 22f,
+                    (Random.nextFloat() - 0.5f) * 22f,
+                ),
+                result = result,
+                radius = if (roll.sides == 4) 0.31f else 0.34f,
+            )
+        }
+        publish()
+    }
+
+    fun step(deltaSeconds: Float) {
+        if (!active || bodies.isEmpty()) return
+        val dt = deltaSeconds.coerceIn(0.008f, 0.025f)
+        elapsed += dt
+        bodies.forEach { body ->
+            body.velocity.y -= 9.6f * dt
+            body.position.x += body.velocity.x * dt
+            body.position.y += body.velocity.y * dt
+            body.position.z += body.velocity.z * dt
+            body.rotation = body.rotation.integrate(body.angularVelocity, dt)
+            body.angularVelocity = body.angularVelocity * 0.989f
+            resolveBounds(body)
+        }
+        resolveBodyCollisions()
+        if (elapsed > 1.45f) {
+            bodies.forEach { body ->
+                body.velocity = body.velocity * 0.82f
+                body.angularVelocity = body.angularVelocity * 0.78f
+            }
+        }
+        if (elapsed > 1.62f) {
+            bodies.forEach { body ->
+                body.velocity = Vec3(0f, 0f, 0f)
+                body.angularVelocity = Vec3(0f, 0f, 0f)
+            }
+            active = false
+        }
+        publish()
+    }
+
+    fun stop() {
+        active = false
+        bodies.clear()
+        renderState = emptyList()
+    }
+
+    private fun resolveBounds(body: Body) {
+        val floor = body.radius * 0.86f
+        if (body.position.y < floor) {
+            body.position.y = floor
+            if (body.velocity.y < 0f) body.velocity.y = -body.velocity.y * 0.52f
+            body.velocity.x *= 0.91f
+            body.velocity.z *= 0.91f
+        }
+        val limits = listOf(
+            body.position.x to 1.04f,
+            body.position.z to 0.63f,
+        )
+        if (body.position.x < -limits[0].second) {
+            body.position.x = -limits[0].second
+            body.velocity.x = kotlin.math.abs(body.velocity.x) * 0.55f
+        } else if (body.position.x > limits[0].second) {
+            body.position.x = limits[0].second
+            body.velocity.x = -kotlin.math.abs(body.velocity.x) * 0.55f
+        }
+        if (body.position.z < -limits[1].second) {
+            body.position.z = -limits[1].second
+            body.velocity.z = kotlin.math.abs(body.velocity.z) * 0.55f
+        } else if (body.position.z > limits[1].second) {
+            body.position.z = limits[1].second
+            body.velocity.z = -kotlin.math.abs(body.velocity.z) * 0.55f
+        }
+    }
+
+    private fun resolveBodyCollisions() {
+        for (firstIndex in 0 until bodies.size) {
+            for (secondIndex in firstIndex + 1 until bodies.size) {
+                val first = bodies[firstIndex]
+                val second = bodies[secondIndex]
+                val delta = second.position - first.position
+                val distance = delta.length().coerceAtLeast(0.0001f)
+                val minimumDistance = first.radius + second.radius
+                if (distance >= minimumDistance) continue
+                val normal = delta * (1f / distance)
+                val correction = (minimumDistance - distance) * 0.51f
+                first.position.x -= normal.x * correction
+                first.position.y -= normal.y * correction
+                first.position.z -= normal.z * correction
+                second.position.x += normal.x * correction
+                second.position.y += normal.y * correction
+                second.position.z += normal.z * correction
+                val relativeVelocity = (second.velocity - first.velocity).dot(normal)
+                if (relativeVelocity < 0f) {
+                    val impulse = -relativeVelocity * 0.62f
+                    first.velocity = first.velocity - normal * impulse
+                    second.velocity = second.velocity + normal * impulse
                 }
             }
         }
     }
+
+    private fun publish() {
+        renderState = bodies.map { body ->
+            PhysicsDieRender(
+                position = body.position.copy(),
+                rotation = body.rotation.copy(),
+                result = body.result,
+            )
+        }
+    }
+}
+
+private fun projectDicePoint(point: Vec3, canvasSize: Size): DiceScreenPoint {
+    val cameraDistance = 4.1f
+    val depth = (cameraDistance - point.z).coerceAtLeast(1.2f)
+    val scale = canvasSize.minDimension * 0.86f
+    return DiceScreenPoint(
+        x = canvasSize.width * 0.5f + point.x / depth * scale,
+        y = canvasSize.height * 0.61f - (point.y + point.z * 0.16f) / depth * scale,
+        depth = depth,
+    )
+}
+
+private fun buildPhysicsMesh(sides: Int): List<PhysicsTriangle3d> {
+    val radius = 0.31f
+    return when (sides) {
+        4 -> {
+            val top = Vec3(0f, radius, 0f)
+            val bottom = Vec3(0f, -radius, 0f)
+            val base = listOf(
+                Vec3(-radius, -radius * 0.34f, -radius * 0.58f),
+                Vec3(radius, -radius * 0.34f, -radius * 0.58f),
+                Vec3(0f, -radius * 0.34f, radius * 0.68f),
+            )
+            listOf(
+                PhysicsTriangle3d(top, base[0], base[1]),
+                PhysicsTriangle3d(top, base[1], base[2]),
+                PhysicsTriangle3d(top, base[2], base[0]),
+                PhysicsTriangle3d(bottom, base[1], base[0]),
+            )
+        }
+        6 -> cubePhysicsMesh(radius)
+        8 -> octahedronPhysicsMesh(radius)
+        10 -> bipyramidPhysicsMesh(radius, 5)
+        20 -> icosahedronPhysicsMesh(radius)
+        else -> lathePhysicsMesh(radius, 6)
+    }
+}
+
+private fun cubePhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
+    val vertices = listOf(
+        Vec3(-radius, -radius, -radius), Vec3(radius, -radius, -radius),
+        Vec3(radius, radius, -radius), Vec3(-radius, radius, -radius),
+        Vec3(-radius, -radius, radius), Vec3(radius, -radius, radius),
+        Vec3(radius, radius, radius), Vec3(-radius, radius, radius),
+    )
+    val quads = listOf(
+        intArrayOf(0, 1, 2, 3), intArrayOf(4, 7, 6, 5),
+        intArrayOf(0, 4, 5, 1), intArrayOf(1, 5, 6, 2),
+        intArrayOf(2, 6, 7, 3), intArrayOf(4, 0, 3, 7),
+    )
+    return quads.flatMap { quad ->
+        listOf(
+            PhysicsTriangle3d(vertices[quad[0]], vertices[quad[1]], vertices[quad[2]]),
+            PhysicsTriangle3d(vertices[quad[0]], vertices[quad[2]], vertices[quad[3]]),
+        )
+    }
+}
+
+private fun octahedronPhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
+    val top = Vec3(0f, radius, 0f)
+    val bottom = Vec3(0f, -radius, 0f)
+    val ring = listOf(
+        Vec3(radius, 0f, 0f), Vec3(0f, 0f, radius),
+        Vec3(-radius, 0f, 0f), Vec3(0f, 0f, -radius),
+    )
+    return ring.indices.flatMap { index ->
+        val next = ring[(index + 1) % ring.size]
+        listOf(
+            PhysicsTriangle3d(top, ring[index], next),
+            PhysicsTriangle3d(bottom, next, ring[index]),
+        )
+    }
+}
+
+private fun bipyramidPhysicsMesh(radius: Float, segments: Int): List<PhysicsTriangle3d> {
+    val top = Vec3(0f, radius, 0f)
+    val bottom = Vec3(0f, -radius, 0f)
+    val ring = List(segments) { index ->
+        val angle = 2f * Math.PI.toFloat() * index / segments
+        Vec3(kotlin.math.cos(angle) * radius * 0.88f, 0f, kotlin.math.sin(angle) * radius * 0.88f)
+    }
+    return ring.indices.flatMap { index ->
+        val next = ring[(index + 1) % ring.size]
+        listOf(PhysicsTriangle3d(top, ring[index], next), PhysicsTriangle3d(bottom, next, ring[index]))
+    }
+}
+
+private fun lathePhysicsMesh(radius: Float, segments: Int): List<PhysicsTriangle3d> {
+    val top = Vec3(0f, radius, 0f)
+    val bottom = Vec3(0f, -radius, 0f)
+    val upper = List(segments) { index ->
+        val angle = 2f * Math.PI.toFloat() * index / segments
+        Vec3(kotlin.math.cos(angle) * radius * 0.9f, radius * 0.35f, kotlin.math.sin(angle) * radius * 0.9f)
+    }
+    val lower = upper.map { Vec3(it.x, -it.y, it.z) }
+    return upper.indices.flatMap { index ->
+        val next = (index + 1) % segments
+        listOf(
+            PhysicsTriangle3d(top, upper[index], upper[next]),
+            PhysicsTriangle3d(upper[index], lower[index], upper[next]),
+            PhysicsTriangle3d(upper[next], lower[index], lower[next]),
+            PhysicsTriangle3d(bottom, lower[next], lower[index]),
+        )
+    }
+}
+
+private fun icosahedronPhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
+    val phi = (1f + sqrt(5f)) / 2f
+    val raw = listOf(
+        Vec3(-1f, phi, 0f), Vec3(1f, phi, 0f), Vec3(-1f, -phi, 0f), Vec3(1f, -phi, 0f),
+        Vec3(0f, -1f, phi), Vec3(0f, 1f, phi), Vec3(0f, -1f, -phi), Vec3(0f, 1f, -phi),
+        Vec3(phi, 0f, -1f), Vec3(phi, 0f, 1f), Vec3(-phi, 0f, -1f), Vec3(-phi, 0f, 1f),
+    )
+    val vertices = raw.map { it.normalized() * radius }
+    val faces = listOf(
+        intArrayOf(0, 11, 5), intArrayOf(0, 5, 1), intArrayOf(0, 1, 7), intArrayOf(0, 7, 10), intArrayOf(0, 10, 11),
+        intArrayOf(1, 5, 9), intArrayOf(5, 11, 4), intArrayOf(11, 10, 2), intArrayOf(10, 7, 6), intArrayOf(7, 1, 8),
+        intArrayOf(3, 9, 4), intArrayOf(3, 4, 2), intArrayOf(3, 2, 6), intArrayOf(3, 6, 8), intArrayOf(3, 8, 9),
+        intArrayOf(4, 9, 5), intArrayOf(2, 4, 11), intArrayOf(6, 2, 10), intArrayOf(8, 6, 7), intArrayOf(9, 8, 1),
+    )
+    return faces.map { face -> PhysicsTriangle3d(vertices[face[0]], vertices[face[1]], vertices[face[2]]) }
+}
+
+private fun diceColorForSides(sides: Int, accent: Color): Color = when (sides) {
+    4 -> Color(0xFF23A84A)
+    6 -> Color(0xFF2AB7C9)
+    8 -> Color(0xFF8738D9)
+    10 -> Color(0xFFE23A8C)
+    12 -> Color(0xFFE33327)
+    20 -> Color(0xFFFF7400)
+    else -> accent
 }
 
 @Composable

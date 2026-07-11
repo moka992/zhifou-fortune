@@ -12,6 +12,7 @@
 - Offline multilingual voice input with Chinese-English mixed-language support
 - Optional OpenAI-compatible audio transcription backend, disabled by default
 - Dice cup roller with touch reveal, shake-to-roll support, local sound feedback, and selectable D4/D6/D8/D10/D12/D20 dice
+- Offline coin toss tool with up to ten independently animated coins and cryptographically seeded 50/50 flower/character results
 - Local reading history
 - Offline solar/lunar calendar with swipe navigation, solar terms, traditional festivals, and date-specific schedules
 - Local profile area with reading history and app settings

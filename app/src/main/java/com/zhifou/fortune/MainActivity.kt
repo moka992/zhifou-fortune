@@ -352,9 +352,11 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     var tab by rememberTabState()
     var showDiceTool by remember { mutableStateOf(false) }
     var showWheelTool by remember { mutableStateOf(false) }
+    var showCoinTool by remember { mutableStateOf(false) }
 
     BackHandler(enabled = showDiceTool) { showDiceTool = false }
     BackHandler(enabled = showWheelTool) { showWheelTool = false }
+    BackHandler(enabled = showCoinTool) { showCoinTool = false }
 
     DisposableEffect(offlineRecognizer) {
         onDispose {
@@ -380,6 +382,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                                 if (item != Tab.Tools) {
                                     showDiceTool = false
                                     showWheelTool = false
+                                    showCoinTool = false
                                 }
                             },
                             icon = {
@@ -450,7 +453,12 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                 Tab.Tools -> when {
                     showWheelTool -> WheelScreen(vm, onBack = { showWheelTool = false })
                     showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
-                    else -> ToolsScreen(onOpenDice = { showDiceTool = true }, onOpenWheel = { showWheelTool = true })
+                    showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
+                    else -> ToolsScreen(
+                        onOpenDice = { showDiceTool = true },
+                        onOpenWheel = { showWheelTool = true },
+                        onOpenCoin = { showCoinTool = true },
+                    )
                 }
                 Tab.Schedule -> ScheduleScreen(vm)
                 Tab.Mine -> MineScreen(vm)
@@ -1235,7 +1243,7 @@ private fun VoiceCapturePanel(
 }
 
 @Composable
-private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
+private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit, onOpenCoin: () -> Unit) {
     val C = LocalFortunePalette.current
     Column(
         modifier = Modifier
@@ -1289,6 +1297,221 @@ private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit) {
                 }
             }
         }
+        Surface(
+            onClick = onOpenCoin,
+            color = C.panel,
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, C.line),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CoinToolPreview()
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("抛硬币", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("最多同时抛出 10 枚硬币，花面与字面各有 50% 概率。", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+private enum class CoinSide(val label: String) {
+    Flower("花面"),
+    Character("字面"),
+}
+
+@Composable
+private fun CoinToolPreview() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(170.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CoinVisual(side = CoinSide.Flower, rotation = 0f, rolling = false, modifier = Modifier.size(86.dp))
+        CoinVisual(side = CoinSide.Character, rotation = 0f, rolling = false, modifier = Modifier.size(86.dp))
+    }
+}
+
+@Composable
+private fun CoinScreen(onBack: () -> Unit) {
+    val C = LocalFortunePalette.current
+    val scope = rememberCoroutineScope()
+    val rotations = remember { List(10) { Animatable(0f) } }
+    val secureRandom = remember { SecureRandom() }
+    var coinCount by remember { mutableStateOf(1) }
+    var results by remember { mutableStateOf(listOf(CoinSide.Flower)) }
+    var flipping by remember { mutableStateOf(false) }
+    var resultText by remember { mutableStateOf("等待抛掷") }
+    var history by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    fun tossCoins() {
+        if (flipping) return
+        val tosses = List(coinCount) {
+            if (secureRandom.nextBoolean()) CoinSide.Flower else CoinSide.Character
+        }
+        results = tosses
+        scope.launch {
+            flipping = true
+            val jobs = tosses.indices.map { index ->
+                launch {
+                    val normalized = rotations[index].value % 360f
+                    rotations[index].snapTo(normalized)
+                    val fullTurns = 5 + secureRandom.nextInt(3)
+                    val finalHalfTurn = if (tosses[index] == CoinSide.Character) 180f else 0f
+                    rotations[index].animateTo(
+                        targetValue = normalized + fullTurns * 360f + finalHalfTurn,
+                        animationSpec = tween(
+                            durationMillis = 980 + index * 35,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    )
+                }
+            }
+            jobs.forEach { it.join() }
+            val flowerCount = tosses.count { it == CoinSide.Flower }
+            val characterCount = tosses.size - flowerCount
+            resultText = "花面 ${flowerCount} · 字面 ${characterCount}"
+            history = (listOf(resultText) + history).take(10)
+            flipping = false
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TextButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("小工具")
+            }
+            Text("抛硬币", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(72.dp))
+        }
+        DiceDropdown(
+            label = "硬币个数",
+            value = "${coinCount}枚",
+            options = (1..10).map { it to "${it}枚" },
+            enabled = !flipping,
+            onSelect = { count ->
+                coinCount = count
+                results = List(count) { CoinSide.Flower }
+                resultText = "等待抛掷"
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Card(
+            colors = CardDefaults.cardColors(containerColor = C.panel),
+            border = BorderStroke(1.dp, C.line),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                val rows = results.chunked(5)
+                rows.forEachIndexed { rowIndex, row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    ) {
+                        row.forEachIndexed { columnIndex, side ->
+                            val index = rowIndex * 5 + columnIndex
+                            CoinVisual(
+                                side = side,
+                                rotation = rotations[index].value,
+                                rolling = flipping,
+                                modifier = Modifier.size(if (coinCount > 5) 58.dp else 74.dp),
+                            )
+                        }
+                    }
+                }
+                Text(
+                    if (flipping) "翻转中" else resultText,
+                    color = if (flipping) C.textSub else C.gold,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Button(
+                    onClick = ::tossCoins,
+                    enabled = !flipping,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = C.gold,
+                        contentColor = if (C.isLight) Color(0xFFFAF7F0) else C.ink,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (flipping) "翻转中" else "抛硬币")
+                }
+            }
+        }
+        Text(
+            "每枚硬币独立随机，花面与字面各有 50% 概率。",
+            color = C.textSub,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (history.isNotEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("最近结果", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                    history.forEach { value -> Badge(value) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoinVisual(
+    side: CoinSide,
+    rotation: Float,
+    rolling: Boolean,
+    modifier: Modifier = Modifier.size(82.dp),
+) {
+    val C = LocalFortunePalette.current
+    val density = LocalDensity.current
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                rotationY = rotation
+                rotationX = if (rolling) kotlin.math.sin(Math.toRadians(rotation.toDouble())).toFloat() * 7f else 0f
+                cameraDistance = 12f * density.density
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val radius = size.minDimension * 0.42f
+            drawCircle(Color.Black.copy(alpha = 0.28f), radius = radius * 1.04f, center = center.copy(y = center.y + radius * 0.12f))
+            drawCircle(C.gold.copy(alpha = 0.95f), radius = radius, center = center)
+            drawCircle(C.gold.copy(alpha = 0.34f), radius = radius * 0.82f, center = center, style = Stroke(width = 2.dp.toPx()))
+            drawCircle(Color.White.copy(alpha = 0.18f), radius = radius * 0.68f, center = center, style = Stroke(width = 1.dp.toPx()))
+        }
+        Text(
+            side.label.removeSuffix("面"),
+            color = C.ink,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

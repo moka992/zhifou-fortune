@@ -26,6 +26,7 @@ data class DailyAlmanacInfo(
 data class DailyFortuneSnapshot(
     val reading: FortuneReading,
     val almanac: DailyAlmanacInfo,
+    val insights: List<DailyInsight>,
     val personalizationBasis: List<String>,
     /** Reserved for an explicit, optional environment source; null is the normal offline path. */
     val environmentSummary: String? = null,
@@ -93,6 +94,7 @@ internal object DailyFortuneEngine {
         return DailyFortuneSnapshot(
             reading = reading,
             almanac = almanac,
+            insights = DailyInsightEngine.create(almanac, seed),
             personalizationBasis = basis,
             environmentSummary = normalizedEnvironment,
         )

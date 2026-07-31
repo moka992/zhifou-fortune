@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.hardware.SensorManager
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.VibrationAttributes
@@ -44,6 +46,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -60,6 +63,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -106,6 +110,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenuItem
@@ -143,6 +148,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -213,6 +219,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.SecureRandom
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -645,8 +652,10 @@ private fun AppTopBar() {
 @Composable
 private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
     val C = LocalFortunePalette.current
+    val context = LocalContext.current
     val snapshot = vm.todayFortune
     val today = snapshot.reading
+    var selectedInsight by remember { mutableStateOf<DailyInsightCategory?>(null) }
     LaunchedEffect(Unit) {
         var activeDate = snapshot.almanac.date
         while (true) {
@@ -695,7 +704,33 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
                 Text("去占卜")
             }
         }
-        InsightStrip()
+        InsightStrip(
+            insights = snapshot.insights,
+            aiConnected = vm.aiConnectionStatus == AiConnectionStatus.Connected,
+            onTap = { category ->
+                if (vm.ensureAiReady()) {
+                    selectedInsight = category
+                    vm.requestDailyAiInsight(category)
+                } else {
+                    val message = when (vm.aiConnectionStatus) {
+                        AiConnectionStatus.NoNetwork -> "当前没有可用网络"
+                        AiConnectionStatus.Checking -> "AI模型正在连接测试"
+                        else -> "请配置AI模型获得完整功能"
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+    }
+    selectedInsight?.let { category ->
+        DailyAiInsightDialog(
+            insight = snapshot.insights.first { it.category == category },
+            aiContent = vm.dailyAiInsights[category],
+            loading = vm.dailyAiInsightLoading == category,
+            error = vm.dailyAiInsightError.takeIf { vm.dailyAiInsightErrorCategory == category }.orEmpty(),
+            onRetry = { vm.requestDailyAiInsight(category, forceRetry = true) },
+            onDismiss = { selectedInsight = null },
+        )
     }
 }
 
@@ -4328,8 +4363,7 @@ private enum class SchedulePage {
 @Composable
 private fun ScheduleScreen(vm: FortuneViewModel) {
     val C = LocalFortunePalette.current
-    val today = remember { LocalDate.now() }
-    var selectedDate by remember { mutableStateOf(today) }
+    val selectedDate = vm.selectedScheduleDate
     var detailDateText by rememberSaveable { mutableStateOf<String?>(null) }
     var pageName by rememberSaveable { mutableStateOf(SchedulePage.Calendar.name) }
     var editorReturnPageName by rememberSaveable { mutableStateOf(SchedulePage.Calendar.name) }
@@ -4372,7 +4406,9 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
                 onCancel = { pageName = editorReturnPage.name },
                 onSave = { draft ->
                     val saved = vm.saveScheduleDraft(draft, activeItem?.id)
-                    selectedDate = runCatching { LocalDate.parse(saved.date) }.getOrDefault(selectedDate)
+                    vm.selectScheduleDate(
+                        runCatching { LocalDate.parse(saved.date) }.getOrDefault(selectedDate)
+                    )
                     activeItemId = saved.id
                     pageName = editorReturnPage.name
                 },
@@ -4424,9 +4460,9 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
         CalendarPanel(
             scheduleItems = vm.scheduleItems,
             selectedDate = selectedDate,
-            onSelectedDateChange = { selectedDate = it },
+            onSelectedDateChange = vm::selectScheduleDate,
             onOpenDateDetail = {
-                selectedDate = it
+                vm.selectScheduleDate(it)
                 detailDateText = it.toString()
             },
             onAddSchedule = {
@@ -4453,10 +4489,15 @@ private fun CalendarPanel(
     val C = LocalFortunePalette.current
     val today = remember { LocalDate.now() }
     val animationScope = rememberCoroutineScope()
-    var visibleMonth by remember { mutableStateOf(YearMonth.from(today)) }
+    val initialVisibleMonth = remember { YearMonth.from(selectedDate) }
+    var visibleMonth by remember { mutableStateOf(initialVisibleMonth) }
     var picker by remember { mutableStateOf<CalendarPicker?>(null) }
     val centerPage = 6000
-    val pagerState = rememberPagerState(initialPage = centerPage) { 12001 }
+    val initialPage = remember {
+        val offset = ChronoUnit.MONTHS.between(YearMonth.from(today), initialVisibleMonth)
+        (centerPage + offset).toInt().coerceIn(0, 12000)
+    }
+    val pagerState = rememberPagerState(initialPage = initialPage) { 12001 }
     val scheduledDates = remember(scheduleItems) { scheduleItems.mapTo(hashSetOf()) { it.date } }
     val todayHeader = remember(today) { formatFullCalendarDate(today) }
     val selectedScheduleItems = remember(scheduleItems, selectedDate) {
@@ -4468,9 +4509,9 @@ private fun CalendarPanel(
     val yearTransitionDistance = with(LocalDensity.current) { 12.dp.toPx() }
     val calendarSwipeThreshold = with(LocalDensity.current) { 88.dp.toPx() }
     // 进页时预计算当月及前后各两月，翻页大概率命中缓存。
-    LaunchedEffect(Unit) {
+    LaunchedEffect(initialVisibleMonth) {
         listOf(0, -1, 1, -2, 2).forEach { delta ->
-            prefetchMonthInfo(YearMonth.from(today).plusMonths(delta.toLong()))
+            prefetchMonthInfo(initialVisibleMonth.plusMonths(delta.toLong()))
         }
     }
     // 翻页后，预计算新当月前后各两月，保持缓存领先于滑动。
@@ -4811,6 +4852,8 @@ private fun CalendarDayCell(
     val inMonth = date.monthValue == visibleMonth.monthValue
     val isToday = date == today
     val isSelected = date == selectedDate
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnDoubleClick by rememberUpdatedState(onDoubleClick)
     val bgColor = when {
         isSelected -> C.gold.copy(alpha = 0.18f)
         isToday -> C.mint.copy(alpha = 0.14f)
@@ -4826,12 +4869,24 @@ private fun CalendarDayCell(
             .height(58.dp)
             .background(bgColor, RoundedCornerShape(8.dp))
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-                onDoubleClick = onDoubleClick,
-            ),
+            .pointerInput(date) {
+                var previousTapUptime = Long.MIN_VALUE
+                val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    val up = waitForUpOrCancellation()
+                    if (up != null) {
+                        val elapsed = up.uptimeMillis - previousTapUptime
+                        if (elapsed in 40L..doubleTapTimeout) {
+                            previousTapUptime = Long.MIN_VALUE
+                            currentOnDoubleClick()
+                        } else {
+                            previousTapUptime = up.uptimeMillis
+                            currentOnClick()
+                        }
+                    }
+                }
+            },
     ) {
         Column(
             modifier = Modifier
@@ -5711,7 +5766,38 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("AI 解读与对话", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("AI 解读与对话", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                    TextButton(
+                        onClick = vm::testAiConnection,
+                        enabled = vm.aiConnectionStatus != AiConnectionStatus.Checking,
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("连接测试", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val connected = vm.aiConnectionStatus == AiConnectionStatus.Connected
+                    Icon(
+                        if (connected) Icons.Default.CheckCircle else Icons.Default.Info,
+                        contentDescription = null,
+                        tint = if (connected) C.mint else C.textSub,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        vm.aiConnectionMessage,
+                        color = if (connected) C.mint else C.textSub,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 OutlinedTextField(
                     value = vm.aiApiKey,
                     onValueChange = { vm.updateAiApiKey(it) },
@@ -6158,67 +6244,127 @@ private fun FortuneDial(score: Int) {
 }
 
 @Composable
-private fun InsightStrip() {
+private fun InsightStrip(
+    insights: List<DailyInsight>,
+    aiConnected: Boolean,
+    onTap: (DailyInsightCategory) -> Unit,
+) {
     val C = LocalFortunePalette.current
-    val labels = listOf("事业", "关系", "财务")
-    val subs = listOf("稳中推进", "先听后说", "控制变量")
     val dots = listOf(C.mint, C.rose, C.gold)
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        labels.forEachIndexed { index, label ->
-            Card(
-                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Box(
+    Surface(
+        color = C.panelAlt,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, C.line),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().height(104.dp)) {
+            insights.forEachIndexed { index, insight ->
+                val accent = dots[index]
+                val interactionSource = remember(insight.category) { MutableInteractionSource() }
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(112.dp)
-                        .padding(horizontal = 14.dp),
+                        .weight(1f)
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = { onTap(insight.category) },
+                        )
+                        .then(pressScaleModifier(interactionSource))
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    // 标题组（圆点 + 标题）水平居中，垂直位于卡片约 20% 处。
                     Row(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 20.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        val dotColor = dots[index]
                         Box(
-                            Modifier.size(8.dp).background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(dotColor, dotColor.copy(alpha = 0.55f)),
-                                    center = androidx.compose.ui.geometry.Offset(8f, 8f),
-                                    radius = 12f,
-                                ),
-                                shape = CircleShape,
-                            ),
+                            Modifier
+                                .size(6.dp)
+                                .background(accent.copy(alpha = 0.9f), CircleShape),
                         )
+                        Spacer(Modifier.width(7.dp))
                         Text(
-                            label,
-                            color = C.textMain,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.5).sp,
+                            insight.category.label,
+                            color = C.textSub,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
                         )
+                        Spacer(Modifier.weight(1f))
+                        if (aiConnected) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = "查看${insight.category.label} AI 解读",
+                                tint = accent.copy(alpha = 0.66f),
+                                modifier = Modifier.size(13.dp),
+                            )
+                        }
                     }
-                    // 副标题居中，位于标题组下方，留出呼吸空间；极轻微主题色倾向。
-                    val subColor = androidx.compose.ui.graphics.lerp(
-                        C.textSub, dots[index], if (C.isLight) 0.18f else 0.22f,
-                    )
                     Text(
-                        subs[index],
-                        color = subColor,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 64.dp),
+                        insight.headline,
+                        color = C.textMain,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (index < insights.lastIndex) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .padding(vertical = 14.dp)
+                            .width(1.dp)
+                            .background(C.line.copy(alpha = 0.9f)),
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun DailyAiInsightDialog(
+    insight: DailyInsight,
+    aiContent: String?,
+    loading: Boolean,
+    error: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val C = LocalFortunePalette.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${insight.category.label} · 今日解读") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(insight.summary, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+                when {
+                    loading -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("正在生成今日解读", color = C.textMain)
+                    }
+                    !aiContent.isNullOrBlank() -> MarkdownText(
+                        aiContent,
+                        color = C.textMain,
+                        style = MaterialTheme.typography.bodyMedium,
+                        onLight = C.isLight,
+                    )
+                    error.isNotBlank() -> Text(error, color = C.rose, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = {
+            if (!loading && aiContent.isNullOrBlank() && error.isNotBlank()) {
+                TextButton(onClick = onRetry) { Text("重试") }
+            }
+        },
+    )
 }
 
 @Composable
@@ -6291,6 +6437,8 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var scheduleItems by mutableStateOf(repo.loadScheduleItems())
         private set
+    var selectedScheduleDate by mutableStateOf(LocalDate.now())
+        private set
     var wheelSegments by mutableStateOf(repo.loadWheelSegments())
         private set
     var wheelHistory by mutableStateOf(repo.loadWheelHistory())
@@ -6313,6 +6461,19 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var aiEndpoint by mutableStateOf(repo.aiEndpoint)
         private set
+    var aiConnectionStatus by mutableStateOf(AiConnectionStatus.Unconfigured)
+        private set
+    var aiConnectionMessage by mutableStateOf("请填写 API Key、模型和接口地址")
+        private set
+    var dailyAiInsights by mutableStateOf(repo.loadDailyAiInsights(todayFortune.almanac.date))
+        private set
+    var dailyAiInsightLoading by mutableStateOf<DailyInsightCategory?>(null)
+        private set
+    var dailyAiInsightErrorCategory by mutableStateOf<DailyInsightCategory?>(null)
+        private set
+    var dailyAiInsightError by mutableStateOf("")
+        private set
+    private var aiValidationJob: Job? = null
     var cloudSpeechEnabled by mutableStateOf(repo.cloudSpeechEnabled)
         private set
     var cloudSpeechApiKey by mutableStateOf(repo.cloudSpeechApiKey)
@@ -6321,6 +6482,10 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var cloudSpeechEndpoint by mutableStateOf(repo.cloudSpeechEndpoint)
         private set
+
+    init {
+        restoreAiConnectionState()
+    }
 
     val recentOracleReadings: List<FortuneReading>
         get() {
@@ -6376,6 +6541,10 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             birthDateText = birthDate,
             keywordsText = fortuneKeywords,
         )
+        dailyAiInsights = repo.loadDailyAiInsights(date)
+        dailyAiInsightLoading = null
+        dailyAiInsightErrorCategory = null
+        dailyAiInsightError = ""
     }
 
     fun consumeDailyOraclePrompt(date: LocalDate): Boolean = repo.consumeDailyOraclePrompt(date)
@@ -6420,16 +6589,192 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     fun updateAiApiKey(value: String) {
         aiApiKey = value.trim()
         repo.aiApiKey = aiApiKey
+        onAiConfigurationChanged()
     }
 
     fun updateAiModel(value: String) {
         aiModel = value.trim()
         repo.aiModel = aiModel
+        onAiConfigurationChanged()
     }
 
     fun updateAiEndpoint(value: String) {
         aiEndpoint = value.trim()
         repo.aiEndpoint = aiEndpoint
+        onAiConfigurationChanged()
+    }
+
+    fun testAiConnection() {
+        validateAiConnection(force = true)
+    }
+
+    fun ensureAiReady(): Boolean {
+        if (aiConnectionStatus == AiConnectionStatus.Connected) return true
+        if (aiConnectionStatus != AiConnectionStatus.NoNetwork || !hasValidatedInternet(getApplication())) {
+            return false
+        }
+        val fingerprint = aiConfigurationFingerprint(aiEndpoint, aiModel, aiApiKey)
+        return if (fingerprint.isNotBlank() && repo.validatedAiFingerprint == fingerprint) {
+            aiConnectionStatus = AiConnectionStatus.Connected
+            aiConnectionMessage = "当前配置已通过连接验证"
+            true
+        } else {
+            validateAiConnection(force = false)
+            false
+        }
+    }
+
+    fun requestDailyAiInsight(category: DailyInsightCategory, forceRetry: Boolean = false) {
+        val date = todayFortune.almanac.date
+        if (!forceRetry && dailyAiInsights[category]?.isNotBlank() == true) return
+        if (dailyAiInsightLoading != null) return
+        if (aiConnectionStatus != AiConnectionStatus.Connected) {
+            dailyAiInsightErrorCategory = category
+            dailyAiInsightError = when (aiConnectionStatus) {
+                AiConnectionStatus.NoNetwork -> "当前没有可用网络，请联网后重试。"
+                AiConnectionStatus.Checking -> "AI 配置正在验证，请稍候。"
+                AiConnectionStatus.Failed -> "AI 配置尚未通过验证，请在设置中检查后重试。"
+                else -> "请先在“我的 > 设置”中完成 AI 配置和连接测试。"
+            }
+            return
+        }
+        if (!hasValidatedInternet(getApplication())) {
+            aiConnectionStatus = AiConnectionStatus.NoNetwork
+            aiConnectionMessage = "配置未判定失效，当前设备没有可用网络"
+            dailyAiInsightErrorCategory = category
+            dailyAiInsightError = "当前没有可用网络，请联网后重试。"
+            return
+        }
+
+        dailyAiInsightLoading = category
+        dailyAiInsightErrorCategory = null
+        dailyAiInsightError = ""
+        val snapshot = todayFortune
+        viewModelScope.launch {
+            val result = DailyAiInsightClient.explain(
+                endpoint = aiEndpoint,
+                apiKey = aiApiKey,
+                model = aiModel,
+                snapshot = snapshot,
+                category = category,
+                nickname = nickname,
+                birthDate = birthDate,
+                keywords = fortuneKeywords,
+            )
+            result.fold(
+                onSuccess = { content ->
+                    if (todayFortune.almanac.date == date) {
+                        dailyAiInsights = repo.saveDailyAiInsight(
+                            DailyAiInsight(date.toString(), category, content)
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    dailyAiInsightErrorCategory = category
+                    dailyAiInsightError = "AI 解读失败：${error.message ?: "请稍后重试"}"
+                },
+            )
+            dailyAiInsightLoading = null
+        }
+    }
+
+    private fun restoreAiConnectionState() {
+        if (!isAiConfigurationComplete(aiEndpoint, aiApiKey, aiModel)) {
+            aiConnectionStatus = AiConnectionStatus.Unconfigured
+            aiConnectionMessage = "请填写 API Key、模型和接口地址"
+            return
+        }
+        val fingerprint = aiConfigurationFingerprint(aiEndpoint, aiModel, aiApiKey)
+        if (repo.validatedAiFingerprint == fingerprint) {
+            aiConnectionStatus = AiConnectionStatus.Connected
+            aiConnectionMessage = "当前配置已通过连接验证"
+        } else if (repo.attemptedAiFingerprint == fingerprint) {
+            if (repo.lastAiValidationOutcome == AiConnectionStatus.NoNetwork.name) {
+                aiConnectionStatus = AiConnectionStatus.NoNetwork
+                aiConnectionMessage = "上次验证时没有可用网络，请手动测试连接"
+            } else {
+                aiConnectionStatus = AiConnectionStatus.Failed
+                aiConnectionMessage = "上次连接测试未通过，请手动重试"
+            }
+        } else {
+            aiConnectionStatus = AiConnectionStatus.NeedsValidation
+            aiConnectionMessage = "配置已修改，等待自动验证"
+            scheduleAiValidation()
+        }
+    }
+
+    private fun onAiConfigurationChanged() {
+        aiValidationJob?.cancel()
+        repo.validatedAiFingerprint = ""
+        repo.attemptedAiFingerprint = ""
+        repo.lastAiValidationOutcome = ""
+        if (!isAiConfigurationComplete(aiEndpoint, aiApiKey, aiModel)) {
+            aiConnectionStatus = AiConnectionStatus.Unconfigured
+            aiConnectionMessage = "请填写 API Key、模型和接口地址"
+            return
+        }
+        aiConnectionStatus = AiConnectionStatus.NeedsValidation
+        aiConnectionMessage = "配置已修改，等待自动验证"
+        scheduleAiValidation()
+    }
+
+    private fun scheduleAiValidation() {
+        aiValidationJob?.cancel()
+        val expectedFingerprint = aiConfigurationFingerprint(aiEndpoint, aiModel, aiApiKey)
+        aiValidationJob = viewModelScope.launch {
+            delay(1_500L)
+            if (expectedFingerprint == aiConfigurationFingerprint(aiEndpoint, aiModel, aiApiKey)) {
+                validateAiConnection(force = false)
+            }
+        }
+    }
+
+    private fun validateAiConnection(force: Boolean) {
+        if (aiConnectionStatus == AiConnectionStatus.Checking) return
+        if (!isAiConfigurationComplete(aiEndpoint, aiApiKey, aiModel)) {
+            aiConnectionStatus = AiConnectionStatus.Unconfigured
+            aiConnectionMessage = "请先完整填写 API Key、模型和接口地址"
+            return
+        }
+        val fingerprint = aiConfigurationFingerprint(aiEndpoint, aiModel, aiApiKey)
+        if (!force && repo.validatedAiFingerprint == fingerprint) {
+            aiConnectionStatus = AiConnectionStatus.Connected
+            aiConnectionMessage = "当前配置已通过连接验证"
+            return
+        }
+        if (!hasValidatedInternet(getApplication())) {
+            repo.attemptedAiFingerprint = fingerprint
+            repo.lastAiValidationOutcome = AiConnectionStatus.NoNetwork.name
+            aiConnectionStatus = AiConnectionStatus.NoNetwork
+            aiConnectionMessage = "当前没有可用网络，尚未验证配置"
+            return
+        }
+
+        aiValidationJob?.cancel()
+        aiConnectionStatus = AiConnectionStatus.Checking
+        aiConnectionMessage = "正在测试模型连接"
+        viewModelScope.launch {
+            val result = AiConnectionClient.test(aiEndpoint, aiApiKey, aiModel)
+            if (fingerprint != aiConfigurationFingerprint(aiEndpoint, aiModel, aiApiKey)) {
+                return@launch
+            }
+            result.fold(
+                onSuccess = {
+                    repo.validatedAiFingerprint = fingerprint
+                    repo.attemptedAiFingerprint = fingerprint
+                    repo.lastAiValidationOutcome = AiConnectionStatus.Connected.name
+                    aiConnectionStatus = AiConnectionStatus.Connected
+                    aiConnectionMessage = "连接成功，模型可以正常使用"
+                },
+                onFailure = { error ->
+                    repo.validatedAiFingerprint = ""
+                    repo.attemptedAiFingerprint = fingerprint
+                    repo.lastAiValidationOutcome = AiConnectionStatus.Failed.name
+                    aiConnectionStatus = AiConnectionStatus.Failed
+                    aiConnectionMessage = "连接失败：${error.message ?: "请检查配置"}"
+                },
+            )
+        }
     }
 
     fun updateCloudSpeechEnabled(value: Boolean) {
@@ -6536,6 +6881,10 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             repo.saveScheduleItems(scheduleItems.map { current -> if (current.id == item.id) item else current })
         }
         return item
+    }
+
+    fun selectScheduleDate(date: LocalDate) {
+        selectedScheduleDate = date
     }
 
     fun toggleScheduleItem(id: Long) {
@@ -6797,6 +7146,65 @@ class FortuneRepository(context: Context) {
         set(value) = prefs.edit()
             .putString("ai_endpoint", value.ifBlank { "https://api.openai.com/v1/chat/completions" })
             .apply()
+
+    var validatedAiFingerprint: String
+        get() = prefs.getString("validated_ai_fingerprint", "") ?: ""
+        set(value) = prefs.edit().putString("validated_ai_fingerprint", value).apply()
+
+    var attemptedAiFingerprint: String
+        get() = prefs.getString("attempted_ai_fingerprint", "") ?: ""
+        set(value) = prefs.edit().putString("attempted_ai_fingerprint", value).apply()
+
+    var lastAiValidationOutcome: String
+        get() = prefs.getString("last_ai_validation_outcome", "") ?: ""
+        set(value) = prefs.edit().putString("last_ai_validation_outcome", value).apply()
+
+    fun loadDailyAiInsights(date: LocalDate): Map<DailyInsightCategory, String> {
+        val raw = prefs.getString("daily_ai_insights", "[]") ?: "[]"
+        return runCatching {
+            val array = JSONArray(raw)
+            buildMap {
+                for (index in 0 until array.length()) {
+                    val item = array.getJSONObject(index)
+                    if (item.optString("date") != date.toString()) continue
+                    val category = DailyInsightCategory.entries.firstOrNull {
+                        it.key == item.optString("category")
+                    } ?: continue
+                    item.optString("content").trim().takeIf(String::isNotBlank)?.let { content ->
+                        put(category, content)
+                    }
+                }
+            }
+        }.getOrDefault(emptyMap())
+    }
+
+    fun saveDailyAiInsight(insight: DailyAiInsight): Map<DailyInsightCategory, String> {
+        val raw = prefs.getString("daily_ai_insights", "[]") ?: "[]"
+        val retained = runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length())
+                .map { array.getJSONObject(it) }
+                .filterNot {
+                    it.optString("date") == insight.date &&
+                        it.optString("category") == insight.category.key
+                }
+                .filter { item ->
+                    runCatching {
+                        val itemDate = LocalDate.parse(item.optString("date"))
+                        !itemDate.isBefore(LocalDate.parse(insight.date).minusDays(6))
+                    }.getOrDefault(false)
+                }
+        }.getOrDefault(emptyList())
+        val next = (retained + JSONObject()
+            .put("date", insight.date)
+            .put("category", insight.category.key)
+            .put("content", insight.content.take(4_000)))
+            .takeLast(21)
+        val array = JSONArray()
+        next.forEach(array::put)
+        prefs.edit().putString("daily_ai_insights", array.toString()).apply()
+        return loadDailyAiInsights(LocalDate.parse(insight.date))
+    }
 
     var cloudSpeechEnabled: Boolean
         get() = prefs.getBoolean("cloud_speech_enabled", false)
@@ -7194,6 +7602,196 @@ private fun JSONObject.toChatMessage(): ChatMessage = ChatMessage(
     createdAt = optString("createdAt"),
 )
 
+internal fun shouldDisableDeepSeekThinking(endpoint: String, model: String): Boolean {
+    val normalizedEndpoint = endpoint.trim().lowercase()
+    val normalizedModel = model.trim().lowercase()
+    return normalizedModel.contains("deepseek") ||
+        normalizedEndpoint.contains("api.deepseek.com")
+}
+
+internal fun isAiConfigurationComplete(endpoint: String, apiKey: String, model: String): Boolean {
+    val normalizedEndpoint = endpoint.trim().lowercase()
+    return apiKey.isNotBlank() && model.isNotBlank() &&
+        (normalizedEndpoint.startsWith("https://") || normalizedEndpoint.startsWith("http://"))
+}
+
+internal fun aiConfigurationFingerprint(endpoint: String, model: String, apiKey: String): String {
+    if (!isAiConfigurationComplete(endpoint, apiKey, model)) return ""
+    val normalized = "${endpoint.trim()}\n${model.trim()}\n${apiKey.trim()}"
+    return MessageDigest.getInstance("SHA-256")
+        .digest(normalized.toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xFF) }
+}
+
+internal fun hasValidatedInternet(context: Context): Boolean {
+    val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+    val network = manager.activeNetwork ?: return false
+    val capabilities = manager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+private fun JSONObject.applyUserFacingAiCompatibility(endpoint: String, model: String): JSONObject = apply {
+    if (shouldDisableDeepSeekThinking(endpoint, model)) {
+        put("thinking", JSONObject().put("type", "disabled"))
+    }
+}
+
+private fun JSONObject.requireAssistantContent(finishReason: String = ""): String {
+    val content = optString("content", "").trim()
+    if (content.isNotBlank()) return content
+
+    val reasoningContent = optString("reasoning_content", "").trim()
+    if (reasoningContent.isNotBlank()) {
+        val suffix = finishReason.takeIf(String::isNotBlank)?.let { "（结束原因：$it）" }.orEmpty()
+        error("模型只返回了思考过程，未生成最终回答$suffix")
+    }
+    error("接口没有返回有效内容")
+}
+
+private fun apiFailureMessage(code: Int, responseBody: String): String {
+    val providerMessage = runCatching {
+        JSONObject(responseBody).optJSONObject("error")?.optString("message").orEmpty().trim()
+    }.getOrDefault("")
+    return if (providerMessage.isBlank()) "HTTP $code" else "HTTP $code：${providerMessage.take(180)}"
+}
+
+private object AiConnectionClient {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+    private val jsonType = "application/json; charset=utf-8".toMediaType()
+
+    suspend fun test(endpoint: String, apiKey: String, model: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val resolvedModel = model.trim()
+                val body = JSONObject()
+                    .put("model", resolvedModel)
+                    .put("temperature", 0)
+                    .put("max_tokens", 8)
+                    .put(
+                        "messages",
+                        JSONArray().put(
+                            JSONObject()
+                                .put("role", "user")
+                                .put("content", "Reply with OK only.")
+                        ),
+                    )
+                    .applyUserFacingAiCompatibility(endpoint, resolvedModel)
+                val request = Request.Builder()
+                    .url(endpoint.trim())
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Content-Type", "application/json")
+                    .post(body.toString().toRequestBody(jsonType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) error(apiFailureMessage(response.code, responseBody))
+                    val choice = JSONObject(responseBody).getJSONArray("choices").getJSONObject(0)
+                    choice.getJSONObject("message")
+                        .requireAssistantContent(choice.optString("finish_reason", ""))
+                    Unit
+                }
+            }
+        }
+}
+
+internal const val DAILY_INSIGHT_MAX_OUTPUT_TOKENS = 700
+
+internal fun buildDailyAiInsightPrompt(
+    snapshot: DailyFortuneSnapshot,
+    category: DailyInsightCategory,
+    nickname: String,
+    birthDate: String,
+    keywords: String,
+): String {
+    val info = snapshot.almanac
+    val insight = snapshot.insights.first { it.category == category }
+    val suitable = DailyInsightEngine.safeSuitable(info)
+        .joinToString("、")
+        .ifBlank { "无适合转译为现代生活的明确项目" }
+    val avoid = DailyInsightEngine.safeAvoid(info)
+        .joinToString("、")
+        .ifBlank { "无适合转译为现代生活的明确项目" }
+    return """
+        以下是同一天、同一用户的固定背景。请只使用这些资料，不推测未提供的信息。
+        日期：${info.dateLabel}
+        农历：${info.lunarLabel}；日干支：${info.dayGanZhi}；节气：${info.solarTerm.ifBlank { "无" }}
+        黄历宜：$suitable
+        黄历忌：$avoid
+        方位：喜神${info.joyDirection}，福神${info.fortuneDirection}，财神${info.wealthDirection}
+        用户资料：昵称${nickname.trim().take(30).ifBlank { "未设置" }}；生日${birthDate.trim().take(10).ifBlank { "未设置" }}；关注词${keywords.trim().take(120).ifBlank { "未设置" }}
+
+        本次只解读“${category.label}”。离线结论：${insight.headline}。离线依据：${insight.summary}
+        请结合《周易》的变化、时位与中正观念，以及《道德经》知止、守柔、不过度用力的思想，给出220至320个汉字的当日参考。分为“判断”“依据”“建议”三部分，每部分只保留最关键的1至3点；语言中性、具体、简短，可有偏向但不得夸张，不宣称确定未来，不伪造经文，不给医疗、法律或投资结论。不要重复用户资料和完整黄历，不写总结性套话。
+    """.trimIndent()
+}
+
+private object DailyAiInsightClient {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(75, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .build()
+    private val jsonType = "application/json; charset=utf-8".toMediaType()
+    private const val SYSTEM_PROMPT =
+        "你是知否运势的传统文化日课助手。以学术和文化解释方式使用《周易》《道德经》等思想，区分传统文本与现代建议；不制造恐惧，不把黄历宜忌说成必然因果。不得补充或联想丧葬、疾病、灾祸、诅咒等不适合日常建议的内容。输出简体中文。"
+
+    suspend fun explain(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        snapshot: DailyFortuneSnapshot,
+        category: DailyInsightCategory,
+        nickname: String,
+        birthDate: String,
+        keywords: String,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val resolvedModel = model.trim()
+            val messages = JSONArray()
+                .put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+                .put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put(
+                            "content",
+                            buildDailyAiInsightPrompt(
+                                snapshot,
+                                category,
+                                nickname,
+                                birthDate,
+                                keywords,
+                            ),
+                        )
+                )
+            val body = JSONObject()
+                .put("model", resolvedModel)
+                .put("temperature", 0.35)
+                .put("messages", messages)
+                .put("max_tokens", DAILY_INSIGHT_MAX_OUTPUT_TOKENS)
+                .applyUserFacingAiCompatibility(endpoint, resolvedModel)
+            val request = Request.Builder()
+                .url(endpoint.trim())
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(body.toString().toRequestBody(jsonType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) error(apiFailureMessage(response.code, responseBody))
+                val choice = JSONObject(responseBody).getJSONArray("choices").getJSONObject(0)
+                choice.getJSONObject("message")
+                    .requireAssistantContent(choice.optString("finish_reason", ""))
+                    .take(4_000)
+            }
+        }
+    }
+}
+
 private object AiChatClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -7221,11 +7819,13 @@ private object AiChatClient {
                         .put("content", message.content.take(2_000))
                 )
             }
+            val resolvedModel = model.ifBlank { "gpt-4o-mini" }
             val body = JSONObject()
-                .put("model", model.ifBlank { "gpt-4o-mini" })
+                .put("model", resolvedModel)
                 .put("temperature", 0.55)
                 .put("messages", requestMessages)
                 .put("max_tokens", 1_000)
+                .applyUserFacingAiCompatibility(endpoint, resolvedModel)
             val request = Request.Builder()
                 .url(endpoint.ifBlank { "https://api.openai.com/v1/chat/completions" })
                 .addHeader("Authorization", "Bearer $apiKey")
@@ -7238,13 +7838,12 @@ private object AiChatClient {
                     throw IllegalStateException("HTTP ${response.code}")
                 }
                 val responseBody = response.body?.string().orEmpty()
-                JSONObject(responseBody)
+                val choice = JSONObject(responseBody)
                     .getJSONArray("choices")
                     .getJSONObject(0)
+                choice
                     .getJSONObject("message")
-                    .getString("content")
-                    .trim()
-                    .ifBlank { error("接口没有返回有效内容") }
+                    .requireAssistantContent(choice.optString("finish_reason", ""))
             }
         }
     }
@@ -7354,6 +7953,7 @@ internal object AiInterpreter {
             .put("temperature", 0.45)
             .put("messages", messages)
             .put("max_tokens", maxTokens)
+            .applyUserFacingAiCompatibility(endpoint, model)
         val request = Request.Builder()
             .url(endpoint.ifBlank { "https://api.openai.com/v1/chat/completions" })
             .addHeader("Authorization", "Bearer $apiKey")
@@ -7369,9 +7969,7 @@ internal object AiInterpreter {
                 .getJSONObject(0)
             val content = choice
                 .getJSONObject("message")
-                .getString("content")
-                .trim()
-                .ifBlank { error("接口没有返回有效内容") }
+                .requireAssistantContent(choice.optString("finish_reason", ""))
             CompletionResponse(
                 content = content,
                 finishReason = choice.optString("finish_reason", ""),

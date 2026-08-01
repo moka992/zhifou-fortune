@@ -39,8 +39,9 @@ internal object DailyFortuneEngine {
         birthDateText: String,
         keywordsText: String,
         environmentSummary: String? = null,
+        almanacOverride: DailyAlmanacInfo? = null,
     ): DailyFortuneSnapshot {
-        val almanac = almanac(date)
+        val almanac = almanacOverride?.takeIf { it.date == date } ?: almanac(date)
         val birthDate = parseBirthDate(birthDateText, date)
         val keywords = parseKeywords(keywordsText)
         val normalizedEnvironment = environmentSummary?.trim()?.takeIf { it.isNotBlank() }

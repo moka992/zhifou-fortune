@@ -66,7 +66,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -1015,10 +1014,10 @@ private fun ScheduleNumberWheel(
 @Composable
 private fun ScheduleBackgroundImage(uri: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val cached = remember(uri) { scheduleImageCache.get(uri) }
-    val bitmap by produceState<ImageBitmap?>(cached, uri) {
-        if (value == null && uri.isNotBlank()) {
-            value = withContext(Dispatchers.IO) {
+    var bitmap by remember(uri) { mutableStateOf(scheduleImageCache.get(uri)) }
+    LaunchedEffect(uri) {
+        if (bitmap == null && uri.isNotBlank()) {
+            bitmap = withContext(Dispatchers.IO) {
                 scheduleImageCache.get(uri) ?: decodeScheduleImage(context, uri)?.also {
                     scheduleImageCache.put(uri, it)
                 }

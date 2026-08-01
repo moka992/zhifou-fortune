@@ -13,8 +13,9 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 import kotlin.math.sqrt
 
 private const val SAMPLE_RATE = 16_000
@@ -26,9 +27,21 @@ private const val TOKENS_FILE = "$MODEL_DIR/tiny-tokens.txt"
 class OfflineSpeechRecognizer(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelLock = Any()
+    private val modelDispatcher = Executors.newSingleThreadExecutor { task ->
+        Thread(
+            {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_LOWEST)
+                task.run()
+            },
+            "zhifou-asr-model",
+        ).apply { isDaemon = true }
+    }.asCoroutineDispatcher()
 
     @Volatile
     private var recognizer: OfflineRecognizer? = null
+
+    val isPrepared: Boolean
+        get() = recognizer != null
 
     @Volatile
     private var recording = false
@@ -39,7 +52,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
 
-    suspend fun prepare(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun prepare(): Result<Unit> = withContext(modelDispatcher) {
         runCatching {
             synchronized(modelLock) {
                 if (recognizer != null) return@synchronized
@@ -138,6 +151,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
             recognizer?.release()
             recognizer = null
         }
+        modelDispatcher.close()
     }
 
     private fun captureThenRecognize(

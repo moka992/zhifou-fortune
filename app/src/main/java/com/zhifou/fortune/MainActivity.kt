@@ -94,6 +94,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
@@ -145,11 +146,11 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -207,6 +208,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
@@ -225,6 +227,7 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
@@ -303,7 +306,7 @@ private fun applySystemBars(window: android.view.Window, dark: Boolean) {
     window.navigationBarColor = android.graphics.Color.TRANSPARENT
 }
 
-/** Small, event-based haptic vocabulary shared by the three physical tools. */
+/** Small, event-based haptic vocabulary shared by tools and primary actions. */
 private class ToolHaptics(context: Context) {
     private val appContext = context.applicationContext
     private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -422,14 +425,16 @@ private class ToolHaptics(context: Context) {
 
     fun wheelGlideStop() = oneShot(22L, 150)
 
-    fun coinStart() = oneShot(28L, 165)
+    fun coinStart() = oneShot(18L, 100)
 
-    fun coinFlip(index: Int) = oneShot(13L + index % 3, 125 + (index % 3) * 20)
+    fun coinSpinPulse(index: Int) = oneShot(10L + index % 2, 82 + (index % 3) * 8)
 
     fun coinSettle() = waveform(
-        timings = longArrayOf(0L, 26L, 42L, 30L),
-        amplitudes = intArrayOf(0, 195, 0, 245),
+        timings = longArrayOf(0L, 20L, 34L, 24L),
+        amplitudes = intArrayOf(0, 125, 0, 155),
     )
+
+    fun sendAccepted() = oneShot(16L, 72)
 }
 
 // 按压反馈：按下时缩放 0.97，松开回弹（redesign: physical press feedback）。
@@ -441,6 +446,28 @@ private fun pressScaleModifier(interaction: MutableInteractionSource): Modifier 
     return Modifier.graphicsLayer {
         scaleX = scale
         scaleY = scale
+    }
+}
+
+@Composable
+private fun sendButtonFeedbackModifier(
+    interaction: MutableInteractionSource,
+    enabled: Boolean,
+): Modifier {
+    val pressed by interaction.collectIsPressedAsState()
+    val activePress = enabled && pressed
+    val scale by animateFloatAsState(
+        targetValue = if (activePress) 0.9f else 1f,
+        animationSpec = tween(
+            durationMillis = if (activePress) 65 else 140,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "sendButtonScale",
+    )
+    return Modifier.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+        alpha = if (activePress) 0.84f else 1f
     }
 }
 
@@ -505,9 +532,11 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     val context = LocalContext.current
     val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
+    val tabStateHolder = rememberSaveableStateHolder()
     var showDiceTool by remember { mutableStateOf(false) }
     var showWheelTool by remember { mutableStateOf(false) }
     var showCoinTool by remember { mutableStateOf(false) }
+    var requestedScheduleDetailDate by rememberSaveable { mutableStateOf<String?>(null) }
     val oracleTimelineState = rememberLazyListState(
         initialFirstVisibleItemIndex = if (vm.oracleTimeline.isEmpty()) 0 else vm.oracleTimeline.size,
     )
@@ -605,21 +634,35 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                 .background(C.ink)
                 .padding(padding),
         ) {
-            when (tab) {
-                Tab.Home -> HomeScreen(vm, onOpenOracle = { tab = Tab.Oracle })
-                Tab.Oracle -> OracleScreen(vm, offlineRecognizer, oracleTimelineState)
-                Tab.Tools -> when {
-                    showWheelTool -> WheelScreen(vm, onBack = { showWheelTool = false })
-                    showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
-                    showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
-                    else -> ToolsScreen(
-                        onOpenDice = { showDiceTool = true },
-                        onOpenWheel = { showWheelTool = true },
-                        onOpenCoin = { showCoinTool = true },
+            tabStateHolder.SaveableStateProvider(tab.name) {
+                when (tab) {
+                    Tab.Home -> HomeScreen(
+                        vm = vm,
+                        onOpenOracle = { tab = Tab.Oracle },
+                        onOpenTodayAlmanac = { date ->
+                            vm.selectScheduleDate(date)
+                            requestedScheduleDetailDate = date.toString()
+                            tab = Tab.Schedule
+                        },
                     )
+                    Tab.Oracle -> OracleScreen(vm, offlineRecognizer, oracleTimelineState)
+                    Tab.Tools -> when {
+                        showWheelTool -> WheelScreen(vm, onBack = { showWheelTool = false })
+                        showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
+                        showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
+                        else -> ToolsScreen(
+                            onOpenDice = { showDiceTool = true },
+                            onOpenWheel = { showWheelTool = true },
+                            onOpenCoin = { showCoinTool = true },
+                        )
+                    }
+                    Tab.Schedule -> ScheduleScreen(
+                        vm = vm,
+                        requestedDetailDate = requestedScheduleDetailDate,
+                        onDetailRequestHandled = { requestedScheduleDetailDate = null },
+                    )
+                    Tab.Mine -> MineScreen(vm)
                 }
-                Tab.Schedule -> ScheduleScreen(vm)
-                Tab.Mine -> MineScreen(vm)
             }
         }
     }
@@ -650,7 +693,11 @@ private fun AppTopBar() {
 }
 
 @Composable
-private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
+private fun HomeScreen(
+    vm: FortuneViewModel,
+    onOpenOracle: () -> Unit,
+    onOpenTodayAlmanac: (LocalDate) -> Unit,
+) {
     val C = LocalFortunePalette.current
     val context = LocalContext.current
     val snapshot = vm.todayFortune
@@ -667,60 +714,68 @@ private fun HomeScreen(vm: FortuneViewModel, onOpenOracle: () -> Unit) {
             }
         }
     }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        FortuneDial(score = today.score)
-        ReadingCard(reading = today)
-        DailyAlmanacPanel(
-            info = snapshot.almanac,
-            personalizationBasis = snapshot.personalizationBasis,
-            environmentSummary = snapshot.environmentSummary,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            val pressSrc = remember { MutableInteractionSource() }
-            Button(
-                onClick = { vm.refreshToday() },
-                interactionSource = pressSrc,
-                modifier = Modifier.weight(1f).then(pressScaleModifier(pressSrc)),
-                colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else Color(0xFF111318)),
-            ) {
-                Icon(Icons.Default.CalendarMonth, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("今日运势")
-            }
-            val oracleSrc = remember { MutableInteractionSource() }
-            FilledTonalButton(
-                onClick = onOpenOracle,
-                interactionSource = oracleSrc,
-                modifier = Modifier.weight(1f).then(pressScaleModifier(oracleSrc)),
-            ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("去占卜")
+        item(key = "fortune-dial") {
+            FortuneDial(score = today.score)
+        }
+        item(key = "today-reading") {
+            ReadingCard(reading = today)
+        }
+        item(key = "today-almanac") {
+            DailyAlmanacPanel(
+                info = snapshot.almanac,
+                personalizationBasis = snapshot.personalizationBasis,
+                environmentSummary = snapshot.environmentSummary,
+            )
+        }
+        item(key = "home-actions") {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                val pressSrc = remember { MutableInteractionSource() }
+                Button(
+                    onClick = { onOpenTodayAlmanac(snapshot.almanac.date) },
+                    interactionSource = pressSrc,
+                    modifier = Modifier.weight(1f).then(pressScaleModifier(pressSrc)),
+                    colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else Color(0xFF111318)),
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("今日黄历")
+                }
+                val oracleSrc = remember { MutableInteractionSource() }
+                FilledTonalButton(
+                    onClick = onOpenOracle,
+                    interactionSource = oracleSrc,
+                    modifier = Modifier.weight(1f).then(pressScaleModifier(oracleSrc)),
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("去占卜")
+                }
             }
         }
-        InsightStrip(
-            insights = snapshot.insights,
-            aiConnected = vm.aiConnectionStatus == AiConnectionStatus.Connected,
-            onTap = { category ->
-                if (vm.ensureAiReady()) {
-                    selectedInsight = category
-                    vm.requestDailyAiInsight(category)
-                } else {
-                    val message = when (vm.aiConnectionStatus) {
-                        AiConnectionStatus.NoNetwork -> "当前没有可用网络"
-                        AiConnectionStatus.Checking -> "AI模型正在连接测试"
-                        else -> "请配置AI模型获得完整功能"
+        item(key = "insights") {
+            InsightStrip(
+                insights = snapshot.insights,
+                aiConnected = vm.aiConnectionStatus == AiConnectionStatus.Connected,
+                onTap = { category ->
+                    if (vm.ensureAiReady()) {
+                        selectedInsight = category
+                        vm.requestDailyAiInsight(category)
+                    } else {
+                        val message = when (vm.aiConnectionStatus) {
+                            AiConnectionStatus.NoNetwork -> "当前没有可用网络"
+                            AiConnectionStatus.Checking -> "AI模型正在连接测试"
+                            else -> "请配置AI模型获得完整功能"
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                     }
-                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                }
-            },
-        )
+                },
+            )
+        }
     }
     selectedInsight?.let { category ->
         DailyAiInsightDialog(
@@ -833,6 +888,11 @@ private fun AlmanacActivityRow(label: String, activities: List<String>, accent: 
     }
 }
 
+private enum class OracleTool(val label: String) {
+    COIN("铜钱卦"),
+    ANSWER_BOOK("答案之书"),
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun OracleScreen(
@@ -842,6 +902,7 @@ private fun OracleScreen(
 ) {
     val C = LocalFortunePalette.current
     val context = LocalContext.current
+    val sendHaptics = remember(context) { ToolHaptics(context.applicationContext) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val voiceUiScope = rememberCoroutineScope()
@@ -851,13 +912,20 @@ private fun OracleScreen(
             .toLong()
     }
     val questionFocusRequester = remember { FocusRequester() }
-    var modelReady by remember { mutableStateOf(false) }
+    var modelReady by remember(offlineRecognizer, vm.cloudSpeechEnabled) {
+        mutableStateOf(vm.cloudSpeechEnabled || offlineRecognizer.isPrepared)
+    }
     var isRecording by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
     var textEditing by remember { mutableStateOf(false) }
     var keyboardEdited by remember { mutableStateOf(false) }
     var voiceLevel by remember { mutableStateOf(0f) }
     var questionBeforeRecording by remember { mutableStateOf("") }
+    var toolMenuExpanded by remember { mutableStateOf(false) }
+    var selectedToolName by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedTool = selectedToolName?.let { name ->
+        OracleTool.entries.firstOrNull { it.name == name }
+    }
     val oracleDate = remember { LocalDate.now() }
     val oracleDateKey = oracleDate.toString()
     var showDailyPrompt by rememberSaveable(oracleDateKey) {
@@ -930,6 +998,7 @@ private fun OracleScreen(
         if (vm.cloudSpeechEnabled) {
             modelReady = true
         } else {
+            if (!offlineRecognizer.isPrepared) delay(3_000L)
             val result = offlineRecognizer.prepare()
             modelReady = result.isSuccess
             if (result.isFailure) showVoiceMessage("离线语音模型加载失败，请重新安装应用")
@@ -1021,6 +1090,22 @@ private fun OracleScreen(
         focusManager.clearFocus(force = true)
         textEditing = false
         if (vm.question.isBlank()) keyboardEdited = false
+    }
+
+    fun runPrimaryAction() {
+        when (selectedTool) {
+            OracleTool.COIN -> {
+                dismissTextInput()
+                showDailyPrompt = false
+                vm.castCoins()
+            }
+            OracleTool.ANSWER_BOOK -> {
+                dismissTextInput()
+                showDailyPrompt = false
+                vm.drawAnswerBook()
+            }
+            null -> sendChatMessage()
+        }
     }
 
     LaunchedEffect(oracleTimeline.size, vm.chatSending, vm.coinCasting, vm.coinCastingLines.size) {
@@ -1221,49 +1306,113 @@ private fun OracleScreen(
                 }
             }
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                val coinsSrc = remember { MutableInteractionSource() }
-                OutlinedButton(
-                    onClick = {
-                        showDailyPrompt = false
-                        vm.castCoins()
-                    },
-                    enabled = !vm.coinCasting,
-                    interactionSource = coinsSrc,
-                    modifier = Modifier.weight(1f).then(pressScaleModifier(coinsSrc)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-                    border = BorderStroke(1.dp, C.line),
-                ) {
-                    Icon(Icons.Default.Toll, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (vm.coinCasting) "起卦 ${vm.coinCastingLines.size}/6" else "铜钱卦")
-                }
-                val bookSrc = remember { MutableInteractionSource() }
-                OutlinedButton(
-                    onClick = {
-                        showDailyPrompt = false
-                        vm.drawAnswerBook()
-                    },
-                    interactionSource = bookSrc,
-                    modifier = Modifier.weight(1f).then(pressScaleModifier(bookSrc)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-                    border = BorderStroke(1.dp, C.line),
-                ) {
-                    Icon(Icons.Default.Book, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("答案之书")
-                }
-            }
             Box(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.graphicsLayer { alpha = if (isRecording) 0f else 1f },
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                AnimatedVisibility(visible = selectedTool != null) {
+                    selectedTool?.let { tool ->
+                        Surface(
+                            color = C.panelAlt,
+                            border = BorderStroke(1.dp, C.line),
+                            shape = RoundedCornerShape(6.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(start = 9.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                Icon(
+                                    imageVector = if (tool == OracleTool.COIN) Icons.Default.Toll else Icons.Default.Book,
+                                    contentDescription = null,
+                                    tint = C.gold,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    tool.label,
+                                    color = C.textMain,
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                                IconButton(
+                                    onClick = { selectedToolName = null },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "取消${tool.label}",
+                                        tint = C.textSub,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    Box {
+                        Surface(
+                            modifier = Modifier.size(48.dp),
+                            color = if (selectedTool == null) C.panelAlt else C.gold.copy(alpha = 0.16f),
+                            border = BorderStroke(1.dp, if (selectedTool == null) C.line else C.gold),
+                            shape = CircleShape,
+                        ) {
+                            IconButton(
+                                onClick = { toolMenuExpanded = !toolMenuExpanded },
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "选择占卜功能",
+                                    tint = if (selectedTool == null) C.textMain else C.gold,
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = toolMenuExpanded,
+                            onDismissRequest = { toolMenuExpanded = false },
+                        ) {
+                            OracleTool.entries.forEach { tool ->
+                                val isSelected = selectedTool == tool
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            tool.label,
+                                            color = if (isSelected) C.gold else C.textMain,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        )
+                                    },
+                                    onClick = {
+                                        selectedToolName = if (isSelected) null else tool.name
+                                        toolMenuExpanded = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (tool == OracleTool.COIN) Icons.Default.Toll else Icons.Default.Book,
+                                            contentDescription = null,
+                                            tint = if (isSelected) C.gold else C.textSub,
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (isSelected) {
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = "已选择",
+                                                tint = C.gold,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.background(
+                                        if (isSelected) C.gold.copy(alpha = 0.08f) else Color.Transparent,
+                                    ),
+                                )
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = vm.question,
                         onValueChange = {
@@ -1333,19 +1482,30 @@ private fun OracleScreen(
                         readOnly = !textEditing && !keyboardEdited,
                     )
                     val sendSrc = remember { MutableInteractionSource() }
+                    val sendEnabled = when (selectedTool) {
+                        OracleTool.COIN -> !vm.coinCasting
+                        OracleTool.ANSWER_BOOK -> true
+                        null -> vm.question.isNotBlank() && !vm.chatSending
+                    }
                     IconButton(
-                        onClick = ::sendChatMessage,
-                        enabled = vm.question.isNotBlank() && !vm.chatSending,
+                        onClick = {
+                            sendHaptics.sendAccepted()
+                            runPrimaryAction()
+                        },
+                        enabled = sendEnabled,
                         interactionSource = sendSrc,
                         modifier = Modifier
                             .size(52.dp)
-                            .background(C.mint, RoundedCornerShape(8.dp))
-                            .then(pressScaleModifier(sendSrc)),
+                            .background(
+                                color = if (sendEnabled) C.mint else C.line,
+                                shape = RoundedCornerShape(8.dp),
+                            )
+                            .then(sendButtonFeedbackModifier(sendSrc, sendEnabled)),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "发送给 AI",
-                            tint = C.chatText,
+                            contentDescription = selectedTool?.let { "使用${it.label}" } ?: "发送给 AI",
+                            tint = if (sendEnabled) C.chatText else C.textSub.copy(alpha = 0.62f),
                         )
                     }
                 }
@@ -1812,17 +1972,12 @@ private fun CoinScreen(onBack: () -> Unit) {
         results = tosses
         haptics.coinStart()
         scope.launch {
-            tosses.forEachIndexed { index, _ ->
-                launch {
-                    delay(110L + index * 24L)
-                    haptics.coinFlip(index)
-                }
-            }
             val jobs = tosses.indices.map { index ->
                 launch {
                     val normalized = rotations[index].value % 360f
                     rotations[index].snapTo(normalized)
                     val fullTurns = 5 + secureRandom.nextInt(3)
+                    var previousTurn = kotlin.math.floor(normalized / 360f).toInt()
                     rotations[index].animateTo(
                         targetValue = coinTargetRotation(
                             currentRotation = normalized,
@@ -1833,7 +1988,15 @@ private fun CoinScreen(onBack: () -> Unit) {
                             durationMillis = 980 + index * 35,
                             easing = FastOutSlowInEasing,
                         ),
-                    )
+                    ) {
+                        if (index == tosses.lastIndex) {
+                            val currentTurn = kotlin.math.floor(value / 360f).toInt()
+                            if (currentTurn > previousTurn) {
+                                previousTurn = currentTurn
+                                haptics.coinSpinPulse(currentTurn)
+                            }
+                        }
+                    }
                 }
             }
             jobs.forEach { it.join() }
@@ -4361,10 +4524,14 @@ private enum class SchedulePage {
 }
 
 @Composable
-private fun ScheduleScreen(vm: FortuneViewModel) {
+private fun ScheduleScreen(
+    vm: FortuneViewModel,
+    requestedDetailDate: String?,
+    onDetailRequestHandled: () -> Unit,
+) {
     val C = LocalFortunePalette.current
     val selectedDate = vm.selectedScheduleDate
-    var detailDateText by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailDateText by rememberSaveable { mutableStateOf(requestedDetailDate) }
     var pageName by rememberSaveable { mutableStateOf(SchedulePage.Calendar.name) }
     var editorReturnPageName by rememberSaveable { mutableStateOf(SchedulePage.Calendar.name) }
     var activeItemId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -4376,6 +4543,22 @@ private fun ScheduleScreen(vm: FortuneViewModel) {
     }
     val activeItem = remember(vm.scheduleItems, activeItemId) {
         activeItemId?.let { id -> vm.scheduleItems.firstOrNull { it.id == id } }
+    }
+
+    LaunchedEffect(requestedDetailDate) {
+        val requestedDate = requestedDetailDate
+            ?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
+        if (requestedDate != null) {
+            vm.selectScheduleDate(requestedDate)
+            pageName = SchedulePage.Calendar.name
+            detailDateText = requestedDate.toString()
+            onDetailRequestHandled()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        delay(180L)
+        vm.prepareCalendarCache()
     }
 
     BackHandler(enabled = detailDate != null || page != SchedulePage.Calendar) {
@@ -4499,7 +4682,17 @@ private fun CalendarPanel(
     }
     val pagerState = rememberPagerState(initialPage = initialPage) { 12001 }
     val scheduledDates = remember(scheduleItems) { scheduleItems.mapTo(hashSetOf()) { it.date } }
-    val todayHeader = remember(today) { formatFullCalendarDate(today) }
+    var todayInfo by remember(today) { mutableStateOf(cachedCalendarDateInfo(today)) }
+    LaunchedEffect(today) {
+        if (todayInfo == null) {
+            delay(220L)
+            todayInfo = withContext(calendarComputationDispatcher) {
+                cachedCalendarDateInfo(today) ?: calendarDateInfo(today)
+            }
+        }
+    }
+    val todayHeader = todayInfo?.let { formatFullCalendarDate(today, it) }
+        ?: "${today.year}年${today.monthValue}月${today.dayOfMonth}日"
     val selectedScheduleItems = remember(scheduleItems, selectedDate) {
         scheduleItems.filter { it.date == selectedDate.toString() }
     }
@@ -4510,20 +4703,31 @@ private fun CalendarPanel(
     val calendarSwipeThreshold = with(LocalDensity.current) { 88.dp.toPx() }
     // 进页时预计算当月及前后各两月，翻页大概率命中缓存。
     LaunchedEffect(initialVisibleMonth) {
-        listOf(0, -1, 1, -2, 2).forEach { delta ->
+        delay(900L)
+        listOf(-1, 1).forEach { delta ->
             prefetchMonthInfo(initialVisibleMonth.plusMonths(delta.toLong()))
+            delay(180L)
         }
     }
     // 翻页后，预计算新当月前后各两月，保持缓存领先于滑动。
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
             val base = YearMonth.from(today).plusMonths((page - centerPage).toLong())
-            listOf(-1, 1, -2, 2).forEach { delta ->
+            listOf(-1, 1).forEach { delta ->
                 prefetchMonthInfo(base.plusMonths(delta.toLong()))
+                delay(180L)
             }
         }
     }
-    val selectedInfo = remember(selectedDate) { calendarDateInfo(selectedDate) }
+    var selectedInfo by remember(selectedDate) { mutableStateOf(cachedCalendarDateInfo(selectedDate)) }
+    LaunchedEffect(selectedDate) {
+        if (selectedInfo == null) {
+            delay(220L)
+            selectedInfo = withContext(calendarComputationDispatcher) {
+                cachedCalendarDateInfo(selectedDate) ?: calendarDateInfo(selectedDate)
+            }
+        }
+    }
     val showToday = visibleMonth != YearMonth.from(today) || selectedDate != today
     val calendarGridHeight = remember(visibleMonth) {
         (20 + calendarRowCount(visibleMonth) * 62).dp
@@ -4733,7 +4937,9 @@ private fun CalendarPanel(
                     )
                 }
             }
-            DateDetail(info = selectedInfo, scheduleItems = selectedScheduleItems)
+            selectedInfo?.let { info ->
+                DateDetail(info = info, scheduleItems = selectedScheduleItems)
+            }
         }
     }
 
@@ -4777,10 +4983,11 @@ private fun CalendarMonthGrid(
     modifier: Modifier = Modifier,
 ) {
     val C = LocalFortunePalette.current
-    val initialDays = remember(month) { monthInfoCache.get(month) }
-    val days by produceState<List<CalendarDateInfo>?>(initialValue = initialDays, month) {
-        if (value == null) {
-            value = withContext(calendarComputationDispatcher) { computeMonthInfo(month) }
+    var days by remember(month) { mutableStateOf(monthInfoCache.get(month)) }
+    LaunchedEffect(month) {
+        if (days == null) {
+            delay(260L)
+            days = withContext(calendarComputationDispatcher) { computeMonthInfo(month) }
         }
     }
     val placeholders = remember(month) {
@@ -4966,10 +5173,10 @@ private fun AlmanacDateDetailScreen(
     onDeleteSchedule: (Long) -> Unit,
 ) {
     val C = LocalFortunePalette.current
-    val cachedDetail = remember(date) { almanacDayDetailCache.get(date) }
-    val detail by produceState<AlmanacDayDetail?>(initialValue = cachedDetail, date) {
-        if (value == null) {
-            value = withContext(calendarComputationDispatcher) {
+    var detail by remember(date) { mutableStateOf(almanacDayDetailCache.get(date)) }
+    LaunchedEffect(date) {
+        if (detail == null) {
+            detail = withContext(calendarComputationDispatcher) {
                 almanacDayDetailCache.get(date) ?: AlmanacDayDetailEngine.create(date).also {
                     almanacDayDetailCache.put(date, it)
                 }
@@ -5299,7 +5506,15 @@ private fun calendarRowCount(month: YearMonth): Int {
 private val monthInfoCache = android.util.LruCache<YearMonth, List<CalendarDateInfo>>(64)
 private val almanacDayDetailCache = android.util.LruCache<LocalDate, AlmanacDayDetail>(32)
 private val monthInfoComputeLock = Any()
-private val calendarComputationDispatcher = Dispatchers.Default.limitedParallelism(1)
+private val calendarComputationDispatcher = Executors.newSingleThreadExecutor { task ->
+    Thread(
+        {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            task.run()
+        },
+        "zhifou-calendar",
+    ).apply { isDaemon = true }
+}.asCoroutineDispatcher()
 private val calendarComputationScope = CoroutineScope(SupervisorJob() + calendarComputationDispatcher)
 private val prefetchedMonths = ConcurrentHashMap.newKeySet<YearMonth>()
 
@@ -5415,8 +5630,11 @@ private fun calendarDateInfo(date: LocalDate): CalendarDateInfo {
     )
 }
 
-private fun formatFullCalendarDate(date: LocalDate): String {
-    val info = calendarDateInfo(date)
+private fun cachedCalendarDateInfo(date: LocalDate): CalendarDateInfo? {
+    return monthInfoCache.get(YearMonth.from(date))?.firstOrNull { it.date == date }
+}
+
+private fun formatFullCalendarDate(date: LocalDate, info: CalendarDateInfo): String {
     return "${date.year}年${date.monthValue}月${date.dayOfMonth}日周${info.weekday}·${info.ganZhiYear}年${info.lunarMonth}${info.lunarDay}"
 }
 
@@ -6385,10 +6603,15 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     private val repo = FortuneRepository(application)
     private val oracle = FortuneOracle()
 
-    init {
-        viewModelScope.launch(calendarComputationDispatcher) {
-            delay(400)
+    @Volatile
+    private var calendarCacheLoaded = false
+    private var calendarCacheJob: Job? = null
+
+    fun prepareCalendarCache() {
+        if (calendarCacheLoaded || calendarCacheJob?.isActive == true) return
+        calendarCacheJob = viewModelScope.launch(calendarComputationDispatcher) {
             ensureCalendarCache()
+            calendarCacheLoaded = true
         }
     }
 
@@ -6451,8 +6674,15 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var themeMode by mutableStateOf(repo.themeMode)
         private set
+    private val initialFortuneDate = LocalDate.now()
     var todayFortune by mutableStateOf(
-        DailyFortuneEngine.create(LocalDate.now(), nickname, birthDate, fortuneKeywords)
+        DailyFortuneEngine.create(
+            date = initialFortuneDate,
+            nickname = nickname,
+            birthDateText = birthDate,
+            keywordsText = fortuneKeywords,
+            almanacOverride = repo.loadDailyAlmanac(initialFortuneDate),
+        ).also { repo.saveDailyAlmanac(it.almanac) }
     )
         private set
     var aiApiKey by mutableStateOf(repo.aiApiKey)
@@ -6540,7 +6770,9 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             nickname = nickname,
             birthDateText = birthDate,
             keywordsText = fortuneKeywords,
+            almanacOverride = repo.loadDailyAlmanac(date),
         )
+        repo.saveDailyAlmanac(todayFortune.almanac)
         dailyAiInsights = repo.loadDailyAiInsights(date)
         dailyAiInsightLoading = null
         dailyAiInsightErrorCategory = null
@@ -7204,6 +7436,56 @@ class FortuneRepository(context: Context) {
         next.forEach(array::put)
         prefs.edit().putString("daily_ai_insights", array.toString()).apply()
         return loadDailyAiInsights(LocalDate.parse(insight.date))
+    }
+
+    fun loadDailyAlmanac(date: LocalDate): DailyAlmanacInfo? {
+        val raw = prefs.getString("daily_almanac", null) ?: return null
+        return runCatching {
+            val item = JSONObject(raw)
+            val cachedDate = LocalDate.parse(item.getString("date"))
+            if (cachedDate != date) return@runCatching null
+            fun stringList(key: String): List<String> {
+                val array = item.optJSONArray(key) ?: return emptyList()
+                return (0 until array.length()).map(array::getString)
+            }
+            DailyAlmanacInfo(
+                date = cachedDate,
+                dateLabel = item.getString("dateLabel"),
+                lunarLabel = item.getString("lunarLabel"),
+                dayGanZhi = item.getString("dayGanZhi"),
+                solarTerm = item.optString("solarTerm"),
+                joyDirection = item.getString("joyDirection"),
+                fortuneDirection = item.getString("fortuneDirection"),
+                wealthDirection = item.getString("wealthDirection"),
+                yangNobleDirection = item.getString("yangNobleDirection"),
+                yinNobleDirection = item.getString("yinNobleDirection"),
+                suitable = stringList("suitable"),
+                avoid = stringList("avoid"),
+                clash = item.getString("clash"),
+                shaDirection = item.getString("shaDirection"),
+            )
+        }.getOrNull()
+    }
+
+    fun saveDailyAlmanac(info: DailyAlmanacInfo) {
+        val suitable = JSONArray().apply { info.suitable.forEach(::put) }
+        val avoid = JSONArray().apply { info.avoid.forEach(::put) }
+        val item = JSONObject()
+            .put("date", info.date.toString())
+            .put("dateLabel", info.dateLabel)
+            .put("lunarLabel", info.lunarLabel)
+            .put("dayGanZhi", info.dayGanZhi)
+            .put("solarTerm", info.solarTerm)
+            .put("joyDirection", info.joyDirection)
+            .put("fortuneDirection", info.fortuneDirection)
+            .put("wealthDirection", info.wealthDirection)
+            .put("yangNobleDirection", info.yangNobleDirection)
+            .put("yinNobleDirection", info.yinNobleDirection)
+            .put("suitable", suitable)
+            .put("avoid", avoid)
+            .put("clash", info.clash)
+            .put("shaDirection", info.shaDirection)
+        prefs.edit().putString("daily_almanac", item.toString()).apply()
     }
 
     var cloudSpeechEnabled: Boolean

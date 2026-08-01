@@ -12,8 +12,8 @@ android {
         applicationId = "com.zhifou.fortune"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.9.1"
+        versionCode = 12
+        versionName = "0.9.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

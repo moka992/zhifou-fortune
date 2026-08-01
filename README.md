@@ -3,7 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
-[![Version](https://img.shields.io/badge/version-0.9.1-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
+[![Version](https://img.shields.io/badge/version-0.9.2-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
 
 一款离线优先的 Android 运势、传统历法、周易占卜与日程应用。
 
@@ -21,17 +21,15 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 项目希望在传统文化表达和现代移动体验之间取得平衡：来源明确，结论克制，不把黄历或占卜描述为确定预测，也不以恐惧性措辞推动用户作出决定。
 
-> 当前版本为 `v0.9.1` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
+> 当前版本为 `v0.9.2` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
 
-### v0.9.1 更新
+### v0.9.2 更新
 
-- 首页“事业、关系、财务”改为由离线黄历和稳定日期种子生成的每日短结论。
-- 敏感或不适合现代日常建议的黄历条目不会进入首页结论或对应 AI 提示词。
-- 三项首页提示支持可选 AI 详情；每个类别每天只生成并缓存一次成功结果。
-- AI 配置新增自动验证、网络状态区分和手动“连接测试”。配置不变时不会在每次启动时重复测试。
-- 改进 DeepSeek V4 等 OpenAI 兼容接口的思考模式与空正文兼容性。
-- 日历保留当前进程内选择的日期，返回详情或日程编辑后不再自动跳回今天。
-- 优化日期点击反馈和首页三项信息面板布局。
+- 占卜工具改为输入框左侧的可扩展菜单；铜钱卦和答案之书采用紧凑的已选标签，仍可在无文字问题时直接执行。
+- 发送按钮增加明确的可用状态、按压动画和轻柔触觉反馈；没有文字且未选择工具时保持禁用。
+- 优化冷启动和首页、日历、占卜之间的切换：复用页面状态与历法缓存，并将离线语音模型延后到低优先级线程加载。
+- 首页“今日黄历”可直接打开当天的完整离线黄历详情。
+- 抛硬币的触觉节奏与硬币完整翻转同步，并细化起抛、旋转和落定反馈。
 
 ### 功能概览
 
@@ -199,17 +197,15 @@ Zhifou Fortune is a native Android app that brings together the traditional Chin
 
 The project aims to present traditional material with modern product standards: sources should remain identifiable, conclusions should stay measured, and cultural references should never be framed as guaranteed predictions or fear-based advice.
 
-> `v0.9.1` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
+> `v0.9.2` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
 
-### What's new in v0.9.1
+### What's new in v0.9.2
 
-- Career, relationships, and finances now receive stable daily summaries derived from the offline almanac and date-based rules.
-- Sensitive or unsuitable almanac entries are isolated from home-screen summaries and their AI prompts.
-- Each home insight can open an optional AI explanation; one successful result is generated and cached per category per day.
-- AI settings now support automatic validation, network-aware errors, and a manual connection test. Unchanged settings are not retested on every launch.
-- Improved compatibility with DeepSeek V4 and other OpenAI-compatible APIs that separate reasoning from final content.
-- The calendar keeps the selected date while the app process remains alive, including after returning from details or schedule editing.
-- Refined date tap responsiveness and redesigned the three-part insight panel.
+- Divination tools now live in an extensible menu beside the input field. Compact selection chips replace the former full-width controls, while question-free casts remain supported.
+- The send control now has an explicit enabled state, press animation, and gentle haptic confirmation. It stays inert when there is no text or selected tool.
+- Cold startup and navigation between Home, Calendar, and Divination are faster through retained screen state, reusable almanac data, and deferred low-priority speech-model loading.
+- The Home screen's **Today Almanac** action opens the full offline almanac for the current date.
+- Coin-toss haptics now follow each complete visual rotation, with refined launch, spin, and landing feedback.
 
 ### Features
 

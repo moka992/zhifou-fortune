@@ -3,7 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
-[![Version](https://img.shields.io/badge/version-0.9.3-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
+[![Version](https://img.shields.io/badge/version-0.9.4-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
 
 一款离线优先的 Android 运势、传统历法、周易占卜与日程应用。
 
@@ -21,15 +21,13 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 项目希望在传统文化表达和现代移动体验之间取得平衡：来源明确，结论克制，不把黄历或占卜描述为确定预测，也不以恐惧性措辞推动用户作出决定。
 
-> 当前版本为 `v0.9.3` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
+> 当前版本为 `v0.9.4` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
 
-### v0.9.3 更新
+### v0.9.4 更新
 
-- 新增完整的韦特塔罗占卜：内置 78 张 Rider-Waite-Smith 公版牌面、正逆位释义、无重复抽牌、翻牌动画和十张十字牌阵。
-- 塔罗抽牌与基础牌阵解读可完全离线运行；用户配置兼容模型后，可获得结合问题、牌面、个人资料与当日黄历的独立 AI 解读。
-- 小工具新增韦特塔罗 Wiki，可按大阿尔卡那和四组花色筛选，并检索全部 78 张牌的牌面象征、用途、正逆位含义、历史背景和相似牌区别。
-- 增加牌组体系、历史来源和解释边界说明；牌面与原始资料的许可信息已纳入第三方声明。
-- 牌库采用惰性渲染，仅解码当前可见牌面，兼顾完整资料与低性能设备上的滚动体验。
+- 调整韦特塔罗抽牌节奏，将单张翻牌动画延长至 900 毫秒，并放缓逐张揭示间隔，使十张牌的抽取过程更从容、完整。
+- 十字牌阵结果改为每行五张、共两行的自适应总览，十张牌可在同一区域直接查看，不再依赖横向滚动。
+- 铜钱卦增加铜钱翻入、爻线展开和结果淡入动画，并适度延长六次投掷间隔，使起卦过程更清晰。
 
 ### 功能概览
 
@@ -202,15 +200,13 @@ Zhifou Fortune is a native Android app that brings together the traditional Chin
 
 The project aims to present traditional material with modern product standards: sources should remain identifiable, conclusions should stay measured, and cultural references should never be framed as guaranteed predictions or fear-based advice.
 
-> `v0.9.3` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
+> `v0.9.4` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
 
-### What's new in v0.9.3
+### What's new in v0.9.4
 
-- Added complete Rider-Waite tarot divination with all 78 public-domain Rider-Waite-Smith cards, upright and reversed references, unique draws, card-flip animation, and a ten-card Celtic spread.
-- Drawing and baseline spread interpretation work fully offline. When a compatible model is configured, a dedicated AI path can interpret the question, cards, profile context, and daily almanac.
-- Added an offline Rider-Waite tarot Wiki under Utility Tools, with Major Arcana and suit filters plus search across artwork, usage, meanings, historical context, and related-card distinctions.
-- Added deck-structure, history, sourcing, and interpretation-boundary notes, with card licensing documented in the third-party notices.
-- The library lazily renders visible cards to keep the complete reference responsive on lower-performance devices.
+- Refined Rider-Waite tarot pacing with a 900 ms flip for each card and calmer reveal intervals across the ten-card draw.
+- Replaced the horizontally scrolling Celtic spread result with a responsive five-column, two-row overview so all ten cards remain visible together.
+- Added coin-entry, line-expansion, and result-fade transitions to three-coin I Ching casting, with slightly longer intervals between the six casts.
 
 ### Features
 

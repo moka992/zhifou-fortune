@@ -242,6 +242,16 @@ import kotlin.random.Random
 
 private val LinearDecelEasing = Easing { p -> 2f * p - p * p }
 
+private const val COIN_TOSS_REVEAL_DURATION_MS = 520
+private const val COIN_FIRST_TOSS_DELAY_MS = 180L
+private const val COIN_NEXT_TOSS_DELAY_MS = 400L
+private const val COIN_FINAL_SETTLE_DELAY_MS = 100L
+private const val TAROT_CARD_FLIP_DURATION_MS = 900
+private const val TAROT_FIRST_CARD_DELAY_MS = 180L
+private const val TAROT_NEXT_CARD_DELAY_MS = 260L
+private const val TAROT_CARD_REVEAL_DELAY_MS = 320L
+private const val TAROT_FINAL_SETTLE_DELAY_MS = 180L
+
 // 主题调色板：深/浅各一套，通过 LocalFortunePalette 注入。
 @Immutable
 data class FortunePalette(
@@ -6340,6 +6350,15 @@ private fun ClassicSelectionDetail(reading: FortuneReading) {
 @Composable
 private fun CoinLineRow(position: Int, line: CoinLineResult?) {
     val C = LocalFortunePalette.current
+    val density = LocalDensity.current.density
+    val revealProgress by animateFloatAsState(
+        targetValue = if (line == null) 0f else 1f,
+        animationSpec = tween(
+            durationMillis = COIN_TOSS_REVEAL_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "coin-line-reveal-$position",
+    )
     Row(
         modifier = Modifier.fillMaxWidth().height(48.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -6350,7 +6369,18 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.width(36.dp),
         )
-        CoinLineStroke(line = line, modifier = Modifier.width(68.dp).height(24.dp))
+        CoinLineStroke(
+            line = line,
+            modifier = Modifier
+                .width(68.dp)
+                .height(24.dp)
+                .graphicsLayer {
+                    if (line != null) {
+                        alpha = 0.45f + revealProgress * 0.55f
+                        scaleX = 0.72f + revealProgress * 0.28f
+                    }
+                },
+        )
         Spacer(Modifier.width(8.dp))
         if (line == null) {
             Text(
@@ -6359,9 +6389,17 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
                 style = MaterialTheme.typography.bodySmall,
             )
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                modifier = Modifier.graphicsLayer {
+                    alpha = revealProgress
+                    translationY = (1f - revealProgress) * 5f * density
+                },
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    line.coinValues.forEach { value -> CoinFaceChip(isYang = value == 3) }
+                    line.coinValues.forEach { value ->
+                        CoinFaceChip(isYang = value == 3, revealProgress = revealProgress)
+                    }
                     Spacer(Modifier.width(3.dp))
                     Text(line.combinationLabel, color = C.textMain, style = MaterialTheme.typography.bodySmall)
                 }
@@ -6376,11 +6414,16 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
 }
 
 @Composable
-private fun CoinFaceChip(isYang: Boolean) {
+private fun CoinFaceChip(isYang: Boolean, revealProgress: Float) {
     val C = LocalFortunePalette.current
+    val density = LocalDensity.current.density
     Box(
         modifier = Modifier
             .size(19.dp)
+            .graphicsLayer {
+                rotationY = (1f - revealProgress) * 90f
+                cameraDistance = 8f * density
+            }
             .background(if (isYang) C.gold.copy(alpha = 0.2f) else C.panel, CircleShape)
             .border(1.dp, if (isYang) C.gold else C.line, CircleShape),
         contentAlignment = Alignment.Center,
@@ -6497,7 +6540,10 @@ private fun TarotFlipCard(
     val density = LocalDensity.current.density
     val rotation by animateFloatAsState(
         targetValue = if (revealed) 180f else 0f,
-        animationSpec = tween(durationMillis = 460, easing = FastOutSlowInEasing),
+        animationSpec = tween(
+            durationMillis = TAROT_CARD_FLIP_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
         label = "tarot-card-flip",
     )
     val showFront = rotation > 90f
@@ -6544,46 +6590,52 @@ private fun TarotSpreadDetail(reading: FortuneReading) {
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            reading.tarotDraws.sortedBy(TarotDraw::positionIndex).forEach { draw ->
-                Column(
-                    modifier = Modifier.width(76.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+        reading.tarotDraws
+            .sortedBy(TarotDraw::positionIndex)
+            .chunked(5)
+            .forEach { rowDraws ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Image(
-                        painter = painterResource(draw.card.imageRes),
-                        contentDescription = "${draw.position.name}：${draw.card.nameZh}${draw.orientationLabel}",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(0.575f)
-                            .graphicsLayer { rotationZ = if (draw.reversed) 180f else 0f }
-                            .clip(RoundedCornerShape(5.dp))
-                            .border(1.dp, C.gold.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
-                    )
-                    Text(
-                        "${draw.positionIndex}. ${draw.position.name}",
-                        color = C.textSub,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        "${draw.card.nameZh} · ${draw.orientationLabel}",
-                        color = C.textMain,
-                        style = MaterialTheme.typography.labelSmall,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                    )
+                    rowDraws.forEach { draw ->
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Image(
+                                painter = painterResource(draw.card.imageRes),
+                                contentDescription = "${draw.position.name}：${draw.card.nameZh}${draw.orientationLabel}",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(0.575f)
+                                    .graphicsLayer { rotationZ = if (draw.reversed) 180f else 0f }
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .border(1.dp, C.gold.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
+                            )
+                            Text(
+                                "${draw.positionIndex}. ${draw.position.name}",
+                                color = C.textSub,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "${draw.card.nameZh} · ${draw.orientationLabel}",
+                                color = C.textMain,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    repeat(5 - rowDraws.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
-        }
         TextButton(onClick = { expanded = !expanded }) {
             Icon(
                 if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -7045,11 +7097,11 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val lines = mutableListOf<CoinLineResult>()
             repeat(6) { index ->
-                delay(if (index == 0) 140L else 320L)
+                delay(if (index == 0) COIN_FIRST_TOSS_DELAY_MS else COIN_NEXT_TOSS_DELAY_MS)
                 lines += oracle.tossCoinLine(position = index + 1)
                 coinCastingLines = lines.toList()
             }
-            delay(280L)
+            delay(COIN_TOSS_REVEAL_DURATION_MS.toLong() + COIN_FINAL_SETTLE_DELAY_MS)
             save(oracle.coin(castingQuestion, lines))
             coinCasting = false
             coinCastingLines = emptyList()
@@ -7073,12 +7125,12 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         tarotRevealedCount = 0
         viewModelScope.launch {
             draws.forEachIndexed { index, draw ->
-                delay(if (index == 0) 120L else 85L)
+                delay(if (index == 0) TAROT_FIRST_CARD_DELAY_MS else TAROT_NEXT_CARD_DELAY_MS)
                 tarotDrawingCards = tarotDrawingCards + draw
-                delay(230L)
+                delay(TAROT_CARD_REVEAL_DELAY_MS)
                 tarotRevealedCount = index + 1
             }
-            delay(520L)
+            delay(TAROT_CARD_FLIP_DURATION_MS.toLong() + TAROT_FINAL_SETTLE_DELAY_MS)
             save(oracle.tarot(drawingQuestion, draws))
             tarotDrawing = false
             tarotDrawingCards = emptyList()

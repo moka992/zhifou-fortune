@@ -21,6 +21,27 @@ The changing-line selection behavior is identified in the application as the
 framework recorded in Zhu Xi's public-domain `易学启蒙·考变占`. It is presented
 as one traditional framework rather than the only method of interpretation.
 
+## Rider-Waite-Smith tarot deck and The Pictorial Key to the Tarot
+
+- Card collection: https://commons.wikimedia.org/wiki/Category:Rider-Waite_tarot_deck_(Roses_%26_Lilies)
+- Card-back file: https://commons.wikimedia.org/wiki/File:Waite%E2%80%93Smith_Tarot_Roses_and_Lilies_cropped.jpg
+- Interpretive source: https://en.wikisource.org/wiki/The_Pictorial_Key_to_the_Tarot
+- Artwork: Pamela Colman Smith, first published by Rider in 1909
+- Text: Arthur Edward Waite, first published in 1910
+- Status: Public domain
+
+The application bundles the complete 78-card Rider-Waite-Smith deck and the
+Roses and Lilies card back. Wikimedia Commons marks these source files as
+public domain. They were published before 1931 and are public domain in the
+United States; Commons also identifies them as public domain in their country
+of origin.
+
+The ten spread positions and historical baseline meanings are based on
+Waite's public-domain *The Pictorial Key to the Tarot*. Chinese descriptions
+and meanings in `TarotDeck.kt` are original concise modern summaries rather
+than text copied from a contemporary commercial translation. A copy of this
+notice is bundled at `app/src/main/assets/licenses/RIDER_WAITE_SMITH.txt`.
+
 ## sherpa-onnx
 
 - Project: https://github.com/k2-fsa/sherpa-onnx

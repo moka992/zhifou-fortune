@@ -3,7 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
-[![Version](https://img.shields.io/badge/version-0.9.2-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
+[![Version](https://img.shields.io/badge/version-0.9.3-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
 
 一款离线优先的 Android 运势、传统历法、周易占卜与日程应用。
 
@@ -17,19 +17,19 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 ### 项目简介
 
-知否运势把传统历法、周易铜钱卦、答案之书、日历日程和几款轻量互动工具整合在一个原生 Android 应用中。历法计算、基础运势、占卜流程、日程和小工具均可离线使用；AI 解读与云端语音转写属于用户自行配置的可选功能。
+知否运势把传统历法、周易铜钱卦、韦特塔罗、答案之书、日历日程和几款轻量互动工具整合在一个原生 Android 应用中。历法计算、基础运势、占卜流程、日程和小工具均可离线使用；AI 解读与云端语音转写属于用户自行配置的可选功能。
 
 项目希望在传统文化表达和现代移动体验之间取得平衡：来源明确，结论克制，不把黄历或占卜描述为确定预测，也不以恐惧性措辞推动用户作出决定。
 
-> 当前版本为 `v0.9.2` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
+> 当前版本为 `v0.9.3` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
 
-### v0.9.2 更新
+### v0.9.3 更新
 
-- 占卜工具改为输入框左侧的可扩展菜单；铜钱卦和答案之书采用紧凑的已选标签，仍可在无文字问题时直接执行。
-- 发送按钮增加明确的可用状态、按压动画和轻柔触觉反馈；没有文字且未选择工具时保持禁用。
-- 优化冷启动和首页、日历、占卜之间的切换：复用页面状态与历法缓存，并将离线语音模型延后到低优先级线程加载。
-- 首页“今日黄历”可直接打开当天的完整离线黄历详情。
-- 抛硬币的触觉节奏与硬币完整翻转同步，并细化起抛、旋转和落定反馈。
+- 新增完整的韦特塔罗占卜：内置 78 张 Rider-Waite-Smith 公版牌面、正逆位释义、无重复抽牌、翻牌动画和十张十字牌阵。
+- 塔罗抽牌与基础牌阵解读可完全离线运行；用户配置兼容模型后，可获得结合问题、牌面、个人资料与当日黄历的独立 AI 解读。
+- 小工具新增韦特塔罗 Wiki，可按大阿尔卡那和四组花色筛选，并检索全部 78 张牌的牌面象征、用途、正逆位含义、历史背景和相似牌区别。
+- 增加牌组体系、历史来源和解释边界说明；牌面与原始资料的许可信息已纳入第三方声明。
+- 牌库采用惰性渲染，仅解码当前可见牌面，兼顾完整资料与低性能设备上的滚动体验。
 
 ### 功能概览
 
@@ -46,6 +46,7 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 - **铜钱卦**：按真实三枚铜钱起卦流程生成六爻，展示每次投掷、阴阳、本卦、动爻和变卦。
 - **周易经典**：内置 64 卦、384 爻、卦辞、爻辞、《彖》与《象》等离线语料。
 - **答案之书**：内置 100 条本地答案。
+- **韦特塔罗**：内置完整 78 张 Rider-Waite-Smith 公版牌面、正逆位释义与十张十字牌阵；抽牌、翻牌和基础牌阵解读均可离线完成。
 - **AI 解读**：支持 OpenAI 兼容的 Chat Completions 接口，可根据用户问题和卦象生成进一步分析。
 - **传统文化对话**：支持围绕《周易》《道德经》、佛道思想史等主题进行对话。
 - 首页每日 AI 提示与占卜 AI 解读使用相互独立的提示词、缓存和输出限制。
@@ -67,6 +68,7 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 #### 小工具
 
+- **韦特塔罗 Wiki**：可离线检索完整 78 张牌，按大阿尔卡那和四组花色分类，查阅牌面象征、牌阵用途、正逆位释义、历史背景及相似牌区别。
 - **多面骰子**：支持 1 至 6 枚 D4、D6、D8、D10、D12、D20，包含轻量 3D 运动、摇晃触发、音效和触觉反馈。
 - **转盘**：支持自定义选项、结果历史、摇晃启动和分段振动。
 - **抛硬币**：支持 1 至 10 枚双面硬币动画、摇晃启动和独立的 50:50 随机结果。
@@ -129,6 +131,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 仓库和 APK 不包含预置 API Key。第三方 AI 服务如何处理请求数据，取决于用户自行选择的服务提供商及其隐私政策。
 
+用户主动执行 AI 塔罗解读时，应用会向其配置的模型服务发送本次问题、十张牌及正逆位；用户已填写的昵称、生日、关注词和当日离线黄历只作为可选的次要语境发送。日程、历史记录、录音和其他本地内容不会加入塔罗请求。
+
 ### 权限与隐私
 
 | 权限 | 用途 | 是否影响离线核心功能 |
@@ -158,6 +162,7 @@ app/src/main/java/com/zhifou/fortune/
 ├── ZhouyiDivination.kt          # 起卦、变卦与取用规则
 ├── ZhouyiClassics.kt            # 离线周易经典语料
 ├── AnswerBook.kt                # 答案之书数据
+├── TarotDeck.kt                 # 78 张韦特牌库、牌阵、正逆位与本地解读
 ├── OfflineSpeechRecognizer.kt   # 离线语音识别
 ├── CloudSpeechTranscriber.kt    # 可选云端语音转写
 ├── ScheduleModels.kt            # 日程模型与排序规则
@@ -169,7 +174,7 @@ tools/generate_zhouyi_corpus.py  # 生成并校验周易语料
 
 ### 测试
 
-JVM 单元测试覆盖铜钱卦与变卦规则、周易语料完整性、黄历和每日运势、三项离线结论、敏感条目隔离、AI 提示词边界、配置指纹、日程逻辑、推荐内容和硬币结算。
+JVM 单元测试覆盖铜钱卦与变卦规则、78 张塔罗牌库和无重复抽牌、周易语料完整性、黄历和每日运势、三项离线结论、敏感条目隔离、AI 提示词边界、配置指纹、日程逻辑、推荐内容和硬币结算。
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -177,7 +182,7 @@ JVM 单元测试覆盖铜钱卦与变卦规则、周易语料完整性、黄历�
 
 ### 第三方组件
 
-依赖、模型来源和许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，主要包括 AndroidX、Jetpack Compose、`lunar-java`、Sherpa-ONNX、OpenAI Whisper Tiny 和 Kanseki Repository 周易文本。
+依赖、模型、牌面、原始文本来源和许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，主要包括 AndroidX、Jetpack Compose、`lunar-java`、Sherpa-ONNX、OpenAI Whisper Tiny、Kanseki Repository 周易文本，以及公版 Rider-Waite-Smith 牌面与《The Pictorial Key to the Tarot》。
 
 ### 参与贡献
 
@@ -193,19 +198,19 @@ JVM 单元测试覆盖铜钱卦与变卦规则、周易语料完整性、黄历�
 
 ### About
 
-Zhifou Fortune is a native Android app that brings together the traditional Chinese calendar, I Ching coin divination, a Book of Answers, schedules, and several tactile utility tools. Calendar calculations, baseline readings, divination mechanics, schedules, and utilities work offline. AI interpretation and cloud speech transcription are optional and require a service configured by the user.
+Zhifou Fortune is a native Android app that brings together the traditional Chinese calendar, I Ching coin divination, Rider-Waite-Smith tarot, a Book of Answers, schedules, and several tactile utility tools. Calendar calculations, baseline readings, divination mechanics, schedules, and utilities work offline. AI interpretation and cloud speech transcription are optional and require a service configured by the user.
 
 The project aims to present traditional material with modern product standards: sources should remain identifiable, conclusions should stay measured, and cultural references should never be framed as guaranteed predictions or fear-based advice.
 
-> `v0.9.2` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
+> `v0.9.3` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
 
-### What's new in v0.9.2
+### What's new in v0.9.3
 
-- Divination tools now live in an extensible menu beside the input field. Compact selection chips replace the former full-width controls, while question-free casts remain supported.
-- The send control now has an explicit enabled state, press animation, and gentle haptic confirmation. It stays inert when there is no text or selected tool.
-- Cold startup and navigation between Home, Calendar, and Divination are faster through retained screen state, reusable almanac data, and deferred low-priority speech-model loading.
-- The Home screen's **Today Almanac** action opens the full offline almanac for the current date.
-- Coin-toss haptics now follow each complete visual rotation, with refined launch, spin, and landing feedback.
+- Added complete Rider-Waite tarot divination with all 78 public-domain Rider-Waite-Smith cards, upright and reversed references, unique draws, card-flip animation, and a ten-card Celtic spread.
+- Drawing and baseline spread interpretation work fully offline. When a compatible model is configured, a dedicated AI path can interpret the question, cards, profile context, and daily almanac.
+- Added an offline Rider-Waite tarot Wiki under Utility Tools, with Major Arcana and suit filters plus search across artwork, usage, meanings, historical context, and related-card distinctions.
+- Added deck-structure, history, sourcing, and interpretation-boundary notes, with card licensing documented in the third-party notices.
+- The library lazily renders visible cards to keep the complete reference responsive on lower-performance devices.
 
 ### Features
 
@@ -222,6 +227,7 @@ The project aims to present traditional material with modern product standards: 
 - **Three-coin I Ching**: six lines generated from individual three-coin casts, with full cast records, moving lines, primary hexagram, and transformed hexagram.
 - **Offline I Ching corpus**: all 64 hexagrams, 384 line texts, Judgments, Tuan, and Xiang material.
 - **Book of Answers**: 100 offline responses.
+- **Rider-Waite tarot**: the complete 78-card public-domain Rider-Waite-Smith deck, upright and reversed references, and a ten-card Celtic spread. Drawing, card flips, and baseline spread interpretation work offline.
 - **AI interpretation**: optional OpenAI-compatible Chat Completions support for question-aware readings.
 - **Traditional culture chat**: conversations about the I Ching, Dao De Jing, and related Chinese religious and intellectual history.
 - Daily home insights and divination analysis use separate prompts, caches, and output limits.
@@ -243,6 +249,7 @@ The project aims to present traditional material with modern product standards: 
 
 #### Utility tools
 
+- **Rider-Waite tarot Wiki**: an offline, searchable reference for all 78 cards, organized by Major Arcana and suit, with artwork notes, spread usage, upright and reversed meanings, historical context, and comparisons with related cards.
 - **Polyhedral dice**: one to six D4, D6, D8, D10, D12, or D20 dice with lightweight 3D motion, shake-to-roll, sound, and haptics.
 - **Wheel**: custom segments, result history, shake-to-spin, and segmented haptic feedback.
 - **Coin toss**: one to ten double-sided animated coins, shake-to-toss, and independent 50:50 outcomes.
@@ -305,6 +312,8 @@ Under **My > Settings**, enter an API key, model name, and an OpenAI-compatible 
 
 No API key is bundled with the source or APK. Data handling by an external AI service is governed by the provider selected by the user.
 
+When the user explicitly requests an AI tarot interpretation, the app sends the current question, the ten drawn cards, and their orientations to the configured model service. User-entered nickname, birthday, focus keywords, and the current offline almanac may be included as secondary context. Schedules, history, recordings, and unrelated local data are not included in tarot requests.
+
 ### Permissions and privacy
 
 | Permission | Purpose | Required for offline core features |
@@ -334,6 +343,7 @@ app/src/main/java/com/zhifou/fortune/
 ├── ZhouyiDivination.kt          # Hexagram and changing-line rules
 ├── ZhouyiClassics.kt            # Offline I Ching corpus
 ├── AnswerBook.kt                # Book of Answers data
+├── TarotDeck.kt                 # 78-card RWS deck, spread rules, and offline meanings
 ├── OfflineSpeechRecognizer.kt   # Offline speech recognition
 ├── CloudSpeechTranscriber.kt    # Optional cloud transcription
 ├── ScheduleModels.kt            # Schedule models and sorting
@@ -345,7 +355,7 @@ tools/generate_zhouyi_corpus.py  # Generates and validates the I Ching corpus
 
 ### Tests
 
-The JVM test suite covers coin-cast structure, changing hexagrams, corpus integrity, almanac rules, daily summaries, sensitive-entry isolation, AI prompt boundaries, configuration fingerprints, schedules, recommendations, timeline state, and coin animation geometry.
+The JVM test suite covers coin-cast structure, changing hexagrams, the complete 78-card tarot deck and unique draws, corpus integrity, almanac rules, daily summaries, sensitive-entry isolation, AI prompt boundaries, configuration fingerprints, schedules, recommendations, timeline state, and coin animation geometry.
 
 ```bash
 ./gradlew :app:testDebugUnitTest
@@ -353,7 +363,7 @@ The JVM test suite covers coin-cast structure, changing hexagrams, corpus integr
 
 ### Third-party software
 
-Dependency, model, source-text, and license details are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Major components include AndroidX, Jetpack Compose, `lunar-java`, Sherpa-ONNX, OpenAI Whisper Tiny, and the Kanseki Repository I Ching text.
+Dependency, model, artwork, source-text, and license details are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Major components include AndroidX, Jetpack Compose, `lunar-java`, Sherpa-ONNX, OpenAI Whisper Tiny, the Kanseki Repository I Ching text, and the public-domain Rider-Waite-Smith deck and *The Pictorial Key to the Tarot*.
 
 ### Contributing
 

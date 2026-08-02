@@ -105,6 +105,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Toll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -146,6 +147,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -536,6 +538,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     var showDiceTool by remember { mutableStateOf(false) }
     var showWheelTool by remember { mutableStateOf(false) }
     var showCoinTool by remember { mutableStateOf(false) }
+    var showTarotWiki by remember { mutableStateOf(false) }
     var requestedScheduleDetailDate by rememberSaveable { mutableStateOf<String?>(null) }
     val oracleTimelineState = rememberLazyListState(
         initialFirstVisibleItemIndex = if (vm.oracleTimeline.isEmpty()) 0 else vm.oracleTimeline.size,
@@ -570,6 +573,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                                     showDiceTool = false
                                     showWheelTool = false
                                     showCoinTool = false
+                                    showTarotWiki = false
                                 }
                             },
                             icon = {
@@ -599,6 +603,9 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                         onClick = {
                             tab = Tab.Oracle
                             showDiceTool = false
+                            showWheelTool = false
+                            showCoinTool = false
+                            showTarotWiki = false
                         },
                         color = C.gold,
                         shape = CircleShape,
@@ -650,10 +657,12 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                         showWheelTool -> WheelScreen(vm, onBack = { showWheelTool = false })
                         showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
                         showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
+                        showTarotWiki -> TarotWikiScreen(onBack = { showTarotWiki = false })
                         else -> ToolsScreen(
                             onOpenDice = { showDiceTool = true },
                             onOpenWheel = { showWheelTool = true },
                             onOpenCoin = { showCoinTool = true },
+                            onOpenTarotWiki = { showTarotWiki = true },
                         )
                     }
                     Tab.Schedule -> ScheduleScreen(
@@ -891,6 +900,13 @@ private fun AlmanacActivityRow(label: String, activities: List<String>, accent: 
 private enum class OracleTool(val label: String) {
     COIN("铜钱卦"),
     ANSWER_BOOK("答案之书"),
+    TAROT("韦特塔罗"),
+}
+
+private fun OracleTool.icon(): ImageVector = when (this) {
+    OracleTool.COIN -> Icons.Default.Toll
+    OracleTool.ANSWER_BOOK -> Icons.Default.Book
+    OracleTool.TAROT -> Icons.Default.Style
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -941,6 +957,9 @@ private fun OracleScreen(
                 chatSending = vm.chatSending,
                 coinCasting = vm.coinCasting,
                 coinLineCount = vm.coinCastingLines.size,
+                tarotDrawing = vm.tarotDrawing,
+                tarotCardCount = vm.tarotDrawingCards.size,
+                tarotRevealCount = vm.tarotRevealedCount,
             )
         )
     }
@@ -1104,16 +1123,32 @@ private fun OracleScreen(
                 showDailyPrompt = false
                 vm.drawAnswerBook()
             }
+            OracleTool.TAROT -> {
+                dismissTextInput()
+                showDailyPrompt = false
+                vm.drawTarot()
+            }
             null -> sendChatMessage()
         }
     }
 
-    LaunchedEffect(oracleTimeline.size, vm.chatSending, vm.coinCasting, vm.coinCastingLines.size) {
+    LaunchedEffect(
+        oracleTimeline.size,
+        vm.chatSending,
+        vm.coinCasting,
+        vm.coinCastingLines.size,
+        vm.tarotDrawing,
+        vm.tarotDrawingCards.size,
+        vm.tarotRevealedCount,
+    ) {
         val currentSnapshot = OracleFollowSnapshot(
             timelineSize = oracleTimeline.size,
             chatSending = vm.chatSending,
             coinCasting = vm.coinCasting,
             coinLineCount = vm.coinCastingLines.size,
+            tarotDrawing = vm.tarotDrawing,
+            tarotCardCount = vm.tarotDrawingCards.size,
+            tarotRevealCount = vm.tarotRevealedCount,
         )
         val shouldFollowNewContent = shouldFollowOracleContent(observedFollowSnapshot, currentSnapshot)
         observedFollowSnapshot = currentSnapshot
@@ -1259,6 +1294,15 @@ private fun OracleScreen(
                         )
                     }
                 }
+                if (vm.tarotDrawing) {
+                    item(key = "tarot-drawing") {
+                        TarotDrawingProgressCard(
+                            draws = vm.tarotDrawingCards,
+                            revealedCount = vm.tarotRevealedCount,
+                            question = vm.tarotDrawingQuestion,
+                        )
+                    }
+                }
                 if (vm.chatSending) {
                     item(key = "chat-loading") {
                         ThinkingBubble()
@@ -1324,7 +1368,7 @@ private fun OracleScreen(
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
                                 Icon(
-                                    imageVector = if (tool == OracleTool.COIN) Icons.Default.Toll else Icons.Default.Book,
+                                    imageVector = tool.icon(),
                                     contentDescription = null,
                                     tint = C.gold,
                                     modifier = Modifier.size(16.dp),
@@ -1391,7 +1435,7 @@ private fun OracleScreen(
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = if (tool == OracleTool.COIN) Icons.Default.Toll else Icons.Default.Book,
+                                            imageVector = tool.icon(),
                                             contentDescription = null,
                                             tint = if (isSelected) C.gold else C.textSub,
                                         )
@@ -1485,6 +1529,7 @@ private fun OracleScreen(
                     val sendEnabled = when (selectedTool) {
                         OracleTool.COIN -> !vm.coinCasting
                         OracleTool.ANSWER_BOOK -> true
+                        OracleTool.TAROT -> !vm.tarotDrawing
                         null -> vm.question.isNotBlank() && !vm.chatSending
                     }
                     IconButton(
@@ -1608,6 +1653,9 @@ internal data class OracleFollowSnapshot(
     val chatSending: Boolean,
     val coinCasting: Boolean,
     val coinLineCount: Int,
+    val tarotDrawing: Boolean = false,
+    val tarotCardCount: Int = 0,
+    val tarotRevealCount: Int = 0,
 )
 
 internal fun shouldFollowOracleContent(
@@ -1617,7 +1665,10 @@ internal fun shouldFollowOracleContent(
     current.timelineSize > previous.timelineSize ||
         (current.chatSending && !previous.chatSending) ||
         (current.coinCasting && !previous.coinCasting) ||
-        current.coinLineCount > previous.coinLineCount
+        current.coinLineCount > previous.coinLineCount ||
+        (current.tarotDrawing && !previous.tarotDrawing) ||
+        current.tarotCardCount > previous.tarotCardCount ||
+        current.tarotRevealCount > previous.tarotRevealCount
 
 // 零依赖 Markdown 渲染：行内 **加粗** *斜体* `代码`；块级 #/##/### 标题、- 列表、> 引用、``` 代码块、--- 分隔线。
 // onLight=true 用于浅色气泡（聊天，深色文字+深色 accent）；false 用于深色背景（占卜卡，浅色文字+金色 accent）。
@@ -1864,7 +1915,12 @@ private fun VoiceCapturePanel(
 }
 
 @Composable
-private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit, onOpenCoin: () -> Unit) {
+private fun ToolsScreen(
+    onOpenDice: () -> Unit,
+    onOpenWheel: () -> Unit,
+    onOpenCoin: () -> Unit,
+    onOpenTarotWiki: () -> Unit,
+) {
     val C = LocalFortunePalette.current
     Column(
         modifier = Modifier
@@ -1940,6 +1996,7 @@ private fun ToolsScreen(onOpenDice: () -> Unit, onOpenWheel: () -> Unit, onOpenC
                 }
             }
         }
+        TarotWikiToolCard(onClick = onOpenTarotWiki)
     }
 }
 
@@ -6364,6 +6421,226 @@ private fun CoinLineStroke(line: CoinLineResult?, modifier: Modifier = Modifier)
 }
 
 @Composable
+private fun TarotDrawingProgressCard(
+    draws: List<TarotDraw>,
+    revealedCount: Int,
+    question: String,
+) {
+    val C = LocalFortunePalette.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = C.panel),
+        border = BorderStroke(1.dp, C.line),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("正在抽取十字牌阵", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                    if (question.isNotBlank()) {
+                        Text(
+                            "问：$question",
+                            color = C.textSub,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Text(
+                    "$revealedCount / 10",
+                    color = C.gold,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            draws.chunked(5).forEach { rowDraws ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    rowDraws.forEach { draw ->
+                        TarotFlipCard(
+                            draw = draw,
+                            revealed = draw.positionIndex <= revealedCount,
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(0.575f),
+                        )
+                    }
+                    repeat(5 - rowDraws.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            Text(
+                "采用十张牌的韦特十字牌阵；正逆位在洗牌时独立确定。",
+                color = C.textSub,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TarotFlipCard(
+    draw: TarotDraw,
+    revealed: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val C = LocalFortunePalette.current
+    val density = LocalDensity.current.density
+    val rotation by animateFloatAsState(
+        targetValue = if (revealed) 180f else 0f,
+        animationSpec = tween(durationMillis = 460, easing = FastOutSlowInEasing),
+        label = "tarot-card-flip",
+    )
+    val showFront = rotation > 90f
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                rotationY = rotation
+                cameraDistance = 12f * density
+                shadowElevation = 2.dp.toPx()
+                shape = RoundedCornerShape(5.dp)
+                clip = true
+            }
+            .background(C.panelAlt)
+            .border(1.dp, C.gold.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
+    ) {
+        Image(
+            painter = painterResource(
+                if (showFront) draw.card.imageRes else R.drawable.tarot_card_back,
+            ),
+            contentDescription = if (showFront) {
+                "${draw.position.name}：${draw.card.nameZh}${draw.orientationLabel}"
+            } else {
+                "未翻开的塔罗牌"
+            },
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    rotationY = if (showFront) 180f else 0f
+                    rotationZ = if (showFront && draw.reversed) 180f else 0f
+                },
+        )
+    }
+}
+
+@Composable
+private fun TarotSpreadDetail(reading: FortuneReading) {
+    val C = LocalFortunePalette.current
+    var expanded by rememberSaveable(reading.id) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "韦特十字牌阵 · 10 张",
+            color = C.textSub,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            reading.tarotDraws.sortedBy(TarotDraw::positionIndex).forEach { draw ->
+                Column(
+                    modifier = Modifier.width(76.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Image(
+                        painter = painterResource(draw.card.imageRes),
+                        contentDescription = "${draw.position.name}：${draw.card.nameZh}${draw.orientationLabel}",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(0.575f)
+                            .graphicsLayer { rotationZ = if (draw.reversed) 180f else 0f }
+                            .clip(RoundedCornerShape(5.dp))
+                            .border(1.dp, C.gold.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
+                    )
+                    Text(
+                        "${draw.positionIndex}. ${draw.position.name}",
+                        color = C.textSub,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${draw.card.nameZh} · ${draw.orientationLabel}",
+                        color = C.textMain,
+                        style = MaterialTheme.typography.labelSmall,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
+        TextButton(onClick = { expanded = !expanded }) {
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(if (expanded) "收起逐牌解释" else "查看十张牌位与逐牌解释")
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                reading.tarotDraws.sortedBy(TarotDraw::positionIndex).forEach { draw ->
+                    Surface(
+                        color = C.panelAlt,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, C.line),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                "${draw.positionIndex}. ${draw.position.name} · ${draw.card.nameZh}${draw.orientationLabel}",
+                                color = C.textMain,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(draw.position.prompt, color = C.textSub, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                draw.card.classificationLabel,
+                                color = C.textSub,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                draw.keywords.joinToString(" · "),
+                                color = C.gold,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(draw.meaning, color = C.textMain, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "牌面：${draw.card.imageDescription}",
+                                color = C.textSub,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "牌位采用 A. E. Waite《塔罗图解钥匙》第三部分的十字展开结构；本应用不按性别、年龄或外貌猜测预设指示牌。",
+                    color = C.textSub,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
     val C = LocalFortunePalette.current
     Card(
@@ -6396,8 +6673,13 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
             if (reading.classicReferences.isNotEmpty()) {
                 ClassicSelectionDetail(reading)
             }
+            if (reading.tarotDraws.isNotEmpty()) {
+                TarotSpreadDetail(reading)
+            }
             if (reading.kind == "铜钱卦") {
                 Text("本地基础解读", color = C.textSub, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            } else if (reading.kind == "韦特塔罗") {
+                Text("本地牌阵解读", color = C.textSub, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             }
             Text(reading.body, color = C.textMain, style = MaterialTheme.typography.bodyLarge)
             Text(reading.advice, color = C.gold, style = MaterialTheme.typography.bodyMedium)
@@ -6407,7 +6689,15 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
             if (reading.aiInterpretation.isNotBlank()) {
                 Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, C.line)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (reading.kind == "铜钱卦") "AI 详细解读" else "AI 解读", color = C.mint, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            when (reading.kind) {
+                                "铜钱卦" -> "AI 详细解读"
+                                "韦特塔罗" -> "AI 塔罗解读"
+                                else -> "AI 解读"
+                            },
+                            color = C.mint,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                         MarkdownText(reading.aiInterpretation, color = C.textMain, style = MaterialTheme.typography.bodyMedium, onLight = C.isLight)
                     }
                 }
@@ -6658,6 +6948,14 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var coinCastingQuestion by mutableStateOf("")
         private set
+    var tarotDrawing by mutableStateOf(false)
+        private set
+    var tarotDrawingCards by mutableStateOf<List<TarotDraw>>(emptyList())
+        private set
+    var tarotRevealedCount by mutableIntStateOf(0)
+        private set
+    var tarotDrawingQuestion by mutableStateOf("")
+        private set
     var scheduleItems by mutableStateOf(repo.loadScheduleItems())
         private set
     var selectedScheduleDate by mutableStateOf(LocalDate.now())
@@ -6722,7 +7020,7 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             val cutoff = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1_000
             return history
                 .asSequence()
-                .filter { it.kind == "铜钱卦" || it.kind == "答案之书" }
+                .filter { it.kind == "铜钱卦" || it.kind == "答案之书" || it.kind == "韦特塔罗" }
                 .filter { it.id >= cutoff }
                 .sortedByDescending { it.id }
                 .take(5)
@@ -6762,6 +7060,31 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     fun drawAnswerBook() {
         save(oracle.answerBook(question))
         question = ""
+    }
+
+    fun drawTarot() {
+        if (tarotDrawing) return
+        val drawingQuestion = question.trim()
+        val draws = TarotDeck.drawCelticCross()
+        question = ""
+        tarotDrawing = true
+        tarotDrawingQuestion = drawingQuestion
+        tarotDrawingCards = emptyList()
+        tarotRevealedCount = 0
+        viewModelScope.launch {
+            draws.forEachIndexed { index, draw ->
+                delay(if (index == 0) 120L else 85L)
+                tarotDrawingCards = tarotDrawingCards + draw
+                delay(230L)
+                tarotRevealedCount = index + 1
+            }
+            delay(520L)
+            save(oracle.tarot(drawingQuestion, draws))
+            tarotDrawing = false
+            tarotDrawingCards = emptyList()
+            tarotRevealedCount = 0
+            tarotDrawingQuestion = ""
+        }
     }
 
     fun refreshToday(date: LocalDate = LocalDate.now()) {
@@ -7198,12 +7521,14 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun generateAiInterpretation(reading: FortuneReading) {
+        val tarotContext = if (reading.kind == "韦特塔罗") currentTarotAiContext() else null
         viewModelScope.launch {
             val result = AiInterpreter.interpret(
                 endpoint = aiEndpoint,
                 apiKey = aiApiKey,
                 model = aiModel,
                 reading = reading,
+                tarotContext = tarotContext,
             )
             val updated = result.fold(
                 onSuccess = { text -> reading.copy(aiInterpretation = text, aiStatus = "") },
@@ -7212,6 +7537,23 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             latestReading = updated
             history = repo.replaceReading(updated)
         }
+    }
+
+    private fun currentTarotAiContext(): TarotAiContext {
+        val almanac = todayFortune.almanac
+        return TarotAiContext(
+            nickname = nickname,
+            birthDate = birthDate,
+            keywords = fortuneKeywords,
+            dateLabel = almanac.dateLabel,
+            lunarLabel = almanac.lunarLabel,
+            dayGanZhi = almanac.dayGanZhi,
+            solarTerm = almanac.solarTerm,
+            suitable = almanac.suitable,
+            avoid = almanac.avoid,
+            directions = "喜神${almanac.joyDirection}、福神${almanac.fortuneDirection}、财神${almanac.wealthDirection}",
+            clash = listOf(almanac.clash, almanac.shaDirection).filter(String::isNotBlank).joinToString("、"),
+        )
     }
 }
 
@@ -7235,6 +7577,7 @@ data class FortuneReading(
     val classicReferences: List<ClassicReference> = emptyList(),
     val primaryClassic: ClassicHexagramContext? = null,
     val transformedClassic: ClassicHexagramContext? = null,
+    val tarotDraws: List<TarotDraw> = emptyList(),
 )
 
 data class CoinLineResult(
@@ -7710,6 +8053,8 @@ class FortuneRepository(context: Context) {
 private fun FortuneReading.toJson(): JSONObject {
     val coinLinesJson = JSONArray()
     coinLines.forEach { line -> coinLinesJson.put(line.toJson()) }
+    val tarotDrawsJson = JSONArray()
+    tarotDraws.forEach { draw -> tarotDrawsJson.put(draw.toJson()) }
     val classicReferencesJson = JSONArray()
     classicReferences.forEach { reference -> classicReferencesJson.put(reference.toJson()) }
     return JSONObject()
@@ -7724,6 +8069,7 @@ private fun FortuneReading.toJson(): JSONObject {
         .put("aiInterpretation", aiInterpretation)
         .put("aiStatus", aiStatus)
         .put("coinLines", coinLinesJson)
+        .put("tarotDraws", tarotDrawsJson)
         .put("primaryHexagram", primaryHexagram)
         .put("transformedHexagram", transformedHexagram)
         .put("classicMethod", classicMethod)
@@ -7754,7 +8100,34 @@ private fun JSONObject.toReading(): FortuneReading = FortuneReading(
     classicReferences = readClassicReferences(),
     primaryClassic = optJSONObject("primaryClassic")?.toClassicHexagramContext(),
     transformedClassic = optJSONObject("transformedClassic")?.toClassicHexagramContext(),
+    tarotDraws = readTarotDraws(),
 )
+
+private fun TarotDraw.toJson(): JSONObject = JSONObject()
+    .put("positionIndex", positionIndex)
+    .put("cardId", cardId)
+    .put("reversed", reversed)
+
+private fun JSONObject.readTarotDraws(): List<TarotDraw> {
+    val draws = optJSONArray("tarotDraws") ?: return emptyList()
+    return (0 until draws.length()).mapNotNull { index ->
+        val item = draws.optJSONObject(index) ?: return@mapNotNull null
+        val position = item.optInt("positionIndex")
+        val cardId = item.optString("cardId")
+        if (position !in 1..10 || runCatching { TarotDeck.card(cardId) }.isFailure) {
+            null
+        } else {
+            TarotDraw(
+                positionIndex = position,
+                cardId = cardId,
+                reversed = item.optBoolean("reversed"),
+            )
+        }
+    }
+        .distinctBy(TarotDraw::positionIndex)
+        .sortedBy(TarotDraw::positionIndex)
+        .take(10)
+}
 
 private fun CoinLineResult.toJson(): JSONObject {
     val values = JSONArray()
@@ -8161,6 +8534,7 @@ internal object AiInterpreter {
         apiKey: String,
         model: String,
         reading: FortuneReading,
+        tarotContext: TarotAiContext? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val resolvedModel = model.ifBlank { "gpt-4o-mini" }
@@ -8169,16 +8543,16 @@ internal object AiInterpreter {
                         .put("role", "system")
                         .put(
                             "content",
-                            if (reading.kind == "铜钱卦") {
-                                "你是知否运势的《周易》铜钱卦解读助手。先在内部静默校验投掷值、爻位、本卦、动爻、变卦和经典取用结果，不得自行改卦或更换取用规则，也不要向用户展示校验步骤或重复六爻数据。用户提供了明确问题时，问题本身是回答主轴，经典文本是分析依据；回答的大部分篇幅必须用于解释该问题的现实条件、矛盾、风险、选择和行动，不能停留在泛泛讲解经典。用户未提供文字问题时，不得猜测其心中默念的内容，只做一般卦义、自省方向和行动提示。只有输入中“经典原文”与“《彖》《象》上下文”里的文字可以加引号作为逐字引文；其他解释必须明确写成现代释义，不得伪造经文、出处、王弼、孔颖达、朱熹或现代译者观点。用中文回答，保持克制、具体、可执行，不宣称确定未来，不做医疗、法律、金融结论。"
-                            } else {
-                                "你是知否运势的占卜解读助手。用中文回答，保持克制、具体、可执行。不要宣称确定未来，不做医疗、法律、金融结论。"
+                            when (reading.kind) {
+                                "铜钱卦" -> "你是知否运势的《周易》铜钱卦解读助手。先在内部静默校验投掷值、爻位、本卦、动爻、变卦和经典取用结果，不得自行改卦或更换取用规则，也不要向用户展示校验步骤或重复六爻数据。用户提供了明确问题时，问题本身是回答主轴，经典文本是分析依据；回答的大部分篇幅必须用于解释该问题的现实条件、矛盾、风险、选择和行动，不能停留在泛泛讲解经典。用户未提供文字问题时，不得猜测其心中默念的内容，只做一般卦义、自省方向和行动提示。只有输入中“经典原文”与“《彖》《象》上下文”里的文字可以加引号作为逐字引文；其他解释必须明确写成现代释义，不得伪造经文、出处、王弼、孔颖达、朱熹或现代译者观点。用中文回答，保持克制、具体、可执行，不宣称确定未来，不做医疗、法律、金融结论。"
+                                "韦特塔罗" -> "你是知否运势的Rider-Waite-Smith韦特塔罗解读助手。必须忠实使用应用已经抽出的十张牌、固定牌位和正逆位，不得重抽、换牌、改变正逆位或虚构牌面。以A. E. Waite《塔罗图解钥匙》的牌位结构与经典牌义为基础，同时像成熟塔罗师一样综合牌与牌之间的呼应、矛盾和发展线索。用户有明确问题时直接围绕该问题解释；没有文字问题时不得猜测其心中默念内容，只给一般牌阵主题和自省方向。个人资料与当日黄历只能作为次要语境，相关时才使用，不能取代牌阵或被写成命定因果。用简体中文，克制、清楚、具体，不制造恐惧，不宣称确定预测未来，不替代医疗、法律、金融或心理专业判断。"
+                                else -> "你是知否运势的占卜解读助手。用中文回答，保持克制、具体、可执行。不要宣称确定未来，不做医疗、法律、金融结论。"
                             },
                         )
                     )
                 .put(JSONObject()
                     .put("role", "user")
-                    .put("content", buildAiPrompt(reading))
+                    .put("content", buildAiPrompt(reading, tarotContext))
                 )
 
             val combined = StringBuilder()
@@ -8271,7 +8645,10 @@ internal object AiInterpreter {
         .trim()
         .ifBlank { error("接口没有返回有效内容") }
 
-    internal fun buildAiPrompt(reading: FortuneReading): String {
+    internal fun buildAiPrompt(
+        reading: FortuneReading,
+        tarotContext: TarotAiContext? = null,
+    ): String {
         if (reading.kind == "铜钱卦" && reading.coinLines.size == 6) {
             val lineDetails = reading.coinLines
                 .sortedBy { it.position }
@@ -8369,6 +8746,78 @@ ${context.image}"""
                 若所给经典上下文不足以支持某个判断，请直接说明证据不足，不得用记忆补造引文。不要声称采用了未提供的某一现代译本。
             """.trimIndent()
         }
+        if (reading.kind == "韦特塔罗" && reading.tarotDraws.size == 10) {
+            val spread = reading.tarotDraws
+                .sortedBy(TarotDraw::positionIndex)
+                .joinToString("\n") { draw ->
+                    "${draw.positionIndex}. ${draw.position.name}（${draw.position.prompt}）：${draw.card.nameZh} / ${draw.card.nameEn}，${draw.orientationLabel}；分类：${draw.card.classificationLabel}；关键词：${draw.keywords.joinToString("、")}；经典牌义的现代概括：${draw.meaning}；牌面象征：${draw.card.imageDescription}"
+                }
+            val questionGuidance = if (reading.question.isBlank()) {
+                "用户没有提供文字问题，可能选择在心中默念。不要猜测默念内容；以牌阵整体主题、自省方向与低风险行动建议作答。"
+            } else {
+                "用户明确问题：${reading.question}\n开头直接回应这个问题，并把牌位与现实中的条件、阻力、关系、选择和时间顺序具体对应起来。"
+            }
+            val profileParts = buildList {
+                tarotContext?.nickname?.trim()?.takeIf(String::isNotBlank)?.let { add("昵称：$it") }
+                tarotContext?.birthDate?.trim()?.takeIf(String::isNotBlank)?.let { add("生日：$it") }
+                tarotContext?.keywords?.trim()?.takeIf(String::isNotBlank)?.let { add("用户关注词：$it") }
+            }
+            val profileContext = profileParts
+                .takeIf(List<String>::isNotEmpty)
+                ?.joinToString("；")
+                ?: "用户未提供可用于本次解读的个人资料"
+            val safeSuitable = safeTarotAlmanacItems(tarotContext?.suitable.orEmpty())
+            val safeAvoid = safeTarotAlmanacItems(tarotContext?.avoid.orEmpty())
+            val dateContext = tarotContext?.let { context ->
+                buildList {
+                    context.dateLabel.takeIf(String::isNotBlank)?.let { add(it) }
+                    context.lunarLabel.takeIf(String::isNotBlank)?.let { add(it) }
+                    context.dayGanZhi.takeIf(String::isNotBlank)?.let { add("日干支$it") }
+                    context.solarTerm.takeIf(String::isNotBlank)?.let { add("节气$it") }
+                    safeSuitable.takeIf(List<String>::isNotEmpty)?.let { add("宜${it.joinToString("、")}") }
+                    safeAvoid.takeIf(List<String>::isNotEmpty)?.let { add("慎${it.joinToString("、")}") }
+                    context.directions.takeIf(String::isNotBlank)?.let { add(it) }
+                    context.clash.takeIf(String::isNotBlank)?.let { add(it) }
+                }.joinToString("；").ifBlank { "无额外日期语境" }
+            } ?: "无额外日期语境"
+            val outputStructure = if (reading.question.isBlank()) {
+                """1. 整体主题：用3至5句串联核心现状、阻力与综合趋向
+                2. 牌阵脉络：综合过去、基础、近期发展、自我与环境，不逐条机械复述十张牌
+                3. 关键互动：指出2至4组最重要的牌位呼应或矛盾
+                4. 自省与行动：给出3个自省问题和3条低风险、可验证、可撤回的行动
+                5. 解读边界：用1句话说明塔罗用于整理视角而非确定预测""".trimIndent()
+            } else {
+                """1. 针对所问：直接给出条件式判断、主要阻力与可能发展
+                2. 牌阵脉络：综合过去、基础、近期发展、自我与环境，说明为何形成这一判断
+                3. 关键互动：指出2至4组最重要的牌位呼应或矛盾
+                4. 行动建议：给出3条紧扣问题、现实中可验证且可撤回的做法
+                5. 解读边界：用1句话说明塔罗用于整理视角而非确定预测""".trimIndent()
+            }
+            return """
+                请解读下面这次已经完成的Rider-Waite-Smith十字牌阵。
+
+                $questionGuidance
+
+                固定方法：十张牌，不另设预选指示牌；牌位次序沿用A. E. Waite《塔罗图解钥匙》第三部分的十字展开结构。正逆位已由应用在洗牌时确定。
+
+                十张牌（这是唯一有效的抽牌结果）：
+                $spread
+
+                可选个人语境：$profileContext
+                当日离线黄历语境：$dateContext
+
+                使用语境的规则：
+                - 用户的问题和牌阵始终是主轴；个人资料只在确实相关时自然带入，黄历最多作为弱参考。
+                - 不得根据生日推造星盘、命盘、生肖结论，也不得把昵称或关注词神秘化。
+                - 不得输出抽牌校验、后台复核或逐张重复数据；先在内部确认十个牌位无重复且正逆位一致。
+                - 逆位表示受阻、内化、失衡、延迟或需要调整的表达，不可一律解释为坏事。
+
+                输出结构：
+                $outputStructure
+
+                全文控制在800至1200个汉字。优先完整回应问题和牌阵脉络，避免玄虚套话与重复牌义。最后另起一行输出$COMPLETION_MARKER，该标记只用于应用确认内容完整。
+            """.trimIndent()
+        }
         return """
             请对下面的占卜结果做解释：
             类型：${reading.kind}
@@ -8385,6 +8834,22 @@ ${context.image}"""
 
             篇幅与完整性要求：全文控制在400至700个汉字，各部分必须完整写完，避免重复解释。最后另起一行输出$COMPLETION_MARKER，该标记只用于应用确认内容完整。
         """.trimIndent()
+    }
+
+    private fun safeTarotAlmanacItems(items: List<String>): List<String> {
+        val excluded = setOf(
+            "诸事不宜", "馀事勿取", "余事勿取", "安葬", "出殡", "殡葬", "入殓",
+            "移柩", "启钻", "破土", "修坟", "立碑", "谢土", "开生坟", "合寿木",
+            "行丧", "成服", "除服", "破屋", "坏垣",
+        )
+        return items
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filter { item -> excluded.none { term -> term in item } }
+            .distinct()
+            .take(6)
+            .toList()
     }
 }
 
@@ -8473,6 +8938,26 @@ class FortuneOracle {
             advice = item.advice,
             score = 60 + random.nextInt(36),
             timeLabel = LocalDateTime.now().format(formatter),
+        )
+    }
+
+    fun tarot(question: String, draws: List<TarotDraw>): FortuneReading {
+        val ordered = draws.sortedBy(TarotDraw::positionIndex)
+        require(ordered.map(TarotDraw::positionIndex) == (1..10).toList())
+        require(ordered.map(TarotDraw::cardId).distinct().size == 10)
+        val local = TarotDeck.interpret(ordered, question)
+        return FortuneReading(
+            id = System.currentTimeMillis(),
+            kind = "韦特塔罗",
+            title = local.title,
+            question = question.trim(),
+            body = local.body,
+            advice = local.advice,
+            score = 0,
+            timeLabel = LocalDateTime.now().format(formatter),
+            classicMethod = "韦特十字牌阵：10张牌，不另设预选指示牌；牌位依《塔罗图解钥匙》第三部分。",
+            classicSource = "牌面：Pamela Colman Smith 绘制、Rider 于1909年出版的Rider-Waite-Smith牌组；释义依据A. E. Waite公版原始说明作现代中文概括。",
+            tarotDraws = ordered,
         )
     }
 

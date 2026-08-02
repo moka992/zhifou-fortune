@@ -1,0 +1,36 @@
+Rider-Waite-Smith Tarot assets and source note
+================================================
+
+Card artwork
+------------
+
+The 78 card fronts and the Roses and Lilies card back bundled with this
+application are scans of the original Rider-Waite-Smith tarot deck, first
+published in 1909. The artwork was created by Pamela Colman Smith under the
+direction of Arthur Edward Waite.
+
+Source collection:
+https://commons.wikimedia.org/wiki/Category:Rider-Waite_tarot_deck_(Roses_%26_Lilies)
+
+Card back source:
+https://commons.wikimedia.org/wiki/File:Waite%E2%80%93Smith_Tarot_Roses_and_Lilies_cropped.jpg
+
+The source files are marked as public domain by Wikimedia Commons. They are
+public domain in the United States because they were published before 1931,
+and are identified by Commons as public domain in their country of origin.
+
+Interpretive source
+-------------------
+
+The spread positions and the historical baseline for the card meanings are
+based on Arthur Edward Waite's public-domain book "The Pictorial Key to the
+Tarot". The Chinese text in this application is an original, concise modern
+summary written for offline reference; it is not copied from a contemporary
+commercial translation.
+
+Public-domain text:
+https://en.wikisource.org/wiki/The_Pictorial_Key_to_the_Tarot
+
+The application uses the ten drawn positions of Waite's Celtic method without
+a separately preselected Significator. This avoids inferring a user's identity
+from the historical gender-, age-, or appearance-based court-card convention.

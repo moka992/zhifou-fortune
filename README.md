@@ -3,7 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
-[![Version](https://img.shields.io/badge/version-0.9.4-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
+[![Version](https://img.shields.io/badge/version-0.9.5-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
 
 一款离线优先的 Android 运势、传统历法、周易占卜与日程应用。
 
@@ -21,13 +21,14 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 项目希望在传统文化表达和现代移动体验之间取得平衡：来源明确，结论克制，不把黄历或占卜描述为确定预测，也不以恐惧性措辞推动用户作出决定。
 
-> 当前版本为 `v0.9.4` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
+> 当前版本为 `v0.9.5` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
 
-### v0.9.4 更新
+### v0.9.5 更新
 
-- 调整韦特塔罗抽牌节奏，将单张翻牌动画延长至 900 毫秒，并放缓逐张揭示间隔，使十张牌的抽取过程更从容、完整。
-- 十字牌阵结果改为每行五张、共两行的自适应总览，十张牌可在同一区域直接查看，不再依赖横向滚动。
-- 铜钱卦增加铜钱翻入、爻线展开和结果淡入动画，并适度延长六次投掷间隔，使起卦过程更清晰。
+- 引入统一的响应式布局参数，根据可用宽高和字体缩放优化首页、日历、占卜、小工具、“我的”及相关二级页面，在紧凑屏幕上保持内容完整，在常规与宽屏设备上保留舒展布局。
+- 完善沉浸式系统栏和底部安全区处理，使状态栏、导航手势区域与应用主题连续，并修复底部导航选中效果在部分设备上被裁切的问题。
+- 重绘浅色主题，以冷白和中性灰作为界面基础，使用更明亮的暖金、薄荷绿与玫红作为功能强调色；同步更新今日节奏仪表盘和转盘配色。
+- 优化首页操作区，使“今日黄历”在紧凑宽度下保持单行，并为“去占卜”增加可感知的按压动画反馈。
 
 ### 功能概览
 
@@ -200,13 +201,14 @@ Zhifou Fortune is a native Android app that brings together the traditional Chin
 
 The project aims to present traditional material with modern product standards: sources should remain identifiable, conclusions should stay measured, and cultural references should never be framed as guaranteed predictions or fear-based advice.
 
-> `v0.9.4` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
+> `v0.9.5` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
 
-### What's new in v0.9.4
+### What's new in v0.9.5
 
-- Refined Rider-Waite tarot pacing with a 900 ms flip for each card and calmer reveal intervals across the ten-card draw.
-- Replaced the horizontally scrolling Celtic spread result with a responsive five-column, two-row overview so all ten cards remain visible together.
-- Added coin-entry, line-expansion, and result-fade transitions to three-coin I Ching casting, with slightly longer intervals between the six casts.
+- Introduced shared responsive layout metrics that adapt the home, calendar, divination, utility, profile, and secondary screens to available width, height, and font scale while preserving a more spacious layout on larger devices.
+- Improved edge-to-edge system bar and bottom inset handling so status and gesture areas follow the active theme, and fixed clipped selection visuals in the bottom navigation.
+- Reworked the light theme around cool whites and neutral grays with brighter gold, mint, and rose accents, including refreshed palettes for the daily rhythm dial and wheel tool.
+- Kept the Home screen's Today Almanac action on one line at compact widths and added visible press feedback before opening Divination.
 
 ### Features
 

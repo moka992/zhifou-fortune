@@ -67,10 +67,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -180,6 +185,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -197,6 +203,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -289,28 +296,44 @@ val DarkPalette = FortunePalette(
 )
 
 val LightPalette = FortunePalette(
-    ink = Color(0xFFF2EEE5),
-    panel = Color(0xFFFAF7F0),
-    panelAlt = Color(0xFFEFE9DC),
-    line = Color(0xFFE0DBD0),
-    gold = Color(0xFF8A6A1E),
-    mint = Color(0xFF2E8F7A),
-    rose = Color(0xFFB5546A),
-    danger = Color(0xFFC7323A),
-    textMain = Color(0xFF2A2620),
-    textSub = Color(0xFF6B655B),
-    chatBubbleAssistant = Color(0xFFDDEEFF),
-    chatBubbleUser = Color(0xFFDDF4DF),
-    chatText = Color(0xFF172128),
+    ink = Color(0xFFF8FAFC),
+    panel = Color(0xFFFFFFFF),
+    panelAlt = Color(0xFFF1F5F9),
+    line = Color(0xFFE0E7EF),
+    gold = Color(0xFFA66F00),
+    mint = Color(0xFF078A74),
+    rose = Color(0xFFD14F6B),
+    danger = Color(0xFFD52F3A),
+    textMain = Color(0xFF171A1F),
+    textSub = Color(0xFF647080),
+    chatBubbleAssistant = Color(0xFFEAF4FF),
+    chatBubbleUser = Color(0xFFE7F8ED),
+    chatText = Color(0xFF17212B),
     isLight = true,
 )
 
 val LocalFortunePalette = staticCompositionLocalOf { DarkPalette }
 
+internal val FortunePalette.accentFill: Color
+    get() = if (isLight) Color(0xFFF3C64F) else gold
+
+internal val FortunePalette.onAccentFill: Color
+    get() = if (isLight) Color(0xFF211A08) else ink
+
+internal val FortunePalette.selectionFill: Color
+    get() = if (isLight) Color(0xFFFFF2C2) else gold.copy(alpha = 0.20f)
+
 enum class ThemeMode { Dark, Light, System }
 
 @Suppress("DEPRECATION")
 private fun applySystemBars(window: android.view.Window, dark: Boolean) {
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
     val controller = WindowInsetsControllerCompat(window, window.decorView)
     controller.isAppearanceLightStatusBars = !dark
     controller.isAppearanceLightNavigationBars = !dark
@@ -536,11 +559,65 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     Mine("我的", Icons.Default.AccountCircle),
 }
 
+@Immutable
+internal data class FortuneLayoutMetrics(
+    val compactWidth: Boolean,
+    val compactHeight: Boolean,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    val sectionSpacing: Dp,
+    val cardPadding: Dp,
+    val bottomBarHeight: Dp,
+    val navigationBarHeight: Dp,
+    val oracleButtonSize: Dp,
+    val calendarCellHeight: Dp,
+)
+
+internal val LocalFortuneLayout = staticCompositionLocalOf {
+    FortuneLayoutMetrics(
+        compactWidth = false,
+        compactHeight = false,
+        horizontalPadding = 20.dp,
+        verticalPadding = 20.dp,
+        sectionSpacing = 16.dp,
+        cardPadding = 16.dp,
+        bottomBarHeight = 112.dp,
+        navigationBarHeight = 76.dp,
+        oracleButtonSize = 58.dp,
+        calendarCellHeight = 58.dp,
+    )
+}
+
+@Composable
+private fun rememberFortuneLayoutMetrics(): FortuneLayoutMetrics {
+    val configuration = LocalConfiguration.current
+    val compactWidth = configuration.screenWidthDp < 360
+    val compactHeight = configuration.screenHeightDp < 700
+    return remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+        FortuneLayoutMetrics(
+            compactWidth = compactWidth,
+            compactHeight = compactHeight,
+            horizontalPadding = if (compactWidth) 14.dp else 20.dp,
+            verticalPadding = if (compactHeight) 12.dp else 20.dp,
+            sectionSpacing = if (compactHeight) 12.dp else 16.dp,
+            cardPadding = if (compactWidth) 12.dp else 16.dp,
+            bottomBarHeight = if (compactHeight) 96.dp else 112.dp,
+            navigationBarHeight = if (compactHeight) 68.dp else 76.dp,
+            oracleButtonSize = if (compactWidth || compactHeight) 50.dp else 58.dp,
+            calendarCellHeight = if (compactWidth || compactHeight) 50.dp else 58.dp,
+        )
+    }
+}
+
 private const val VOICE_CANCEL_DISTANCE_DP = 140
 
 @Composable
 private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     val C = LocalFortunePalette.current
+    val layout = rememberFortuneLayoutMetrics()
+    val navigationBarInset = WindowInsets.navigationBars
+        .asPaddingValues()
+        .calculateBottomPadding()
     val context = LocalContext.current
     val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
@@ -564,13 +641,22 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
         }
     }
 
+    CompositionLocalProvider(LocalFortuneLayout provides layout) {
     Scaffold(
         containerColor = C.ink,
         topBar = { if (tab == Tab.Home) AppTopBar() },
         bottomBar = {
-            Box(modifier = Modifier.fillMaxWidth().height(144.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(layout.bottomBarHeight + navigationBarInset),
+            ) {
                 NavigationBar(
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .widthIn(max = 720.dp)
+                        .fillMaxWidth()
+                        .height(layout.navigationBarHeight + navigationBarInset),
                     containerColor = C.panel,
                     tonalElevation = 0.dp,
                 ) {
@@ -588,16 +674,32 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             },
                             icon = {
                                 if (item == Tab.Oracle) {
-                                    Spacer(Modifier.size(32.dp))
+                                    Spacer(Modifier.size(28.dp))
                                 } else {
-                                    Icon(item.icon, contentDescription = item.label)
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = if (tab == item) {
+                                                    C.selectionFill
+                                                } else {
+                                                    Color.Transparent
+                                                },
+                                                shape = RoundedCornerShape(16.dp),
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(22.dp))
+                                    }
                                 }
                             },
-                            label = if (item == Tab.Oracle) null else ({ Text(item.label) }),
+                            label = if (item == Tab.Oracle) null else ({
+                                Text(item.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            }),
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = C.gold,
                                 selectedTextColor = C.gold,
-                                indicatorColor = if (item == Tab.Oracle) Color.Transparent else C.gold.copy(alpha = 0.22f),
+                                indicatorColor = Color.Transparent,
                                 unselectedIconColor = C.textSub,
                                 unselectedTextColor = C.textSub,
                             ),
@@ -617,27 +719,27 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             showCoinTool = false
                             showTarotWiki = false
                         },
-                        color = C.gold,
+                        color = C.accentFill,
                         shape = CircleShape,
                         border = if (tab == Tab.Oracle) BorderStroke(2.dp, C.mint) else null,
                         shadowElevation = 10.dp,
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(layout.oracleButtonSize)
                             .graphicsLayer { translationY = -2.dp.toPx() },
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 Tab.Oracle.icon,
                                 contentDescription = Tab.Oracle.label,
-                                tint = C.ink,
-                                modifier = Modifier.size(32.dp),
+                                tint = C.onAccentFill,
+                                modifier = Modifier.size(if (layout.compactWidth) 25.dp else 29.dp),
                             )
                         }
                     }
                     Text(
                         Tab.Oracle.label,
                         color = if (tab == Tab.Oracle) C.gold else C.textSub,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = if (layout.compactWidth) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.graphicsLayer { translationY = -1.dp.toPx() },
                     )
@@ -650,7 +752,14 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                 .fillMaxSize()
                 .background(C.ink)
                 .padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight(),
+            ) {
             tabStateHolder.SaveableStateProvider(tab.name) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
@@ -683,7 +792,9 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                     Tab.Mine -> MineScreen(vm)
                 }
             }
+            }
         }
+    }
     }
 }
 
@@ -696,12 +807,18 @@ private fun rememberTabState() = androidx.compose.runtime.remember {
 @Composable
 private fun AppTopBar() {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     CenterAlignedTopAppBar(
+        modifier = Modifier.height(if (layout.compactHeight) 56.dp else 64.dp),
         title = {
             Text(
                 "知否运势",
                 color = C.textMain,
-                style = MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.5).sp, fontWeight = FontWeight.SemiBold),
+                style = (if (layout.compactWidth) {
+                    MaterialTheme.typography.titleMedium
+                } else {
+                    MaterialTheme.typography.titleLarge
+                }).copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
             )
         },
         colors = androidx.compose.material3.TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -718,7 +835,11 @@ private fun HomeScreen(
     onOpenTodayAlmanac: (LocalDate) -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val context = LocalContext.current
+    val actionScope = rememberCoroutineScope()
+    val oracleClickScale = remember { Animatable(1f) }
+    var oracleOpening by remember { mutableStateOf(false) }
     val snapshot = vm.todayFortune
     val today = snapshot.reading
     var selectedInsight by remember { mutableStateOf<DailyInsightCategory?>(null) }
@@ -735,14 +856,17 @@ private fun HomeScreen(
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = layout.horizontalPadding,
+            vertical = layout.verticalPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
         item(key = "fortune-dial") {
             FortuneDial(score = today.score)
         }
         item(key = "today-reading") {
-            ReadingCard(reading = today)
+            ReadingCard(reading = today, compact = layout.compactWidth)
         }
         item(key = "today-almanac") {
             DailyAlmanacPanel(
@@ -758,21 +882,77 @@ private fun HomeScreen(
                     onClick = { onOpenTodayAlmanac(snapshot.almanac.date) },
                     interactionSource = pressSrc,
                     modifier = Modifier.weight(1f).then(pressScaleModifier(pressSrc)),
-                    colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else Color(0xFF111318)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = C.accentFill,
+                        contentColor = C.onAccentFill,
+                    ),
+                    contentPadding = if (layout.compactWidth) {
+                        androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                    } else {
+                        ButtonDefaults.ContentPadding
+                    },
                 ) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("今日黄历")
+                    Icon(
+                        Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
+                    )
+                    Spacer(Modifier.width(if (layout.compactWidth) 5.dp else 8.dp))
+                    Text(
+                        "今日黄历",
+                        style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                    )
                 }
                 val oracleSrc = remember { MutableInteractionSource() }
                 FilledTonalButton(
-                    onClick = onOpenOracle,
+                    onClick = {
+                        if (!oracleOpening) {
+                            oracleOpening = true
+                            actionScope.launch {
+                                oracleClickScale.animateTo(
+                                    targetValue = 0.94f,
+                                    animationSpec = tween(70, easing = FastOutSlowInEasing),
+                                )
+                                oracleClickScale.animateTo(
+                                    targetValue = 0.98f,
+                                    animationSpec = tween(45, easing = FastOutSlowInEasing),
+                                )
+                                onOpenOracle()
+                                oracleClickScale.snapTo(1f)
+                                oracleOpening = false
+                            }
+                        }
+                    },
                     interactionSource = oracleSrc,
-                    modifier = Modifier.weight(1f).then(pressScaleModifier(oracleSrc)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(pressScaleModifier(oracleSrc))
+                        .graphicsLayer {
+                            scaleX = oracleClickScale.value
+                            scaleY = oracleClickScale.value
+                        },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = C.panelAlt,
+                        contentColor = C.textMain,
+                    ),
+                    contentPadding = if (layout.compactWidth) {
+                        androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                    } else {
+                        ButtonDefaults.ContentPadding
+                    },
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("去占卜")
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
+                    )
+                    Spacer(Modifier.width(if (layout.compactWidth) 5.dp else 8.dp))
+                    Text(
+                        "去占卜",
+                        style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                    )
                 }
             }
         }
@@ -815,6 +995,7 @@ private fun DailyAlmanacPanel(
     environmentSummary: String?,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Card(
         colors = CardDefaults.cardColors(containerColor = C.panel),
         border = BorderStroke(1.dp, C.line),
@@ -822,12 +1003,21 @@ private fun DailyAlmanacPanel(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(layout.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 10.dp else 12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("今日黄历", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(info.dateLabel, color = C.textMain, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "今日黄历",
+                    color = C.textMain,
+                    style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    info.dateLabel,
+                    color = C.textMain,
+                    style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                )
                 Text(
                     "${info.lunarLabel} · ${info.dayGanZhi}日${info.solarTerm.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}",
                     color = C.textSub,
@@ -927,6 +1117,7 @@ private fun OracleScreen(
     timelineState: LazyListState,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val sendHaptics = remember(context) { ToolHaptics(context.applicationContext) }
     val focusManager = LocalFocusManager.current
@@ -1193,8 +1384,11 @@ private fun OracleScreen(
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { dismissTextInput() })
             }
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                horizontal = layout.horizontalPadding,
+                vertical = layout.verticalPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 8.dp else 12.dp),
     ) {
         Box(
             modifier = Modifier
@@ -1406,11 +1600,11 @@ private fun OracleScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 8.dp else 10.dp),
                 ) {
                     Box {
                         Surface(
-                            modifier = Modifier.size(48.dp),
+                            modifier = Modifier.size(if (layout.compactWidth) 44.dp else 48.dp),
                             color = if (selectedTool == null) C.panelAlt else C.gold.copy(alpha = 0.16f),
                             border = BorderStroke(1.dp, if (selectedTool == null) C.line else C.gold),
                             shape = CircleShape,
@@ -1531,7 +1725,14 @@ private fun OracleScreen(
                                     }
                                 }
                             ),
-                        placeholder = { Text("输入问题，或在心中默念") },
+                        placeholder = {
+                            Text(
+                                if (layout.compactWidth) "输入问题，或默念" else "输入问题，或在心中默念",
+                                style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
                         maxLines = 3,
                         readOnly = !textEditing && !keyboardEdited,
                     )
@@ -1550,7 +1751,7 @@ private fun OracleScreen(
                         enabled = sendEnabled,
                         interactionSource = sendSrc,
                         modifier = Modifier
-                            .size(52.dp)
+                            .size(if (layout.compactWidth) 48.dp else 52.dp)
                             .background(
                                 color = if (sendEnabled) C.mint else C.line,
                                 shape = RoundedCornerShape(8.dp),
@@ -1599,6 +1800,7 @@ private fun DailyOraclePrompt(
     swipeThresholdPx: Float,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1624,13 +1826,13 @@ private fun DailyOraclePrompt(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 52.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(top = if (layout.compactHeight) 24.dp else 52.dp),
+            verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 12.dp else 18.dp),
         ) {
             Text(
                 "今天想问些什么？",
                 color = C.textMain,
-                style = MaterialTheme.typography.headlineMedium,
+                style = if (layout.compactWidth) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
@@ -1649,8 +1851,15 @@ private fun DailyOraclePrompt(
                     Text(
                         question,
                         color = C.textMain,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                        style = if (layout.compactWidth) {
+                            MaterialTheme.typography.bodyMedium
+                        } else {
+                            MaterialTheme.typography.bodyLarge
+                        },
+                        modifier = Modifier.padding(
+                            horizontal = if (layout.compactWidth) 12.dp else 16.dp,
+                            vertical = if (layout.compactHeight) 10.dp else 13.dp,
+                        ),
                     )
                 }
             }
@@ -1932,14 +2141,23 @@ private fun ToolsScreen(
     onOpenTarotWiki: () -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(
+                horizontal = layout.horizontalPadding,
+                vertical = layout.verticalPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
-        Text("小工具", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+            "小工具",
+            color = C.textMain,
+            style = if (layout.compactWidth) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
         Surface(
             onClick = onOpenDice,
             color = C.panel,
@@ -1954,11 +2172,18 @@ private fun ToolsScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp),
+                        .aspectRatio(if (layout.compactWidth) 2.05f else 1.85f),
                 )
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("摇骰子", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("选择骰子个数和面数，合上骰盅后摇动手机或点击按钮。", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+                Column(
+                    Modifier.padding(
+                        start = layout.cardPadding,
+                        end = layout.cardPadding,
+                        bottom = layout.cardPadding,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text("摇骰子", color = C.textMain, style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("选择骰子个数和面数，合上骰盅后摇动手机或点击按钮。", color = C.textSub, style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -1976,11 +2201,18 @@ private fun ToolsScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp),
+                        .aspectRatio(if (layout.compactWidth) 2.05f else 1.85f),
                 )
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("转盘", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("自定义选项，摇动手机或拨动转盘随机抽取。", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+                Column(
+                    Modifier.padding(
+                        start = layout.cardPadding,
+                        end = layout.cardPadding,
+                        bottom = layout.cardPadding,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text("转盘", color = C.textMain, style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("自定义选项，摇动手机或拨动转盘随机抽取。", color = C.textSub, style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -1998,11 +2230,18 @@ private fun ToolsScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp),
+                        .aspectRatio(if (layout.compactWidth) 2.05f else 1.85f),
                 )
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("抛硬币", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("最多同时抛出 10 枚硬币，花面与字面各有 50% 概率。", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+                Column(
+                    Modifier.padding(
+                        start = layout.cardPadding,
+                        end = layout.cardPadding,
+                        bottom = layout.cardPadding,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text("抛硬币", color = C.textMain, style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("最多同时抛出 10 枚硬币，花面与字面各有 50% 概率。", color = C.textSub, style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -2018,6 +2257,7 @@ private enum class CoinSide(val label: String) {
 @Composable
 private fun CoinScreen(onBack: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = remember(context) { ToolHaptics(context.applicationContext) }
@@ -2104,9 +2344,9 @@ private fun CoinScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2171,8 +2411,8 @@ private fun CoinScreen(onBack: () -> Unit) {
                     onClick = ::tossCoins,
                     enabled = !flipping,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = C.gold,
-                        contentColor = if (C.isLight) Color(0xFFFAF7F0) else C.ink,
+                        containerColor = C.accentFill,
+                        contentColor = C.onAccentFill,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -2282,13 +2522,26 @@ private enum class WheelSubPage { Main, Settings, History }
 @Composable
 private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = remember(context) { ToolHaptics(context.applicationContext) }
     val segments = vm.wheelSegments
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = C.textMain)
-    val palette = listOf(C.gold, C.rose, C.mint, Color(0xFF6C8EAD), Color(0xFFB07AA1), Color(0xFFD9A566))
+    val palette = if (C.isLight) {
+        listOf(
+            Color(0xFFFFD166),
+            Color(0xFFFF6B6B),
+            Color(0xFF56D6B1),
+            Color(0xFF58AEEF),
+            Color(0xFFA98AF4),
+            Color(0xFFFF9F43),
+        )
+    } else {
+        listOf(C.gold, C.rose, C.mint, Color(0xFF6C8EAD), Color(0xFFB07AA1), Color(0xFFD9A566))
+    }
+    val wheelDivider = if (C.isLight) Color.White.copy(alpha = 0.88f) else C.line
 
     val angle = remember { Animatable(0f) }
     val glow = remember { Animatable(0f) }
@@ -2423,9 +2676,9 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2519,7 +2772,7 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                     for (i in 0 until n) {
                         val a = Math.toRadians((270f - segDeg / 2f + i * segDeg).toDouble())
                         drawLine(
-                            color = C.line,
+                            color = wheelDivider,
                             start = Offset(cx, cy),
                             end = Offset(cx + (r * cos(a)).toFloat(), cy + (r * sin(a)).toFloat()),
                             strokeWidth = 1.dp.toPx(),
@@ -2791,6 +3044,7 @@ private fun WheelHistoryView(vm: FortuneViewModel) {
 @Composable
 private fun DiceScreen(onBack: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = remember(context) { ToolHaptics(context.applicationContext) }
@@ -2888,9 +3142,9 @@ private fun DiceScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = C.panel),
@@ -2899,9 +3153,9 @@ private fun DiceScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier.padding(if (layout.compactWidth) 12.dp else 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 12.dp else 16.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3002,7 +3256,7 @@ private fun DiceScreen(onBack: () -> Unit) {
                 Button(
                     onClick = { startRoll() },
                     enabled = !rolling,
-                    colors = ButtonDefaults.buttonColors(containerColor = C.gold, contentColor = if (C.isLight) Color(0xFFFAF7F0) else C.ink),
+                    colors = ButtonDefaults.buttonColors(containerColor = C.accentFill, contentColor = C.onAccentFill),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Default.Casino, contentDescription = null)
@@ -4704,8 +4958,11 @@ private fun ScheduleScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(
+                horizontal = LocalFortuneLayout.current.horizontalPadding,
+                vertical = LocalFortuneLayout.current.verticalPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(LocalFortuneLayout.current.sectionSpacing),
     ) {
         CalendarPanel(
             scheduleItems = vm.scheduleItems,
@@ -4737,6 +4994,7 @@ private fun CalendarPanel(
     onAddSchedule: () -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val today = remember { LocalDate.now() }
     val animationScope = rememberCoroutineScope()
     val initialVisibleMonth = remember { YearMonth.from(selectedDate) }
@@ -4796,8 +5054,8 @@ private fun CalendarPanel(
         }
     }
     val showToday = visibleMonth != YearMonth.from(today) || selectedDate != today
-    val calendarGridHeight = remember(visibleMonth) {
-        (20 + calendarRowCount(visibleMonth) * 62).dp
+    val calendarGridHeight = remember(visibleMonth, layout.calendarCellHeight) {
+        (20 + calendarRowCount(visibleMonth) * (layout.calendarCellHeight.value.toInt() + 4)).dp
     }
 
     suspend fun moveToPage(
@@ -4837,7 +5095,10 @@ private fun CalendarPanel(
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(
+            Modifier.padding(layout.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 10.dp else 14.dp),
+        ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -4851,19 +5112,52 @@ private fun CalendarPanel(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .offset(x = 8.dp),
+                        contentPadding = if (layout.compactWidth) {
+                            androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                        } else {
+                            ButtonDefaults.TextButtonContentPadding
+                        },
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = C.gold)
-                        Spacer(Modifier.width(4.dp))
-                        Text("新增日程", color = C.gold, fontWeight = FontWeight.SemiBold)
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = C.gold,
+                            modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
+                        )
+                        Spacer(Modifier.width(if (layout.compactWidth) 2.dp else 4.dp))
+                        Text(
+                            "新增日程",
+                            color = C.gold,
+                            style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                        )
                     }
                 }
-                Text(
-                    todayHeader,
-                    color = C.textMain,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (layout.compactWidth) {
+                    Text(
+                        "${today.year}年${today.monthValue}月${today.dayOfMonth}日 周${todayInfo?.weekday.orEmpty()}",
+                        color = C.textMain,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    todayInfo?.let { info ->
+                        Text(
+                            "${info.ganZhiYear}年 · 农历${info.lunarMonth}${info.lunarDay}",
+                            color = C.textSub,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                } else {
+                    Text(
+                        todayHeader,
+                        color = C.textMain,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             Box(modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
@@ -4871,7 +5165,7 @@ private fun CalendarPanel(
                         Text(
                             "${visibleMonth.year}年",
                             color = C.gold,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -4879,7 +5173,7 @@ private fun CalendarPanel(
                         Text(
                             "${visibleMonth.monthValue}月",
                             color = C.gold,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -5050,6 +5344,7 @@ private fun CalendarMonthGrid(
     modifier: Modifier = Modifier,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     var days by remember(month) { mutableStateOf(monthInfoCache.get(month)) }
     LaunchedEffect(month) {
         if (days == null) {
@@ -5087,7 +5382,7 @@ private fun CalendarMonthGrid(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 week.forEach { info ->
                     if (info == null) {
-                        Spacer(Modifier.weight(1f).height(58.dp))
+                        Spacer(Modifier.weight(1f).height(layout.calendarCellHeight))
                     } else {
                         CalendarDayCell(
                             info = info,
@@ -5122,6 +5417,7 @@ private fun CalendarDayCell(
     modifier: Modifier = Modifier,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val date = info.date
     val inMonth = date.monthValue == visibleMonth.monthValue
     val isToday = date == today
@@ -5140,7 +5436,7 @@ private fun CalendarDayCell(
     }
     Box(
         modifier = modifier
-            .height(58.dp)
+            .height(layout.calendarCellHeight)
             .background(bgColor, RoundedCornerShape(8.dp))
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .pointerInput(date) {
@@ -5165,7 +5461,7 @@ private fun CalendarDayCell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = 6.dp, horizontal = 2.dp),
+                .padding(vertical = if (layout.compactHeight) 4.dp else 6.dp, horizontal = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -5176,7 +5472,7 @@ private fun CalendarDayCell(
                     isSelected -> C.gold
                     else -> C.textMain
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                 fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -5188,7 +5484,11 @@ private fun CalendarDayCell(
                     info.solarTerm.isNotBlank() || info.traditionalFestivals.isNotEmpty() -> C.gold
                     else -> C.textSub
                 },
-                style = MaterialTheme.typography.labelSmall,
+                style = if (layout.compactWidth) {
+                    MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp)
+                } else {
+                    MaterialTheme.typography.labelSmall
+                },
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -5203,18 +5503,24 @@ private fun CalendarDayCell(
 @Composable
 private fun DateDetail(info: CalendarDateInfo, scheduleItems: List<ScheduleItem>) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(layout.cardPadding), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(
                 "${info.date.monthValue}月${info.date.dayOfMonth}日 周${info.weekday}",
                 color = C.textMain,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text("公历 ${info.date.year}年 · 当年第${info.date.dayOfYear}天", color = C.textSub)
+            Text(
+                "公历 ${info.date.year}年 · 当年第${info.date.dayOfYear}天",
+                color = C.textSub,
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Text(
                 "农历 ${info.ganZhiYear}年 · 生肖${info.zodiac} · ${info.lunarMonth}${info.lunarDay}",
                 color = C.textSub,
+                style = MaterialTheme.typography.bodyMedium,
             )
             if (info.solarTerm.isNotBlank()) {
                 CalendarDetailRow(label = "节气", value = info.solarTerm, accent = C.gold)
@@ -5240,6 +5546,7 @@ private fun AlmanacDateDetailScreen(
     onDeleteSchedule: (Long) -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     var detail by remember(date) { mutableStateOf(almanacDayDetailCache.get(date)) }
     LaunchedEffect(date) {
         if (detail == null) {
@@ -5264,7 +5571,7 @@ private fun AlmanacDateDetailScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = layout.horizontalPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(key = "date-header") {
@@ -5275,7 +5582,7 @@ private fun AlmanacDateDetailScreen(
                     Text(
                         "${info.date.year}年${info.date.monthValue}月${info.date.dayOfMonth}日",
                         color = C.textMain,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = if (layout.compactWidth) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
@@ -5756,6 +6063,7 @@ private fun ScheduleItemCard(
 @Composable
 private fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         SubScreenHeader(title = "历史记录", onBack = onBack) {
@@ -5770,7 +6078,10 @@ private fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = layout.horizontalPadding,
+                    vertical = layout.verticalPadding,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(vm.history, key = { it.id }) { ReadingCard(it, compact = true) }
@@ -5807,6 +6118,7 @@ private enum class MineSection { Profile, History, Settings }
 @Composable
 private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var editingProfile by rememberSaveable { mutableStateOf(false) }
     var draftNickname by rememberSaveable { mutableStateOf("") }
@@ -5844,24 +6156,40 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(
+                horizontal = layout.horizontalPadding,
+                vertical = layout.verticalPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Surface(color = C.gold.copy(alpha = 0.16f), shape = CircleShape, modifier = Modifier.size(64.dp)) {
+            Surface(
+                color = C.gold.copy(alpha = 0.16f),
+                shape = CircleShape,
+                modifier = Modifier.size(if (layout.compactWidth) 54.dp else 64.dp),
+            ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = C.gold, modifier = Modifier.size(42.dp))
+                    Icon(
+                        Icons.Default.AccountCircle,
+                        contentDescription = null,
+                        tint = C.gold,
+                        modifier = Modifier.size(if (layout.compactWidth) 36.dp else 42.dp),
+                    )
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     vm.nickname.ifBlank { "知否用户" },
                     color = C.textMain,
-                    style = MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.5).sp, fontWeight = FontWeight.SemiBold),
+                    style = (if (layout.compactWidth) {
+                        MaterialTheme.typography.titleMedium
+                    } else {
+                        MaterialTheme.typography.titleLarge
+                    }).copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
                 )
                 Text("本地账户", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
@@ -5878,7 +6206,7 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(layout.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -5950,6 +6278,7 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
 @Composable
 private fun ProfileMetric(label: String, value: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Surface(
         onClick = onClick ?: {},
         color = C.panelAlt,
@@ -5958,12 +6287,21 @@ private fun ProfileMetric(label: String, value: String, modifier: Modifier = Mod
         enabled = onClick != null,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(if (layout.compactWidth) 12.dp else 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(value, color = C.gold, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text(label, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                value,
+                color = C.gold,
+                style = if (layout.compactWidth) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                label,
+                color = C.textSub,
+                style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
@@ -5972,16 +6310,26 @@ private fun ProfileMetric(label: String, value: String, modifier: Modifier = Mod
 @Composable
 internal fun SubScreenHeader(title: String, onBack: () -> Unit, actions: @Composable () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(
+                horizontal = if (layout.compactWidth) 6.dp else 12.dp,
+                vertical = if (layout.compactHeight) 4.dp else 8.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TextButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = C.textMain)
         }
-        Text(title, color = C.textMain, style = MaterialTheme.typography.titleLarge.copy(letterSpacing = (-0.5).sp, fontWeight = FontWeight.SemiBold))
+        Text(
+            title,
+            color = C.textMain,
+            style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Spacer(Modifier.weight(1f))
         actions()
     }
@@ -5991,6 +6339,7 @@ internal fun SubScreenHeader(title: String, onBack: () -> Unit, actions: @Compos
 @Composable
 private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Surface(
         onClick = onClick,
         color = C.panel,
@@ -5999,13 +6348,21 @@ private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(
+                horizontal = layout.cardPadding,
+                vertical = if (layout.compactHeight) 11.dp else 14.dp,
+            ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 10.dp else 14.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = C.gold, modifier = Modifier.size(24.dp))
+            Icon(icon, contentDescription = null, tint = C.gold, modifier = Modifier.size(if (layout.compactWidth) 22.dp else 24.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, color = C.textMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    title,
+                    color = C.textMain,
+                    style = if (layout.compactWidth) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(subtitle, color = C.textSub, style = MaterialTheme.typography.bodySmall)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
@@ -6017,14 +6374,15 @@ private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String,
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Column(Modifier.fillMaxSize()) {
         SubScreenHeader(title = "设置", onBack = onBack) {}
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
+            verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
         ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = C.panel),
@@ -6695,6 +7053,8 @@ private fun TarotSpreadDetail(reading: FortuneReading) {
 @Composable
 private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
+    val dense = compact || layout.compactWidth
     Card(
         colors = CardDefaults.cardColors(containerColor = C.panel),
         border = BorderStroke(1.dp, C.line),
@@ -6702,7 +7062,7 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(if (compact) 14.dp else 18.dp),
+            modifier = Modifier.padding(if (dense) 12.dp else 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
@@ -6711,7 +7071,13 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(reading.title, color = C.textMain, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        reading.title,
+                        color = C.textMain,
+                        style = if (dense) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(reading.timeLabel, color = C.textSub, style = MaterialTheme.typography.bodySmall)
                 }
                 Badge(reading.kind)
@@ -6733,8 +7099,16 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
             } else if (reading.kind == "韦特塔罗") {
                 Text("本地牌阵解读", color = C.textSub, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             }
-            Text(reading.body, color = C.textMain, style = MaterialTheme.typography.bodyLarge)
-            Text(reading.advice, color = C.gold, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                reading.body,
+                color = C.textMain,
+                style = if (dense) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                reading.advice,
+                color = C.gold,
+                style = if (dense) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            )
             if (reading.aiStatus.isNotBlank()) {
                 Text(reading.aiStatus, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
@@ -6769,6 +7143,18 @@ private fun Badge(text: String) {
 @Composable
 private fun FortuneDial(score: Int) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
+    val trackColor = if (C.isLight) Color(0xFFE7EDF3) else C.panelAlt
+    val dialColors = if (C.isLight) {
+        listOf(
+            Color(0xFF35C8AD),
+            Color(0xFFFFD05C),
+            Color(0xFFFF7394),
+            Color(0xFF35C8AD),
+        )
+    } else {
+        listOf(C.mint, C.gold, C.rose, C.mint)
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = C.panel),
@@ -6776,16 +7162,20 @@ private fun FortuneDial(score: Int) {
         border = BorderStroke(1.dp, C.line),
     ) {
         Row(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(if (layout.compactWidth) 14.dp else 20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 12.dp else 18.dp),
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(112.dp)) {
+            val dialSize = if (layout.compactWidth) 84.dp else 112.dp
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(dialSize)) {
                 Canvas(Modifier.fillMaxSize()) {
-                    val stroke = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round)
-                    drawArc(C.panelAlt, -220f, 260f, false, style = stroke, size = Size(size.width, size.height))
+                    val stroke = Stroke(
+                        width = (if (layout.compactWidth) 9.dp else 12.dp).toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                    drawArc(trackColor, -220f, 260f, false, style = stroke, size = Size(size.width, size.height))
                     drawArc(
-                        brush = Brush.sweepGradient(listOf(C.mint, C.gold, C.rose, C.mint)),
+                        brush = Brush.sweepGradient(dialColors),
                         startAngle = -220f,
                         sweepAngle = 260f * (score / 100f),
                         useCenter = false,
@@ -6795,9 +7185,20 @@ private fun FortuneDial(score: Int) {
                 }
                 Text("$score", color = C.textMain, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("今日节奏", color = C.textMain, style = MaterialTheme.typography.titleMedium)
-                Text("用于排列今日提示的相对刻度，不代表概率或确定结论。", color = C.textSub)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 5.dp else 8.dp),
+            ) {
+                Text(
+                    "今日节奏",
+                    color = C.textMain,
+                    style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    "用于排列今日提示的相对刻度，不代表概率或确定结论。",
+                    color = C.textSub,
+                    style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -6810,6 +7211,7 @@ private fun InsightStrip(
     onTap: (DailyInsightCategory) -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val dots = listOf(C.mint, C.rose, C.gold)
     Surface(
         color = C.panelAlt,
@@ -6817,22 +7219,27 @@ private fun InsightStrip(
         border = BorderStroke(1.dp, C.line),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(104.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = if (layout.compactHeight) 88.dp else 104.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             insights.forEachIndexed { index, insight ->
                 val accent = dots[index]
                 val interactionSource = remember(insight.category) { MutableInteractionSource() }
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxSize()
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null,
                             onClick = { onTap(insight.category) },
                         )
                         .then(pressScaleModifier(interactionSource))
-                        .padding(horizontal = 12.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.SpaceBetween,
+                        .padding(
+                            horizontal = if (layout.compactWidth) 9.dp else 12.dp,
+                            vertical = if (layout.compactHeight) 10.dp else 14.dp,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -6873,8 +7280,7 @@ private fun InsightStrip(
                 if (index < insights.lastIndex) {
                     Box(
                         Modifier
-                            .fillMaxHeight()
-                            .padding(vertical = 14.dp)
+                            .height(if (layout.compactHeight) 58.dp else 72.dp)
                             .width(1.dp)
                             .background(C.line.copy(alpha = 0.9f)),
                     )

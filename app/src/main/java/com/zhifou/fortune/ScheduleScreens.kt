@@ -103,6 +103,7 @@ private val scheduleHighlightColors = listOf(
 @Composable
 internal fun ScheduleMemorialEntryCard(itemCount: Int, onClick: () -> Unit) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     Surface(
         onClick = onClick,
         color = C.panel,
@@ -111,13 +112,16 @@ internal fun ScheduleMemorialEntryCard(itemCount: Int, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+            modifier = Modifier.padding(
+                horizontal = layout.cardPadding,
+                vertical = if (layout.compactHeight) 11.dp else 15.dp,
+            ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 10.dp else 14.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(if (layout.compactWidth) 38.dp else 42.dp)
                     .background(C.gold.copy(alpha = 0.16f), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -141,6 +145,7 @@ internal fun ScheduleEditorScreen(
     onSave: (ScheduleDraft) -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val initial = remember(existingItem?.id, initialDate) {
         existingItem?.toDraft(initialDate) ?: ScheduleDraft(date = initialDate)
@@ -210,7 +215,10 @@ internal fun ScheduleEditorScreen(
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = layout.horizontalPadding,
+                vertical = 10.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(key = "title") {
@@ -407,6 +415,7 @@ internal fun ScheduleMemorialScreen(
     onItemClick: (ScheduleItem) -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val today = remember { LocalDate.now() }
     var sortName by rememberSaveable { mutableStateOf(ScheduleSortOrder.StartDateDescending.name) }
     val sort = runCatching { ScheduleSortOrder.valueOf(sortName) }.getOrDefault(ScheduleSortOrder.StartDateDescending)
@@ -415,7 +424,7 @@ internal fun ScheduleMemorialScreen(
 
     Column(Modifier.fillMaxSize()) {
         SubScreenHeader(title = "日程纪念", onBack = onBack) {}
-        Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Box(modifier = Modifier.padding(horizontal = layout.horizontalPadding, vertical = 8.dp)) {
             OutlinedButton(
                 onClick = { menuExpanded = true },
                 modifier = Modifier.fillMaxWidth(),
@@ -445,7 +454,10 @@ internal fun ScheduleMemorialScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = layout.horizontalPadding,
+                    vertical = 8.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sortedItems, key = { it.id }) { item ->
@@ -466,6 +478,7 @@ internal fun ScheduleDetailScreen(
     onDelete: () -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val today = remember { LocalDate.now() }
     var confirmDelete by remember { mutableStateOf(false) }
     val startDate = scheduleStartDate(item) ?: today
@@ -479,7 +492,10 @@ internal fun ScheduleDetailScreen(
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = layout.horizontalPadding,
+                vertical = 10.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(key = "hero") { ScheduleDetailHero(item, today) }
@@ -599,6 +615,7 @@ private fun ScheduleMemorialCard(item: ScheduleItem, today: LocalDate, onClick: 
 @Composable
 private fun ScheduleDetailHero(item: ScheduleItem, today: LocalDate) {
     val C = LocalFortunePalette.current
+    val layout = LocalFortuneLayout.current
     val accent = scheduleAccent(item, C)
     val hasImage = item.backgroundImageUri.isNotBlank()
     Card(
@@ -607,7 +624,7 @@ private fun ScheduleDetailHero(item: ScheduleItem, today: LocalDate) {
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Box(Modifier.fillMaxWidth().height(180.dp).clipToBounds()) {
+        Box(Modifier.fillMaxWidth().height(if (layout.compactHeight) 156.dp else 180.dp).clipToBounds()) {
             if (hasImage) {
                 ScheduleBackgroundImage(item.backgroundImageUri, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.48f)))
@@ -615,7 +632,7 @@ private fun ScheduleDetailHero(item: ScheduleItem, today: LocalDate) {
                 Box(Modifier.fillMaxSize().background(accent.copy(alpha = 0.1f)))
             }
             Column(
-                modifier = Modifier.fillMaxSize().padding(20.dp),
+                modifier = Modifier.fillMaxSize().padding(if (layout.compactWidth) 14.dp else 20.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

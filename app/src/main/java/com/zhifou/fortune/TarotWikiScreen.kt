@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -174,8 +175,8 @@ private fun TarotWikiLibraryView(
                 val selected = filter == selectedFilter
                 Surface(
                     onClick = { onFilterChange(filter) },
-                    color = if (selected) C.gold else C.panel,
-                    contentColor = if (selected) C.ink else C.textSub,
+                    color = if (selected) C.accentFill else C.panel,
+                    contentColor = if (selected) C.onAccentFill else C.textSub,
                     border = BorderStroke(1.dp, if (selected) C.gold else C.line),
                     shape = RoundedCornerShape(6.dp),
                 ) {
@@ -685,6 +686,7 @@ private fun TarotWikiAdjacentButton(
 @Composable
 fun TarotWikiToolCard(onClick: () -> Unit) {
     val C = LocalFortunePalette.current
+    val compactWidth = LocalConfiguration.current.screenWidthDp < 360
     Surface(
         onClick = onClick,
         color = C.panel,
@@ -696,7 +698,7 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(176.dp)
+                    .height(if (compactWidth) 142.dp else 176.dp)
                     .background(if (C.isLight) Color(0xFFE5DED0) else Color(0xFF0C0E12)),
             ) {
                 Image(
@@ -705,7 +707,7 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .height(160.dp)
+                        .height(if (compactWidth) 128.dp else 160.dp)
                         .aspectRatio(TAROT_CARD_ASPECT_RATIO)
                         .clip(RoundedCornerShape(3.dp)),
                 )
@@ -715,8 +717,8 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .offset(x = (-88).dp, y = 12.dp)
-                        .height(138.dp)
+                        .offset(x = if (compactWidth) (-70).dp else (-88).dp, y = 12.dp)
+                        .height(if (compactWidth) 108.dp else 138.dp)
                         .aspectRatio(TAROT_CARD_ASPECT_RATIO)
                         .clip(RoundedCornerShape(3.dp)),
                 )
@@ -726,8 +728,8 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .offset(x = 88.dp, y = 12.dp)
-                        .height(138.dp)
+                        .offset(x = if (compactWidth) 70.dp else 88.dp, y = 12.dp)
+                        .height(if (compactWidth) 108.dp else 138.dp)
                         .aspectRatio(TAROT_CARD_ASPECT_RATIO)
                         .clip(RoundedCornerShape(3.dp)),
                 )
@@ -737,7 +739,7 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                     shape = RoundedCornerShape(5.dp),
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(12.dp),
+                        .padding(if (compactWidth) 9.dp else 12.dp),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
@@ -750,7 +752,7 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                 }
             }
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(if (compactWidth) 12.dp else 16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
@@ -762,7 +764,7 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                 Text(
                     "按类别查阅 78 张原始牌面、象征、牌义、用途与历史。",
                     color = C.textSub,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = if (compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                 )
             }
         }

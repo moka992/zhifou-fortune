@@ -1,5 +1,18 @@
 # Third-Party Notices
 
+## Backdrop / AndroidLiquidGlass
+
+- Project: https://github.com/Kyant0/AndroidLiquidGlass
+- Artifact: `io.github.kyant0:backdrop:1.0.6`
+- Transitive shapes library: https://github.com/Kyant0/Shapes (`1.2.0`)
+- Copyright: Kyant
+- License: Apache License 2.0
+
+Backdrop supplies the Jetpack Compose GPU-layer plumbing used by the real-time
+glass compositor. The application provides its own AGSL scene shader and glass
+surface registry. The Apache License 2.0 text is included at
+`app/src/main/assets/licenses/Apache-2.0.txt`.
+
 ## Kanseki Repository: KR1a0001 周易(正文)
 
 - Project page: https://www.kanripo.org/text/KR1a0001/

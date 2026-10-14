@@ -15,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,9 +26,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -46,18 +50,11 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -78,11 +75,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -106,11 +106,18 @@ internal fun ScheduleMemorialEntryCard(itemCount: Int, onClick: () -> Unit) {
     val layout = LocalFortuneLayout.current
     Surface(
         onClick = onClick,
-        color = C.panel,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, C.line),
-        modifier = Modifier.fillMaxWidth(),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier
+            .widthIn(max = 920.dp)
+            .fillMaxWidth(),
     ) {
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
         Row(
             modifier = Modifier.padding(
                 horizontal = layout.cardPadding,
@@ -122,16 +129,21 @@ internal fun ScheduleMemorialEntryCard(itemCount: Int, onClick: () -> Unit) {
             Box(
                 modifier = Modifier
                     .size(if (layout.compactWidth) 38.dp else 42.dp)
-                    .background(C.gold.copy(alpha = 0.16f), RoundedCornerShape(8.dp)),
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = C.gold)
+                Icon(
+                    Icons.Default.CalendarMonth,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("日程纪念", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("${itemCount}项", color = C.textSub, style = MaterialTheme.typography.bodySmall)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
+        }
         }
     }
 }
@@ -214,7 +226,9 @@ internal fun ScheduleEditorScreen(
             }
         }
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 horizontal = layout.horizontalPadding,
                 vertical = 10.dp,
@@ -222,22 +236,20 @@ internal fun ScheduleEditorScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(key = "title") {
-                OutlinedTextField(
+                ScheduleGlassTextField(
                     value = title,
                     onValueChange = { title = it.take(120) },
-                    label = { Text("事项") },
-                    placeholder = { Text("例如：项目截止日") },
+                    label = "事项",
+                    placeholder = "例如：项目截止日",
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             item(key = "note") {
-                OutlinedTextField(
+                ScheduleGlassTextField(
                     value = note,
                     onValueChange = { note = it.take(2_000) },
-                    label = { Text("备注") },
+                    label = "备注",
                     minLines = 2,
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             item(key = "date") {
@@ -249,11 +261,9 @@ internal fun ScheduleEditorScreen(
                 )
             }
             item(key = "advanced") {
-                OutlinedButton(
+                ScheduleGlassControl(
                     onClick = { advancedExpanded = !advancedExpanded },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-                    border = BorderStroke(1.dp, C.line),
                 ) {
                     Text("高级选项", modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
                     Icon(
@@ -283,43 +293,61 @@ internal fun ScheduleEditorScreen(
                             }),
                             onClick = { picker = ScheduleEditorPicker.EndDateTime },
                         )
-                        OutlinedTextField(
+                        ScheduleGlassTextField(
                             value = location,
                             onValueChange = { location = it.take(240) },
-                            label = { Text("位置") },
+                            label = "位置",
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
                         )
-                        OutlinedTextField(
+                        ScheduleGlassTextField(
                             value = participants,
                             onValueChange = { participants = it.take(500) },
-                            label = { Text("参与者") },
-                            placeholder = { Text("多人可用逗号分隔") },
-                            modifier = Modifier.fillMaxWidth(),
+                            label = "参与者",
+                            placeholder = "多人可用逗号分隔",
                         )
                         ScheduleColorPicker(
                             selected = highlightColor,
                             onSelected = { highlightColor = it },
                         )
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("卡片背景图", color = C.textSub, style = MaterialTheme.typography.labelLarge)
-                            if (backgroundImageUri.isNotBlank()) {
-                                ScheduleBackgroundImage(
-                                    uri = backgroundImageUri,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(16f / 7f)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OutlinedButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
-                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(if (backgroundImageUri.isBlank()) "选择图片" else "更换图片")
-                                }
+                        GeminiGlassPanel(
+                            tone = GeminiGlassTone.Neutral,
+                            shape = MaterialTheme.shapes.large,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Text("卡片背景图", color = C.textSub, style = MaterialTheme.typography.labelLarge)
                                 if (backgroundImageUri.isNotBlank()) {
-                                    TextButton(onClick = { backgroundImageUri = "" }) { Text("移除") }
+                                    ScheduleBackgroundImage(
+                                        uri = backgroundImageUri,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .aspectRatio(16f / 7f)
+                                            .clip(MaterialTheme.shapes.large),
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    ScheduleGlassButton(
+                                        label = if (backgroundImageUri.isBlank()) "选择图片" else "更换图片",
+                                        onClick = { imagePicker.launch(arrayOf("image/*")) },
+                                        modifier = Modifier.weight(1f),
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.AddPhotoAlternate,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        },
+                                    )
+                                    if (backgroundImageUri.isNotBlank()) {
+                                        ScheduleGlassButton(
+                                            label = "移除",
+                                            onClick = { backgroundImageUri = "" },
+                                            tone = GeminiGlassTone.Rose,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -339,16 +367,19 @@ internal fun ScheduleEditorScreen(
             }
             if (dayItems.isEmpty()) {
                 item(key = "day-items-empty") {
-                    Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Neutral,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Text("当日还没有日程。", color = C.textSub, modifier = Modifier.padding(16.dp))
                     }
                 }
             } else {
                 items(dayItems, key = { "day-item-${it.id}" }) { item ->
-                    Surface(
-                        color = C.panelAlt,
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, C.line),
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Neutral,
+                        shape = MaterialTheme.shapes.large,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -425,11 +456,9 @@ internal fun ScheduleMemorialScreen(
     Column(Modifier.fillMaxSize()) {
         SubScreenHeader(title = "日程纪念", onBack = onBack) {}
         Box(modifier = Modifier.padding(horizontal = layout.horizontalPadding, vertical = 8.dp)) {
-            OutlinedButton(
+            ScheduleGlassControl(
                 onClick = { menuExpanded = true },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-                border = BorderStroke(1.dp, C.line),
             ) {
                 Text(sort.label, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
                 Icon(Icons.Default.ExpandMore, contentDescription = null)
@@ -528,21 +557,25 @@ internal fun ScheduleDetailScreen(
             }
             item(key = "actions") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
+                    ScheduleGlassButton(
+                        label = if (item.done) "标记未完成" else "标记已完成",
                         onClick = onToggleDone,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-                        border = BorderStroke(1.dp, C.line),
-                    ) { Text(if (item.done) "标记未完成" else "标记已完成") }
-                    OutlinedButton(
+                        tone = GeminiGlassTone.Teal,
+                    )
+                    ScheduleGlassButton(
+                        label = "删除",
                         onClick = { confirmDelete = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = C.danger),
-                        border = BorderStroke(1.dp, C.danger.copy(alpha = 0.7f)),
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("删除")
-                    }
+                        tone = GeminiGlassTone.Rose,
+                        contentColor = C.danger,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
@@ -550,17 +583,18 @@ internal fun ScheduleDetailScreen(
     }
 
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("删除日程") },
-            text = { Text("确定删除“${item.title}”吗？") },
-            confirmButton = {
+        ScheduleGlassDialog(
+            title = "删除日程",
+            tone = GeminiGlassTone.Rose,
+            onDismiss = { confirmDelete = false },
+            content = { Text("确定删除“${item.title}”吗？", color = C.textMain) },
+            actions = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
                 TextButton(onClick = {
                     confirmDelete = false
                     onDelete()
                 }) { Text("删除", color = C.danger) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
         )
     }
 }
@@ -573,11 +607,16 @@ private fun ScheduleMemorialCard(item: ScheduleItem, today: LocalDate, onClick: 
     val hasImage = item.backgroundImageUri.isNotBlank()
     Surface(
         onClick = onClick,
-        color = if (hasImage) Color.Black else C.panel,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, if (item.pinned) accent else C.line),
+        color = Color.Transparent,
+        shape = MaterialTheme.shapes.extraLarge,
+        border = if (item.pinned) BorderStroke(1.dp, accent.copy(alpha = 0.72f)) else null,
         modifier = Modifier.fillMaxWidth(),
     ) {
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
         Box(modifier = Modifier.fillMaxWidth().height(112.dp).clipToBounds()) {
             if (hasImage) {
                 ScheduleBackgroundImage(item.backgroundImageUri, Modifier.fillMaxSize())
@@ -609,6 +648,7 @@ private fun ScheduleMemorialCard(item: ScheduleItem, today: LocalDate, onClick: 
                 ScheduleDistanceLabel(distance, accent, onImage = hasImage)
             }
         }
+        }
     }
 }
 
@@ -618,11 +658,18 @@ private fun ScheduleDetailHero(item: ScheduleItem, today: LocalDate) {
     val layout = LocalFortuneLayout.current
     val accent = scheduleAccent(item, C)
     val hasImage = item.backgroundImageUri.isNotBlank()
-    Card(
-        colors = CardDefaults.cardColors(containerColor = if (hasImage) Color.Black else C.panel),
-        border = BorderStroke(1.dp, if (item.pinned) accent else C.line),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (item.pinned) {
+                    Modifier.border(1.dp, accent.copy(alpha = 0.72f), MaterialTheme.shapes.extraLarge)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Box(Modifier.fillMaxWidth().height(if (layout.compactHeight) 156.dp else 180.dp).clipToBounds()) {
             if (hasImage) {
@@ -667,15 +714,13 @@ private fun ScheduleDistanceLabel(distance: ScheduleDayDistance, accent: Color, 
 
 @Composable
 private fun ScheduleInfoSection(title: String, content: @Composable () -> Unit) {
-    val C = LocalFortunePalette.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             content()
         }
     }
@@ -691,6 +736,162 @@ private fun ScheduleInfoRow(label: String, value: String) {
 }
 
 @Composable
+private fun ScheduleGlassTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+) {
+    GeminiGlassTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = placeholder?.let { hint -> ({ Text(hint) }) },
+        singleLine = singleLine,
+        minLines = minLines,
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun ScheduleGlassControl(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tone: GeminiGlassTone = GeminiGlassTone.Neutral,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        contentColor = contentColor,
+        shape = MaterialTheme.shapes.large,
+        modifier = modifier,
+    ) {
+        GeminiGlassPanel(
+            tone = tone,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScheduleGlassButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tone: GeminiGlassTone = GeminiGlassTone.Neutral,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    leadingIcon: @Composable (() -> Unit)? = null,
+) {
+    ScheduleGlassControl(
+        onClick = onClick,
+        modifier = modifier,
+        tone = tone,
+        contentColor = contentColor,
+    ) {
+        leadingIcon?.invoke()
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ScheduleGlassDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    tone: GeminiGlassTone = GeminiGlassTone.Neutral,
+    content: @Composable () -> Unit,
+    actions: @Composable () -> Unit,
+) {
+    val C = LocalFortunePalette.current
+    val configuration = LocalConfiguration.current
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            val scrimInteraction = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.52f))
+                    .clickable(
+                        interactionSource = scrimInteraction,
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                GeminiGlassPanel(
+                    tone = tone,
+                    shape = MaterialTheme.shapes.extraLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 560.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                    alpha = if (C.isLight) 0.26f else 0.34f,
+                                ),
+                            ),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = (configuration.screenHeightDp * 0.88f).dp)
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        content()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            actions()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SchedulePickerField(
     label: String,
     value: String,
@@ -701,11 +902,16 @@ private fun SchedulePickerField(
     val C = LocalFortunePalette.current
     Surface(
         onClick = onClick,
-        color = C.panelAlt,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, C.line),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -721,6 +927,7 @@ private fun SchedulePickerField(
             } else {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
             }
+        }
         }
     }
 }
@@ -741,11 +948,16 @@ private fun ScheduleEndDateTimeField(
     }
     Surface(
         onClick = onClick,
-        color = C.panelAlt,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, C.line),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -762,35 +974,62 @@ private fun ScheduleEndDateTimeField(
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
             }
         }
+        }
     }
 }
 
 @Composable
 private fun ScheduleSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     val C = LocalFortunePalette.current
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = C.textMain, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    Surface(
+        onClick = { onCheckedChange(!checked) },
+        color = Color.Transparent,
+        contentColor = C.textMain,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        GeminiGlassPanel(
+            tone = if (checked) GeminiGlassTone.Teal else GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, color = C.textMain, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Switch(checked = checked, onCheckedChange = null)
+            }
+        }
     }
 }
 
 @Composable
 private fun ScheduleColorPicker(selected: String, onSelected: (String) -> Unit) {
     val C = LocalFortunePalette.current
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("卡片高亮颜色", color = C.textSub, style = MaterialTheme.typography.labelLarge)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            scheduleHighlightColors.forEach { value ->
-                val color = if (value.isBlank()) C.gold else scheduleColor(value, C.gold)
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(color, CircleShape)
-                        .border(if (selected == value) 3.dp else 1.dp, if (selected == value) C.textMain else C.line, CircleShape)
-                        .clickable { onSelected(value) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (selected == value) Icon(Icons.Default.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(18.dp))
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("卡片高亮颜色", color = C.textSub, style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                scheduleHighlightColors.forEach { value ->
+                    val color = if (value.isBlank()) C.gold else scheduleColor(value, C.gold)
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(color, CircleShape)
+                            .border(if (selected == value) 3.dp else 1.dp, if (selected == value) C.textMain else C.line, CircleShape)
+                            .clickable { onSelected(value) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected == value) Icon(Icons.Default.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }
@@ -815,10 +1054,11 @@ private fun ScheduleDateWheelDialog(
     }
     val selectedDate = LocalDate.of(year, month, safeDay)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
+    ScheduleGlassDialog(
+        title = title,
+        onDismiss = onDismiss,
+        tone = GeminiGlassTone.Gold,
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(formatScheduleFullDate(selectedDate), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -846,8 +1086,10 @@ private fun ScheduleDateWheelDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selectedDate) }) { Text("确定") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        actions = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = { onConfirm(selectedDate) }) { Text("确定") }
+        },
     )
 }
 
@@ -862,19 +1104,20 @@ private fun ScheduleTimeWheelDialog(
     val parts = initialTime.split(":")
     var hour by rememberSaveable(initialTime) { mutableStateOf(parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9) }
     var minute by rememberSaveable(initialTime) { mutableStateOf(parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
+    ScheduleGlassDialog(
+        title = title,
+        onDismiss = onDismiss,
+        tone = GeminiGlassTone.Gold,
+        content = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ScheduleNumberWheel((0..23).toList(), hour, "时", { hour = it }, Modifier.weight(1f))
                 ScheduleNumberWheel((0..59).toList(), minute, "分", { minute = it }, Modifier.weight(1f))
             }
         },
-        confirmButton = {
+        actions = {
+            TextButton(onClick = onDismiss) { Text("取消") }
             TextButton(onClick = { onConfirm("%02d:%02d".format(hour, minute)) }) { Text("确定") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -905,10 +1148,11 @@ private fun ScheduleDateTimeWheelDialog(
     val selectedDate = LocalDate.of(year, month, safeDay)
     val selectedTime = "%02d:%02d".format(hour, minute)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
+    ScheduleGlassDialog(
+        title = title,
+        onDismiss = onDismiss,
+        tone = GeminiGlassTone.Gold,
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "${formatScheduleFullDate(selectedDate)}  $selectedTime",
@@ -954,8 +1198,10 @@ private fun ScheduleDateTimeWheelDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selectedDate, selectedTime) }) { Text("确定") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        actions = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = { onConfirm(selectedDate, selectedTime) }) { Text("确定") }
+        },
     )
 }
 
@@ -1023,7 +1269,15 @@ private fun ScheduleNumberWheel(
                 .align(Alignment.Center)
                 .fillMaxWidth()
                 .height(44.dp)
-                .border(width = 1.dp, color = C.gold.copy(alpha = 0.55f), shape = RoundedCornerShape(6.dp)),
+                .background(
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
+                    MaterialTheme.shapes.medium,
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.64f),
+                    shape = MaterialTheme.shapes.medium,
+                ),
         )
     }
 }

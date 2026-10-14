@@ -3,7 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
-[![Version](https://img.shields.io/badge/version-0.9.5-D6AA43)](https://github.com/moka992/zhifou-fortune/releases)
+[![Version](https://img.shields.io/badge/version-1.0.0-216451)](https://github.com/moka992/zhifou-fortune/releases/tag/v1.0.0)
 
 一款离线优先的 Android 运势、传统历法、周易占卜与日程应用。
 
@@ -21,14 +21,17 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 项目希望在传统文化表达和现代移动体验之间取得平衡：来源明确，结论克制，不把黄历或占卜描述为确定预测，也不以恐惧性措辞推动用户作出决定。
 
-> 当前版本为 `v0.9.5` 预览版。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。
+> 当前版本为 `v1.0.0`。应用中的运势、黄历和占卜内容仅用于传统文化研究、个人反思与休闲参考，不构成医疗、法律、投资或其他专业建议。下载附件仍为调试签名 APK，签名与分发说明见下文。
 
-### v0.9.5 更新
+### v1.0.0 更新
 
-- 引入统一的响应式布局参数，根据可用宽高和字体缩放优化首页、日历、占卜、小工具、“我的”及相关二级页面，在紧凑屏幕上保持内容完整，在常规与宽屏设备上保留舒展布局。
-- 完善沉浸式系统栏和底部安全区处理，使状态栏、导航手势区域与应用主题连续，并修复底部导航选中效果在部分设备上被裁切的问题。
-- 重绘浅色主题，以冷白和中性灰作为界面基础，使用更明亮的暖金、薄荷绿与玫红作为功能强调色；同步更新今日节奏仪表盘和转盘配色。
-- 优化首页操作区，使“今日黄历”在紧凑宽度下保持单行，并为“去占卜”增加可感知的按压动画反馈。
+- 重构五个主页面的视觉层级，统一浅色与深色主题、文字、输入框和操作反馈，以绿色、蓝色和珊瑚色区分主要内容。
+- 更新首页节奏仪表与事业、关系、财务卡片，重新制作骰子、转盘和硬币的入口图片。
+- 手机使用底部导航，横屏及平板使用统一侧栏；保留页面状态，并优化系统安全区与大字体布局。
+- 调整占卜输入区、结果阅读面、日历及个人资料页面，保留离线占卜、日程和小工具的既有流程。
+- 升级至 Android API 36；增加主题对比度测试。构建通过 54 项 JVM 测试，并完成多尺寸模拟器检查，实机性能与触觉仍需按设备验证。
+
+设计与验证说明见 [Interface Design](docs/ui-redesign.md)。
 
 ### 功能概览
 
@@ -84,7 +87,7 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 | 网络 | OkHttp、OpenAI-compatible Chat Completions |
 | 本地数据 | SharedPreferences、JSON、Android 文档 URI |
 | 最低系统 | Android 8.0 / API 26 |
-| 目标系统 | Android API 35 |
+| 目标系统 | Android API 36 |
 | 当前 ABI | `arm64-v8a` |
 
 ### 获取 APK
@@ -95,7 +98,7 @@ An offline-first Android app for daily reflections, the traditional Chinese cale
 
 ### 从源码构建
 
-需要 Android Studio 当前稳定版、JDK 17、Android SDK Platform 35、Git 和 `curl`。
+需要 Android Studio 当前稳定版、JDK 17、Android SDK Platform 36、Git 和 `curl`。
 
 仓库不提交 Whisper 模型二进制文件。构建前请使用校验脚本下载模型：
 
@@ -201,14 +204,17 @@ Zhifou Fortune is a native Android app that brings together the traditional Chin
 
 The project aims to present traditional material with modern product standards: sources should remain identifiable, conclusions should stay measured, and cultural references should never be framed as guaranteed predictions or fear-based advice.
 
-> `v0.9.5` is a preview release. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice.
+> The current version is `v1.0.0`. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice. The downloadable APK remains debug-signed; see the distribution notes below.
 
-### What's new in v0.9.5
+### What's new in v1.0.0
 
-- Introduced shared responsive layout metrics that adapt the home, calendar, divination, utility, profile, and secondary screens to available width, height, and font scale while preserving a more spacious layout on larger devices.
-- Improved edge-to-edge system bar and bottom inset handling so status and gesture areas follow the active theme, and fixed clipped selection visuals in the bottom navigation.
-- Reworked the light theme around cool whites and neutral grays with brighter gold, mint, and rose accents, including refreshed palettes for the daily rhythm dial and wheel tool.
-- Kept the Home screen's Today Almanac action on one line at compact widths and added visible press feedback before opening Divination.
+- Reworked the five main screens with consistent light and dark themes, typography, input fields, and interaction feedback. Green, blue, and coral accents distinguish key content.
+- Refined the daily rhythm dial and category summaries, with newly created artwork for dice, wheel, and coin tools.
+- Unified bottom navigation on phones and side navigation on wider windows, preserving page state while improving system-inset and larger-text layouts.
+- Updated the composer, reading surfaces, calendar, and profile while retaining existing offline divination, schedule, and utility workflows.
+- Updated to Android API 36 and added theme-contrast tests. All 54 JVM tests pass, with multi-size emulator checks completed. Performance and haptics still require device-specific physical testing.
+
+See [Interface Design](docs/ui-redesign.md) for design and verification notes.
 
 ### Features
 
@@ -264,7 +270,7 @@ The project aims to present traditional material with modern product standards: 
 | Networking | OkHttp, OpenAI-compatible Chat Completions |
 | Local storage | SharedPreferences, JSON, Android document URIs |
 | Minimum Android | Android 8.0 / API 26 |
-| Target Android | API 35 |
+| Target Android | API 36 |
 | Current ABI | `arm64-v8a` |
 
 ### Download
@@ -275,7 +281,7 @@ The APK is larger than a typical Android app because it contains the offline spe
 
 ### Build from source
 
-You need the current stable Android Studio, JDK 17, Android SDK Platform 35, Git, and `curl`.
+You need the current stable Android Studio, JDK 17, Android SDK Platform 36, Git, and `curl`.
 
 Whisper model binaries are intentionally excluded from Git. Download and verify them before building:
 

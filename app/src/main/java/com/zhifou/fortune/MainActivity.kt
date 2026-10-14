@@ -3,6 +3,7 @@ package com.zhifou.fortune
 import android.Manifest
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.SensorManager
 import android.media.AudioAttributes
@@ -21,10 +22,12 @@ import android.os.Bundle
 import android.view.ViewConfiguration
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -58,6 +61,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -68,14 +72,20 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -83,6 +93,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
@@ -112,11 +123,19 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Toll
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.WorkOutline
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
@@ -130,6 +149,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.currentWindowDpSize
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -141,14 +168,15 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -156,6 +184,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -205,10 +234,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -259,86 +287,19 @@ private const val TAROT_NEXT_CARD_DELAY_MS = 260L
 private const val TAROT_CARD_REVEAL_DELAY_MS = 320L
 private const val TAROT_FINAL_SETTLE_DELAY_MS = 180L
 
-// 主题调色板：深/浅各一套，通过 LocalFortunePalette 注入。
-@Immutable
-data class FortunePalette(
-    val ink: Color,
-    val panel: Color,
-    val panelAlt: Color,
-    val line: Color,
-    val gold: Color,
-    val mint: Color,
-    val rose: Color,
-    val danger: Color,
-    val textMain: Color,
-    val textSub: Color,
-    val chatBubbleAssistant: Color,
-    val chatBubbleUser: Color,
-    val chatText: Color,
-    val isLight: Boolean,
-)
-
-val DarkPalette = FortunePalette(
-    ink = Color(0xFF111318),
-    panel = Color(0xFF1B1F27),
-    panelAlt = Color(0xFF242832),
-    line = Color(0xFF343A46),
-    gold = Color(0xFFE2C16B),
-    mint = Color(0xFF7ED7C1),
-    rose = Color(0xFFE48A9A),
-    danger = Color(0xFFE5484D),
-    textMain = Color(0xFFF3F0E8),
-    textSub = Color(0xFFB7B2A6),
-    chatBubbleAssistant = Color(0xFF2A3340),
-    chatBubbleUser = Color(0xFF28342C),
-    chatText = Color(0xFFECE8DF),
-    isLight = false,
-)
-
-val LightPalette = FortunePalette(
-    ink = Color(0xFFF8FAFC),
-    panel = Color(0xFFFFFFFF),
-    panelAlt = Color(0xFFF1F5F9),
-    line = Color(0xFFE0E7EF),
-    gold = Color(0xFFA66F00),
-    mint = Color(0xFF078A74),
-    rose = Color(0xFFD14F6B),
-    danger = Color(0xFFD52F3A),
-    textMain = Color(0xFF171A1F),
-    textSub = Color(0xFF647080),
-    chatBubbleAssistant = Color(0xFFEAF4FF),
-    chatBubbleUser = Color(0xFFE7F8ED),
-    chatText = Color(0xFF17212B),
-    isLight = true,
-)
-
-val LocalFortunePalette = staticCompositionLocalOf { DarkPalette }
-
-internal val FortunePalette.accentFill: Color
-    get() = if (isLight) Color(0xFFF3C64F) else gold
-
-internal val FortunePalette.onAccentFill: Color
-    get() = if (isLight) Color(0xFF211A08) else ink
-
-internal val FortunePalette.selectionFill: Color
-    get() = if (isLight) Color(0xFFFFF2C2) else gold.copy(alpha = 0.20f)
-
 enum class ThemeMode { Dark, Light, System }
 
-@Suppress("DEPRECATION")
-private fun applySystemBars(window: android.view.Window, dark: Boolean) {
-    WindowCompat.setDecorFitsSystemWindows(window, false)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        window.attributes = window.attributes.apply {
-            layoutInDisplayCutoutMode =
-                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
+private fun ComponentActivity.configureEdgeToEdge(dark: Boolean) {
+    val transparent = android.graphics.Color.TRANSPARENT
+    val style = if (dark) {
+        SystemBarStyle.dark(transparent)
+    } else {
+        SystemBarStyle.light(transparent, transparent)
     }
-    val controller = WindowInsetsControllerCompat(window, window.decorView)
-    controller.isAppearanceLightStatusBars = !dark
-    controller.isAppearanceLightNavigationBars = !dark
-    window.statusBarColor = android.graphics.Color.TRANSPARENT
-    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isNavigationBarContrastEnforced = false
+    }
 }
 
 /** Small, event-based haptic vocabulary shared by tools and primary actions. */
@@ -356,6 +317,7 @@ private class ToolHaptics(context: Context) {
         .build()
     private var lastDiceImpactAt = 0L
     private var lastWheelTickAt = 0L
+    private var lastCoinPulseAt = 0L
 
     private fun effectiveAmplitude(motor: Vibrator, amplitude: Int): Int {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && motor.hasAmplitudeControl()) {
@@ -460,13 +422,24 @@ private class ToolHaptics(context: Context) {
 
     fun wheelGlideStop() = oneShot(22L, 150)
 
-    fun coinStart() = oneShot(18L, 100)
+    fun coinStart() = waveform(
+        timings = longArrayOf(0L, 14L, 20L, 9L),
+        amplitudes = intArrayOf(0, 150, 0, 105),
+    )
 
-    fun coinSpinPulse(index: Int) = oneShot(10L + index % 2, 82 + (index % 3) * 8)
+    fun coinSpinPulse(index: Int) {
+        val now = System.currentTimeMillis()
+        if (now - lastCoinPulseAt < 42L) return
+        lastCoinPulseAt = now
+        oneShot(
+            durationMs = 11L + index % 2,
+            amplitude = 150 + (index % 4) * 10,
+        )
+    }
 
     fun coinSettle() = waveform(
-        timings = longArrayOf(0L, 20L, 34L, 24L),
-        amplitudes = intArrayOf(0, 125, 0, 155),
+        timings = longArrayOf(0L, 22L, 34L, 26L),
+        amplitudes = intArrayOf(0, 165, 0, 195),
     )
 
     fun sendAccepted() = oneShot(16L, 72)
@@ -507,20 +480,15 @@ private fun sendButtonFeedbackModifier(
 }
 
 class MainActivity : ComponentActivity() {
-    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isNavigationBarContrastEnforced = false
-        }
         val repo = FortuneRepository(applicationContext)
         val initialDark = when (repo.themeMode) {
             ThemeMode.Dark -> true
             ThemeMode.Light -> false
             ThemeMode.System -> (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
-        applySystemBars(window, initialDark)
-        val window = this.window
+        configureEdgeToEdge(initialDark)
         setContent {
             val vm: FortuneViewModel = viewModel()
             val resolvedDark = when (vm.themeMode) {
@@ -528,41 +496,78 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.Light -> false
                 ThemeMode.System -> isSystemInDarkTheme()
             }
-            val C = if (resolvedDark) DarkPalette else LightPalette
-            SideEffect { applySystemBars(window, resolvedDark) }
-            CompositionLocalProvider(LocalFortunePalette provides C) {
-                MaterialTheme(
-                    colorScheme = if (resolvedDark) darkColorScheme(
-                        background = C.ink, surface = C.panel, primary = C.gold,
-                        secondary = C.mint, tertiary = C.rose,
-                        onBackground = C.textMain, onSurface = C.textMain, onPrimary = C.ink,
-                    ) else lightColorScheme(
-                        background = C.ink, surface = C.panel, primary = C.gold,
-                        secondary = C.mint, tertiary = C.rose,
-                        onBackground = C.textMain, onSurface = C.textMain, onPrimary = C.textMain,
-                    ),
+            SideEffect { configureEdgeToEdge(resolvedDark) }
+            ZhiFouTheme(darkTheme = resolvedDark) {
+                val glassLightController = rememberGlassLightController(vm.glassMotionEnabled)
+                CompositionLocalProvider(LocalGlassLightController provides glassLightController) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
                 ) {
-                    Surface(Modifier.fillMaxSize(), color = C.ink) {
-                        FortuneApp(vm)
-                    }
+                    FortuneAppMd3(vm)
+                }
                 }
             }
         }
     }
 }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    Home("首页", Icons.Default.Home),
-    Schedule("日历", Icons.AutoMirrored.Filled.EventNote),
+internal enum class Tab(val label: String, val icon: ImageVector) {
+    Home("首页", Icons.Outlined.Home),
+    Schedule("日历", Icons.Outlined.CalendarMonth),
     Oracle("占卜", Icons.Default.AutoAwesome),
-    Tools("小工具", Icons.Default.Casino),
-    Mine("我的", Icons.Default.AccountCircle),
+    Tools("小工具", Icons.Outlined.GridView),
+    Mine("我的", Icons.Outlined.PersonOutline),
 }
+
+@Stable
+private class ScheduleNavigationState(
+    pageName: String = SchedulePage.Calendar.name,
+    editorReturnPageName: String = SchedulePage.Calendar.name,
+    activeItemId: Long? = null,
+    detailDateText: String? = null,
+) {
+    var pageName by mutableStateOf(pageName)
+    var editorReturnPageName by mutableStateOf(editorReturnPageName)
+    var activeItemId by mutableStateOf(activeItemId)
+    var detailDateText by mutableStateOf(detailDateText)
+}
+
+private val ScheduleNavigationStateSaver = Saver<ScheduleNavigationState, Bundle>(
+    save = { state ->
+        Bundle().apply {
+            putString("page", state.pageName)
+            putString("editorReturn", state.editorReturnPageName)
+            state.activeItemId?.let {
+                putBoolean("hasActiveItem", true)
+                putLong("activeItem", it)
+            }
+            putString("detailDate", state.detailDateText)
+        }
+    },
+    restore = { bundle ->
+        ScheduleNavigationState(
+            pageName = bundle.getString("page") ?: SchedulePage.Calendar.name,
+            editorReturnPageName = bundle.getString("editorReturn") ?: SchedulePage.Calendar.name,
+            activeItemId = if (bundle.getBoolean("hasActiveItem")) bundle.getLong("activeItem") else null,
+            detailDateText = bundle.getString("detailDate"),
+        )
+    },
+)
+
+@Composable
+private fun rememberScheduleNavigationState(): ScheduleNavigationState = rememberSaveable(
+    saver = ScheduleNavigationStateSaver,
+) { ScheduleNavigationState() }
+
+internal enum class FortuneWindowWidth { Compact, Medium, Expanded }
 
 @Immutable
 internal data class FortuneLayoutMetrics(
+    val windowWidth: FortuneWindowWidth,
     val compactWidth: Boolean,
     val compactHeight: Boolean,
+    val contentMaxWidth: Dp,
     val horizontalPadding: Dp,
     val verticalPadding: Dp,
     val sectionSpacing: Dp,
@@ -575,8 +580,10 @@ internal data class FortuneLayoutMetrics(
 
 internal val LocalFortuneLayout = staticCompositionLocalOf {
     FortuneLayoutMetrics(
+        windowWidth = FortuneWindowWidth.Compact,
         compactWidth = false,
         compactHeight = false,
+        contentMaxWidth = 720.dp,
         horizontalPadding = 20.dp,
         verticalPadding = 20.dp,
         sectionSpacing = 16.dp,
@@ -588,23 +595,45 @@ internal val LocalFortuneLayout = staticCompositionLocalOf {
     )
 }
 
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 private fun rememberFortuneLayoutMetrics(): FortuneLayoutMetrics {
-    val configuration = LocalConfiguration.current
-    val compactWidth = configuration.screenWidthDp < 360
-    val compactHeight = configuration.screenHeightDp < 700
-    return remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+    val windowSize = currentWindowDpSize()
+    val fontScale = LocalDensity.current.fontScale
+    val windowWidth = when {
+        windowSize.width < 600.dp -> FortuneWindowWidth.Compact
+        windowSize.width < 840.dp -> FortuneWindowWidth.Medium
+        else -> FortuneWindowWidth.Expanded
+    }
+    val compactWidth = windowSize.width < 380.dp
+    val compactHeight = windowSize.height < 700.dp
+    return remember(windowSize, windowWidth, compactWidth, compactHeight, fontScale) {
         FortuneLayoutMetrics(
+            windowWidth = windowWidth,
             compactWidth = compactWidth,
             compactHeight = compactHeight,
-            horizontalPadding = if (compactWidth) 14.dp else 20.dp,
-            verticalPadding = if (compactHeight) 12.dp else 20.dp,
-            sectionSpacing = if (compactHeight) 12.dp else 16.dp,
-            cardPadding = if (compactWidth) 12.dp else 16.dp,
+            contentMaxWidth = if (compactHeight) 720.dp else when (windowWidth) {
+                FortuneWindowWidth.Compact -> 720.dp
+                FortuneWindowWidth.Medium -> 760.dp
+                FortuneWindowWidth.Expanded -> 960.dp
+            },
+            horizontalPadding = when {
+                compactWidth -> 12.dp
+                windowWidth == FortuneWindowWidth.Compact -> 16.dp
+                windowWidth == FortuneWindowWidth.Medium -> 24.dp
+                else -> 32.dp
+            },
+            verticalPadding = if (compactHeight) 12.dp else 18.dp,
+            sectionSpacing = if (compactHeight) 14.dp else 20.dp,
+            cardPadding = if (compactWidth) 14.dp else 18.dp,
             bottomBarHeight = if (compactHeight) 96.dp else 112.dp,
             navigationBarHeight = if (compactHeight) 68.dp else 76.dp,
             oracleButtonSize = if (compactWidth || compactHeight) 50.dp else 58.dp,
-            calendarCellHeight = if (compactWidth || compactHeight) 50.dp else 58.dp,
+            calendarCellHeight = maxOf(when {
+                compactWidth || compactHeight -> 50.dp
+                windowWidth == FortuneWindowWidth.Compact -> 58.dp
+                else -> 64.dp
+            }, (39f * fontScale + 12f).dp),
         )
     }
 }
@@ -622,17 +651,18 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
     val tabStateHolder = rememberSaveableStateHolder()
-    var showDiceTool by remember { mutableStateOf(false) }
-    var showWheelTool by remember { mutableStateOf(false) }
-    var showCoinTool by remember { mutableStateOf(false) }
-    var showTarotWiki by remember { mutableStateOf(false) }
+    var showDiceTool by rememberSaveable { mutableStateOf(false) }
+    var showWheelTool by rememberSaveable { mutableStateOf(false) }
+    var showCoinTool by rememberSaveable { mutableStateOf(false) }
+    var showTarotWiki by rememberSaveable { mutableStateOf(false) }
+    var wheelSubPageName by rememberSaveable { mutableStateOf(WheelSubPage.Main.name) }
     var requestedScheduleDetailDate by rememberSaveable { mutableStateOf<String?>(null) }
+    val scheduleNavigation = rememberScheduleNavigationState()
     val oracleTimelineState = rememberLazyListState(
         initialFirstVisibleItemIndex = if (vm.oracleTimeline.isEmpty()) 0 else vm.oracleTimeline.size,
     )
 
     BackHandler(enabled = showDiceTool) { showDiceTool = false }
-    BackHandler(enabled = showWheelTool) { showWheelTool = false }
     BackHandler(enabled = showCoinTool) { showCoinTool = false }
 
     DisposableEffect(offlineRecognizer) {
@@ -644,7 +674,6 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     CompositionLocalProvider(LocalFortuneLayout provides layout) {
     Scaffold(
         containerColor = C.ink,
-        topBar = { if (tab == Tab.Home) AppTopBar() },
         bottomBar = {
             Box(
                 modifier = Modifier
@@ -773,7 +802,12 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                     )
                     Tab.Oracle -> OracleScreen(vm, offlineRecognizer, oracleTimelineState)
                     Tab.Tools -> when {
-                        showWheelTool -> WheelScreen(vm, onBack = { showWheelTool = false })
+                        showWheelTool -> WheelScreen(
+                            vm = vm,
+                            subPage = WheelSubPage.valueOf(wheelSubPageName),
+                            onSubPageChange = { wheelSubPageName = it.name },
+                            onBack = { showWheelTool = false },
+                        )
                         showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
                         showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
                         showTarotWiki -> TarotWikiScreen(onBack = { showTarotWiki = false })
@@ -786,6 +820,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                     }
                     Tab.Schedule -> ScheduleScreen(
                         vm = vm,
+                        navigation = scheduleNavigation,
                         requestedDetailDate = requestedScheduleDetailDate,
                         onDetailRequestHandled = { requestedScheduleDetailDate = null },
                     )
@@ -798,34 +833,210 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     }
 }
 
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-private fun rememberTabState() = androidx.compose.runtime.remember {
+private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
+    val layout = rememberFortuneLayoutMetrics()
+    val context = LocalContext.current
+    val appMotionScope = rememberCoroutineScope()
+    val pageReveal = remember { Animatable(1f) }
+    val pageRevealDistance = with(LocalDensity.current) { 7.dp.toPx() }
+    val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
+    var tab by rememberTabState()
+    val tabStateHolder = rememberSaveableStateHolder()
+    var showDiceTool by rememberSaveable { mutableStateOf(false) }
+    var showWheelTool by rememberSaveable { mutableStateOf(false) }
+    var showCoinTool by rememberSaveable { mutableStateOf(false) }
+    var showTarotWiki by rememberSaveable { mutableStateOf(false) }
+    var wheelSubPageName by rememberSaveable { mutableStateOf(WheelSubPage.Main.name) }
+    var requestedScheduleDetailDate by rememberSaveable { mutableStateOf<String?>(null) }
+    val scheduleNavigation = rememberScheduleNavigationState()
+    val oracleTimelineState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (vm.oracleTimeline.isEmpty()) 0 else vm.oracleTimeline.size,
+    )
+
+    fun openDestination(destination: Tab) {
+        if (tab != destination) {
+            appMotionScope.launch {
+                pageReveal.snapTo(0.78f)
+                tab = destination
+                pageReveal.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                )
+            }
+        }
+        if (destination != Tab.Tools) {
+            showDiceTool = false
+            showWheelTool = false
+            showCoinTool = false
+            showTarotWiki = false
+        }
+    }
+
+    BackHandler(enabled = showDiceTool) { showDiceTool = false }
+    BackHandler(enabled = showCoinTool) { showCoinTool = false }
+    BackHandler(enabled = showTarotWiki) { showTarotWiki = false }
+
+    DisposableEffect(offlineRecognizer) {
+        onDispose {
+            Thread({ offlineRecognizer.close() }, "zhifou-asr-cleanup").start()
+        }
+    }
+
+    val pageScaffold: @Composable (Boolean) -> Unit = { usePhoneBottomBar ->
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                if (usePhoneBottomBar) {
+                    FortuneLiquidBottomBar(
+                        selectedTab = tab,
+                        onTabSelected = ::openDestination,
+                    )
+                }
+            },
+            contentWindowInsets = if (usePhoneBottomBar) WindowInsets.safeDrawing.only(
+                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+            ) else WindowInsets.safeDrawing,
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = layout.contentMaxWidth)
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .graphicsLayer {
+                            alpha = 0.72f + pageReveal.value * 0.28f
+                            translationY = (1f - pageReveal.value) * pageRevealDistance
+                        },
+                ) {
+                    tabStateHolder.SaveableStateProvider(tab.name) {
+                        when (tab) {
+                            Tab.Home -> HomeScreen(
+                                vm = vm,
+                                onOpenOracle = { openDestination(Tab.Oracle) },
+                                onOpenTodayAlmanac = { date ->
+                                    vm.selectScheduleDate(date)
+                                    requestedScheduleDetailDate = date.toString()
+                                    openDestination(Tab.Schedule)
+                                },
+                            )
+                            Tab.Oracle -> OracleScreen(vm, offlineRecognizer, oracleTimelineState)
+                            Tab.Tools -> when {
+                                showWheelTool -> WheelScreen(
+                                    vm = vm,
+                                    subPage = WheelSubPage.valueOf(wheelSubPageName),
+                                    onSubPageChange = { wheelSubPageName = it.name },
+                                    onBack = { showWheelTool = false },
+                                )
+                                showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
+                                showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
+                                showTarotWiki -> TarotWikiScreen(onBack = { showTarotWiki = false })
+                                else -> ToolsScreenMd3(
+                                    onOpenDice = { showDiceTool = true },
+                                    onOpenWheel = { showWheelTool = true },
+                                    onOpenCoin = { showCoinTool = true },
+                                    onOpenTarotWiki = { showTarotWiki = true },
+                                )
+                            }
+                            Tab.Schedule -> ScheduleScreen(
+                                vm = vm,
+                                navigation = scheduleNavigation,
+                                requestedDetailDate = requestedScheduleDetailDate,
+                                onDetailRequestHandled = { requestedScheduleDetailDate = null },
+                            )
+                            Tab.Mine -> MineScreen(vm)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    CompositionLocalProvider(LocalFortuneLayout provides layout) {
+        GeminiAmbientBackdrop(
+            modifier = Modifier.fillMaxSize(),
+            backgroundStyle = vm.backgroundStyle,
+            customImageUri = vm.customBackgroundUri,
+        ) {
+        if (layout.windowWidth != FortuneWindowWidth.Compact) {
+            Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+                FortuneSideRail(selectedTab = tab, onTabSelected = ::openDestination)
+                Box(Modifier.weight(1f)) { pageScaffold(false) }
+            }
+        } else {
+            pageScaffold(true)
+        }
+        }
+    }
+}
+
+@Composable
+private fun rememberTabState() = rememberSaveable {
     mutableStateOf(Tab.Home)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppTopBar() {
-    val C = LocalFortunePalette.current
+private fun FortuneLiquidBottomBar(selectedTab: Tab, onTabSelected: (Tab) -> Unit) {
     val layout = LocalFortuneLayout.current
-    CenterAlignedTopAppBar(
-        modifier = Modifier.height(if (layout.compactHeight) 56.dp else 64.dp),
-        title = {
-            Text(
-                "知否运势",
-                color = C.textMain,
-                style = (if (layout.compactWidth) {
-                    MaterialTheme.typography.titleMedium
-                } else {
-                    MaterialTheme.typography.titleLarge
-                }).copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
-            )
-        },
-        colors = androidx.compose.material3.TopAppBarDefaults.centerAlignedTopAppBarColors(
-            containerColor = C.ink,
-            titleContentColor = C.textMain,
-        ),
-    )
+    val colors = MaterialTheme.colorScheme
+    val palette = LocalFortunePalette.current
+    val safe = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal).asPaddingValues()
+    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val short = layout.compactHeight
+    val barHeight = maxOf(if (short) 68.dp else 76.dp,
+        ((if (short) 43f else 49f) + 18f * LocalDensity.current.fontScale + 6f).dp)
+    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    Box(Modifier.fillMaxWidth().height(barHeight + bottom + 10.dp)) {
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(barHeight + bottom).clip(shape)) {
+            LiquidGlassOptics(shape = shape, tint = colors.surface, isLight = palette.isLight, modifier = Modifier.matchParentSize())
+            Box(Modifier.matchParentSize().background(palette.panel.copy(alpha = 0.94f)))
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.outlineVariant.copy(alpha = 0.55f)))
+        }
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(safe)
+                .padding(bottom = bottom, start = 4.dp, end = 4.dp).height(barHeight),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Tab.entries.forEach { destination ->
+                val selected = destination == selectedTab
+                val oracle = destination == Tab.Oracle
+                val source = remember(destination) { MutableInteractionSource() }
+                val selectedScale by animateFloatAsState(if (selected) 1f else 0.96f, tween(180), label = "navigation")
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .selectable(selected = selected, interactionSource = source, indication = null,
+                            role = androidx.compose.ui.semantics.Role.Tab, onClick = { onTabSelected(destination) })
+                        .then(pressScaleModifier(source)),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(Modifier.height(if (short) 43.dp else 49.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Surface(
+                            color = when { oracle -> colors.primary; selected -> colors.primaryContainer; else -> Color.Transparent },
+                            shape = if (oracle) CircleShape else RoundedCornerShape(16.dp),
+                            modifier = (if (oracle) Modifier.offset(y = (-7).dp).requiredSize(if (short) 48.dp else 54.dp)
+                                else Modifier.size(width = 48.dp, height = 32.dp))
+                                .graphicsLayer { scaleX = selectedScale; scaleY = selectedScale },
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(destination.icon, null,
+                                    tint = when { oracle -> colors.onPrimary; selected -> colors.primary; else -> colors.onSurfaceVariant },
+                                    modifier = Modifier.size(if (oracle) 26.dp else 23.dp))
+                            }
+                        }
+                    }
+                    Text(destination.label, style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (selected || oracle) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) colors.primary else colors.onSurfaceVariant, maxLines = 1)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -862,50 +1073,29 @@ private fun HomeScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
-        item(key = "fortune-dial") {
-            FortuneDial(score = today.score)
+        item(key = "home-title") {
+            PageHeading("知否运势", snapshot.almanac.dateLabel) {
+                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape) {
+                    Icon(Icons.Default.AutoAwesome, null, tint = C.gold, modifier = Modifier.padding(12.dp).size(22.dp))
+                }
+            }
         }
         item(key = "today-reading") {
-            ReadingCard(reading = today, compact = layout.compactWidth)
-        }
-        item(key = "today-almanac") {
-            DailyAlmanacPanel(
-                info = snapshot.almanac,
-                personalizationBasis = snapshot.personalizationBasis,
-                environmentSummary = snapshot.environmentSummary,
-            )
+            DailyOverview(snapshot)
         }
         item(key = "home-actions") {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 val pressSrc = remember { MutableInteractionSource() }
-                Button(
+                HomeActionButton(
                     onClick = { onOpenTodayAlmanac(snapshot.almanac.date) },
                     interactionSource = pressSrc,
                     modifier = Modifier.weight(1f).then(pressScaleModifier(pressSrc)),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = C.accentFill,
-                        contentColor = C.onAccentFill,
-                    ),
-                    contentPadding = if (layout.compactWidth) {
-                        androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                    } else {
-                        ButtonDefaults.ContentPadding
-                    },
-                ) {
-                    Icon(
-                        Icons.Default.CalendarMonth,
-                        contentDescription = null,
-                        modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
-                    )
-                    Spacer(Modifier.width(if (layout.compactWidth) 5.dp else 8.dp))
-                    Text(
-                        "今日黄历",
-                        style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                    )
-                }
+                    icon = Icons.Default.CalendarMonth,
+                    label = "今日黄历",
+                    primary = false,
+                )
                 val oracleSrc = remember { MutableInteractionSource() }
-                FilledTonalButton(
+                HomeActionButton(
                     onClick = {
                         if (!oracleOpening) {
                             oracleOpening = true
@@ -932,31 +1122,16 @@ private fun HomeScreen(
                             scaleX = oracleClickScale.value
                             scaleY = oracleClickScale.value
                         },
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = C.panelAlt,
-                        contentColor = C.textMain,
-                    ),
-                    contentPadding = if (layout.compactWidth) {
-                        androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                    } else {
-                        ButtonDefaults.ContentPadding
-                    },
-                ) {
-                    Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
-                    )
-                    Spacer(Modifier.width(if (layout.compactWidth) 5.dp else 8.dp))
-                    Text(
-                        "去占卜",
-                        style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                    )
-                }
+                    icon = Icons.Default.AutoAwesome,
+                    label = "去占卜",
+                    primary = true,
+                )
             }
         }
         item(key = "insights") {
+            SectionHeading("今日关照", "事业 · 关系 · 财务")
+        }
+        item(key = "insight-items") {
             InsightStrip(
                 insights = snapshot.insights,
                 aiConnected = vm.aiConnectionStatus == AiConnectionStatus.Connected,
@@ -975,6 +1150,13 @@ private fun HomeScreen(
                 },
             )
         }
+        item(key = "today-almanac") {
+            DailyAlmanacPanel(
+                info = snapshot.almanac,
+                personalizationBasis = snapshot.personalizationBasis,
+                environmentSummary = snapshot.environmentSummary,
+            )
+        }
     }
     selectedInsight?.let { category ->
         DailyAiInsightDialog(
@@ -989,6 +1171,34 @@ private fun HomeScreen(
 }
 
 @Composable
+private fun HomeActionButton(
+    label: String,
+    icon: ImageVector,
+    primary: Boolean,
+    interactionSource: MutableInteractionSource,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick, interactionSource = interactionSource,
+        color = if (primary) colors.primary else colors.surfaceContainerHigh,
+        contentColor = if (primary) colors.onPrimary else colors.onSurface,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.heightIn(min = 52.dp),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}
+
+@Composable
 private fun DailyAlmanacPanel(
     info: DailyAlmanacInfo,
     personalizationBasis: List<String>,
@@ -996,10 +1206,9 @@ private fun DailyAlmanacPanel(
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -1075,7 +1284,7 @@ private fun AlmanacDirection(label: String, direction: String, modifier: Modifie
     val C = LocalFortunePalette.current
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, color = C.textSub, style = MaterialTheme.typography.labelMedium)
-        Text(direction, color = C.gold, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        Text(direction, color = C.textMain, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1385,8 +1594,10 @@ private fun OracleScreen(
                 detectTapGestures(onTap = { dismissTextInput() })
             }
             .padding(
-                horizontal = layout.horizontalPadding,
-                vertical = layout.verticalPadding,
+                start = layout.horizontalPadding,
+                end = layout.horizontalPadding,
+                top = layout.verticalPadding,
+                bottom = 4.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 8.dp else 12.dp),
     ) {
@@ -1395,7 +1606,8 @@ private fun OracleScreen(
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
-            if (showDailyPrompt) {
+            if (showDailyPrompt || (oracleTimeline.isEmpty() && !vm.coinCasting &&
+                    !vm.tarotDrawing && !vm.chatSending && vm.chatStatus.isBlank())) {
                 DailyOraclePrompt(
                     questions = suggestedQuestions,
                     onQuestionClick = { question ->
@@ -1470,8 +1682,15 @@ private fun OracleScreen(
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
-                                    .background(C.gold.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                                    .border(1.dp, C.gold, RoundedCornerShape(8.dp)),
+                                    .background(
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
+                                        MaterialTheme.shapes.large,
+                                    )
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                                        MaterialTheme.shapes.large,
+                                    ),
                             )
                         }
                         when (entry) {
@@ -1526,13 +1745,13 @@ private fun OracleScreen(
         }
         if (selectionMode) {
             Surface(
-                color = C.panelAlt,
-                border = BorderStroke(1.dp, C.line),
-                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = MaterialTheme.shapes.extraLarge,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
@@ -1543,8 +1762,8 @@ private fun OracleScreen(
                     }
                     Text(
                         "已选 ${selectedKeys.size} 项",
-                        color = C.textMain,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                     )
                     TextButton(onClick = { confirmDeleteSelection = true }) {
                         Icon(Icons.Default.Delete, contentDescription = null)
@@ -1555,31 +1774,39 @@ private fun OracleScreen(
             }
         } else {
             Box(modifier = Modifier.fillMaxWidth()) {
+            GeminiGlassPanel(
+                tone = GeminiGlassTone.Neutral,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = if (isRecording) 0f else 1f },
+            ) {
             Column(
-                modifier = Modifier.graphicsLayer { alpha = if (isRecording) 0f else 1f },
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 AnimatedVisibility(visible = selectedTool != null) {
                     selectedTool?.let { tool ->
-                        Surface(
-                            color = C.panelAlt,
-                            border = BorderStroke(1.dp, C.line),
-                            shape = RoundedCornerShape(6.dp),
+                        GeminiGlassPanel(
+                            tone = when (tool) {
+                                OracleTool.COIN -> GeminiGlassTone.Gold
+                                OracleTool.ANSWER_BOOK -> GeminiGlassTone.Teal
+                                OracleTool.TAROT -> GeminiGlassTone.Rose
+                            },
+                            shape = CircleShape,
                         ) {
                             Row(
-                                modifier = Modifier.padding(start = 9.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+                                modifier = Modifier.padding(start = 11.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
                                 Icon(
                                     imageVector = tool.icon(),
                                     contentDescription = null,
-                                    tint = C.gold,
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Text(
                                     tool.label,
-                                    color = C.textMain,
                                     style = MaterialTheme.typography.labelMedium,
                                 )
                                 IconButton(
@@ -1589,7 +1816,6 @@ private fun OracleScreen(
                                     Icon(
                                         Icons.Default.Close,
                                         contentDescription = "取消${tool.label}",
-                                        tint = C.textSub,
                                         modifier = Modifier.size(16.dp),
                                     )
                                 }
@@ -1603,20 +1829,33 @@ private fun OracleScreen(
                     horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 8.dp else 10.dp),
                 ) {
                     Box {
+                        val addInteractionSource = remember { MutableInteractionSource() }
                         Surface(
-                            modifier = Modifier.size(if (layout.compactWidth) 44.dp else 48.dp),
-                            color = if (selectedTool == null) C.panelAlt else C.gold.copy(alpha = 0.16f),
-                            border = BorderStroke(1.dp, if (selectedTool == null) C.line else C.gold),
+                            onClick = { toolMenuExpanded = !toolMenuExpanded },
+                            interactionSource = addInteractionSource,
+                            modifier = Modifier
+                                .size(if (layout.compactWidth) 44.dp else 48.dp)
+                                .then(pressScaleModifier(addInteractionSource)),
+                            color = Color.Transparent,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                             shape = CircleShape,
                         ) {
-                            IconButton(
-                                onClick = { toolMenuExpanded = !toolMenuExpanded },
+                            GeminiGlassPanel(
+                                tone = if (selectedTool == null) GeminiGlassTone.Neutral else GeminiGlassTone.Gold,
+                                shape = CircleShape,
+                                modifier = Modifier.fillMaxSize(),
                             ) {
-                                Icon(
-                                    Icons.Default.Add,
-                                    contentDescription = "选择占卜功能",
-                                    tint = if (selectedTool == null) C.textMain else C.gold,
-                                )
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "选择占卜功能",
+                                        tint = if (selectedTool == null) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                    )
+                                }
                             }
                         }
                         DropdownMenu(
@@ -1661,7 +1900,7 @@ private fun OracleScreen(
                             }
                         }
                     }
-                    OutlinedTextField(
+                    TextField(
                         value = vm.question,
                         onValueChange = {
                             vm.question = it
@@ -1735,6 +1974,15 @@ private fun OracleScreen(
                         },
                         maxLines = 3,
                         readOnly = !textEditing && !keyboardEdited,
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                        ),
                     )
                     val sendSrc = remember { MutableInteractionSource() }
                     val sendEnabled = when (selectedTool) {
@@ -1743,34 +1991,48 @@ private fun OracleScreen(
                         OracleTool.TAROT -> !vm.tarotDrawing
                         null -> vm.question.isNotBlank() && !vm.chatSending
                     }
-                    IconButton(
+                    Surface(
                         onClick = {
                             sendHaptics.sendAccepted()
                             runPrimaryAction()
                         },
                         enabled = sendEnabled,
                         interactionSource = sendSrc,
+                        color = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        shape = CircleShape,
                         modifier = Modifier
                             .size(if (layout.compactWidth) 48.dp else 52.dp)
-                            .background(
-                                color = if (sendEnabled) C.mint else C.line,
-                                shape = RoundedCornerShape(8.dp),
-                            )
                             .then(sendButtonFeedbackModifier(sendSrc, sendEnabled)),
                     ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = selectedTool?.let { "使用${it.label}" } ?: "发送给 AI",
-                            tint = if (sendEnabled) C.chatText else C.textSub.copy(alpha = 0.62f),
-                        )
+                        GeminiGlassPanel(
+                            tone = if (sendEnabled) GeminiGlassTone.Teal else GeminiGlassTone.Neutral,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = if (sendEnabled) 1f else 0.65f },
+                        ) {
+                            Box(Modifier.fillMaxSize().background(if (sendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = selectedTool?.let { "使用${it.label}" } ?: "发送给 AI",
+                                    tint = if (sendEnabled) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
                 Text(
                     "轻触输入文字，按住输入语音",
                     color = C.textSub,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 4.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 1.dp),
                 )
+            }
             }
             if (isRecording) {
                 VoiceCapturePanel(
@@ -1801,6 +2063,14 @@ private fun DailyOraclePrompt(
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
+    val today = remember { LocalDate.now() }
+    val suggestionScroll = rememberScrollState()
+    val suggestionTones = listOf(
+        GeminiGlassTone.Teal,
+        GeminiGlassTone.Gold,
+        GeminiGlassTone.Rose,
+        GeminiGlassTone.Neutral,
+    )
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1813,7 +2083,7 @@ private fun DailyOraclePrompt(
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         totalDragY = change.position.y - down.position.y
-                        returnToTimeline = isDownwardOraclePageSwipe(totalDragY, swipeThresholdPx)
+                        returnToTimeline = isDownwardOraclePageSwipe(totalDragY, swipeThresholdPx) && !suggestionScroll.canScrollForward
                         if (returnToTimeline) change.consume()
                         if (!change.pressed) {
                             if (returnToTimeline) onReturnToTimeline()
@@ -1826,41 +2096,61 @@ private fun DailyOraclePrompt(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = if (layout.compactHeight) 24.dp else 52.dp),
-            verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 12.dp else 18.dp),
+                .verticalScroll(suggestionScroll)
+                .padding(top = if (layout.compactHeight) 12.dp else 26.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 10.dp else 14.dp),
         ) {
+            Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+            Text("${today.monthValue}月${today.dayOfMonth}日 · 今日灵感", color = C.textSub, style = MaterialTheme.typography.labelMedium)
             Text(
-                "今天想问些什么？",
-                color = C.textMain,
-                style = if (layout.compactWidth) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                "今天，\n想问些什么？",
+                color = MaterialTheme.colorScheme.onBackground,
+                style = if (layout.compactWidth) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 4.dp),
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
-            questions.take(4).forEach { question ->
+            questions.take(4).forEachIndexed { index, question ->
                 val interactionSource = remember(question) { MutableInteractionSource() }
                 Surface(
                     onClick = { onQuestionClick(question) },
                     interactionSource = interactionSource,
-                    color = C.panelAlt,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, C.line),
+                    color = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = MaterialTheme.shapes.extraLarge,
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(pressScaleModifier(interactionSource)),
                 ) {
-                    Text(
-                        question,
-                        color = C.textMain,
-                        style = if (layout.compactWidth) {
-                            MaterialTheme.typography.bodyMedium
-                        } else {
-                            MaterialTheme.typography.bodyLarge
-                        },
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Neutral,
+                        shape = MaterialTheme.shapes.extraLarge,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                    Row(
                         modifier = Modifier.padding(
                             horizontal = if (layout.compactWidth) 12.dp else 16.dp,
-                            vertical = if (layout.compactHeight) 10.dp else 13.dp,
+                            vertical = if (layout.compactHeight) 11.dp else 14.dp,
                         ),
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            question,
+                            style = if (layout.compactWidth) {
+                                MaterialTheme.typography.bodyMedium
+                            } else {
+                                MaterialTheme.typography.bodyLarge
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    }
                 }
             }
         }
@@ -2022,14 +2312,21 @@ private fun ChatBubble(message: ChatMessage) {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        Surface(
-            color = bubbleColor,
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.fillMaxWidth(0.84f),
+        val bubbleShape = if (isUser) {
+                RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 6.dp)
+            } else {
+                RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 6.dp, bottomEnd = 22.dp)
+            }
+        GeminiGlassPanel(
+            tone = if (isUser) GeminiGlassTone.Teal else GeminiGlassTone.Neutral,
+            shape = bubbleShape,
+            modifier = Modifier.fillMaxWidth(if (isUser) 0.82f else 0.88f),
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .background(bubbleColor)
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     if (isUser) "你" else "知否研习",
@@ -2068,13 +2365,15 @@ private fun ThinkingBubble() {
             label = "dot$i",
         )
     }
-    Surface(
-        color = C.chatBubbleAssistant,
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth(0.84f),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 6.dp, bottomEnd = 22.dp),
+        modifier = Modifier.fillMaxWidth(0.88f),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier
+                .background(C.chatBubbleAssistant.copy(alpha = if (C.isLight) 0.44f else 0.24f))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2097,10 +2396,26 @@ private fun VoiceCapturePanel(
 ) {
     val C = LocalFortunePalette.current
     val color = if (cancelling) C.rose else C.gold
-    Column(
+    GeminiGlassPanel(
         modifier = modifier
             .fillMaxWidth()
-            .height(96.dp),
+            .height(104.dp),
+        tone = if (cancelling) GeminiGlassTone.Rose else GeminiGlassTone.Gold,
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(104.dp)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        Color.Transparent,
+                        color.copy(alpha = if (C.isLight) 0.16f else 0.09f),
+                        Color.Transparent,
+                    ),
+                ),
+            )
+            ,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -2130,6 +2445,7 @@ private fun VoiceCapturePanel(
                 )
             }
         }
+    }
     }
 }
 
@@ -2249,6 +2565,163 @@ private fun ToolsScreen(
     }
 }
 
+private data class ToolFeature(
+    val title: String,
+    val description: String,
+    val visual: ToolVisual,
+    val onClick: () -> Unit,
+)
+
+private enum class ToolVisual { Dice, Wheel, Coin, Tarot }
+
+@Composable
+private fun ToolsScreenMd3(
+    onOpenDice: () -> Unit,
+    onOpenWheel: () -> Unit,
+    onOpenCoin: () -> Unit,
+    onOpenTarotWiki: () -> Unit,
+) {
+    val layout = LocalFortuneLayout.current
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val columns = when {
+        layout.windowWidth == FortuneWindowWidth.Expanded -> 3
+        screenWidthDp >= 340 -> 2
+        else -> 1
+    }
+    val tools = listOf(
+        ToolFeature(
+            title = "摇骰子",
+            description = "D4–D20 · 1–6 枚",
+            visual = ToolVisual.Dice,
+            onClick = onOpenDice,
+        ),
+        ToolFeature(
+            title = "转盘",
+            description = "自定义选项 · 随机选择",
+            visual = ToolVisual.Wheel,
+            onClick = onOpenWheel,
+        ),
+        ToolFeature(
+            title = "抛硬币",
+            description = "花面与字面 · 1–10 枚",
+            visual = ToolVisual.Coin,
+            onClick = onOpenCoin,
+        ),
+        ToolFeature(
+            title = "韦特塔罗 Wiki",
+            description = "塔罗牌 · 牌义与历史",
+            visual = ToolVisual.Tarot,
+            onClick = onOpenTarotWiki,
+        ),
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
+        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
+    ) {
+        PageHeading("小工具", "给生活一点偶然")
+        SectionHeading("探索与发现", "4 个小工具")
+        tools.chunked(columns).forEach { rowTools ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                rowTools.forEach { tool ->
+                    ToolFeatureCard(
+                        feature = tool,
+                        compactCard = columns > 1,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(columns - rowTools.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolFeatureCard(feature: ToolFeature, compactCard: Boolean, modifier: Modifier = Modifier) {
+    val source = remember(feature.title) { MutableInteractionSource() }
+    val colors = MaterialTheme.colorScheme
+    val fill = when (feature.visual) {
+        ToolVisual.Dice -> colors.primaryContainer
+        ToolVisual.Wheel -> colors.secondaryContainer
+        ToolVisual.Coin -> colors.tertiaryContainer
+        ToolVisual.Tarot -> colors.surfaceContainerHigh
+    }
+    Surface(
+        onClick = feature.onClick, interactionSource = source,
+        modifier = modifier.then(pressScaleModifier(source)),
+        color = LocalFortunePalette.current.panel, shape = MaterialTheme.shapes.large,
+    ) {
+        Column {
+            Box(
+                Modifier.fillMaxWidth().aspectRatio(1f).background(fill),
+                contentAlignment = Alignment.Center,
+            ) {
+                ToolFeatureVisual(feature.visual, compactCard, feature.title)
+            }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(feature.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                Text(feature.description, color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
+                    minLines = if (compactCard) 2 else 1, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolFeatureVisual(
+    visual: ToolVisual,
+    compact: Boolean,
+    contentDescription: String,
+) {
+    if (visual != ToolVisual.Tarot) {
+        val image = when (visual) {
+            ToolVisual.Dice -> R.drawable.tool_dice_refined
+            ToolVisual.Wheel -> R.drawable.tool_wheel_refined
+            ToolVisual.Coin -> R.drawable.tool_coin_refined
+            ToolVisual.Tarot -> error("Tarot uses the original deck artwork")
+        }
+        Image(
+            painter = painterResource(image),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
+        Box(
+            modifier = Modifier.size(width = 144.dp, height = if (compact) 112.dp else 128.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            listOf(
+                Triple(R.drawable.tarot_major_00, -27f, -12f),
+                Triple(R.drawable.tarot_major_02, 0f, 0f),
+                Triple(R.drawable.tarot_major_21, 27f, 12f),
+            ).forEach { (imageRes, offsetX, rotation) ->
+                Image(
+                    painter = painterResource(imageRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(x = offsetX.dp)
+                        .fillMaxHeight(0.90f)
+                        .aspectRatio(0.58f)
+                        .graphicsLayer { rotationZ = rotation }
+                        .clip(RoundedCornerShape(4.dp)),
+                )
+            }
+        }
+    }
+}
+
 private enum class CoinSide(val label: String) {
     Flower("花面"),
     Character("字面"),
@@ -2284,7 +2757,7 @@ private fun CoinScreen(onBack: () -> Unit) {
                     val normalized = rotations[index].value % 360f
                     rotations[index].snapTo(normalized)
                     val fullTurns = 5 + secureRandom.nextInt(3)
-                    var previousTurn = kotlin.math.floor(normalized / 360f).toInt()
+                    var previousHalfTurn = kotlin.math.floor(normalized / 180f).toInt()
                     rotations[index].animateTo(
                         targetValue = coinTargetRotation(
                             currentRotation = normalized,
@@ -2297,10 +2770,10 @@ private fun CoinScreen(onBack: () -> Unit) {
                         ),
                     ) {
                         if (index == tosses.lastIndex) {
-                            val currentTurn = kotlin.math.floor(value / 360f).toInt()
-                            if (currentTurn > previousTurn) {
-                                previousTurn = currentTurn
-                                haptics.coinSpinPulse(currentTurn)
+                            val currentHalfTurn = kotlin.math.floor(value / 180f).toInt()
+                            if (currentHalfTurn > previousHalfTurn) {
+                                previousHalfTurn = currentHalfTurn
+                                haptics.coinSpinPulse(currentHalfTurn)
                             }
                         }
                     }
@@ -2348,19 +2821,7 @@ private fun CoinScreen(onBack: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            TextButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("小工具")
-            }
-            Text("抛硬币", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(72.dp))
-        }
+        SubScreenHeader(title = "抛硬币", onBack = onBack) {}
         DiceDropdown(
             label = "硬币个数",
             value = "${coinCount}枚",
@@ -2371,33 +2832,47 @@ private fun CoinScreen(onBack: () -> Unit) {
                 results = List(count) { CoinSide.Flower }
                 resultText = "等待抛掷"
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth(),
         )
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.fillMaxWidth(),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                val rows = results.chunked(5)
-                rows.forEachIndexed { rowIndex, row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                    ) {
-                        row.forEachIndexed { columnIndex, side ->
-                            val index = rowIndex * 5 + columnIndex
-                            CoinVisual(
-                                side = side,
-                                rotation = rotations[index].value,
-                                rolling = flipping,
-                                modifier = Modifier.size(if (coinCount > 5) 58.dp else 74.dp),
-                            )
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val columns = minOf(coinCount, 5)
+                    val preferredSize = when {
+                        coinCount == 1 -> 160.dp
+                        coinCount <= 3 -> 96.dp
+                        coinCount <= 5 -> 76.dp
+                        else -> 60.dp
+                    }
+                    val coinSize = minOf(preferredSize, (maxWidth - 8.dp * (columns - 1)) / columns)
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        results.chunked(columns).forEachIndexed { rowIndex, row ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            ) {
+                                row.forEachIndexed { columnIndex, side ->
+                                    val index = rowIndex * columns + columnIndex
+                                    CoinVisual(
+                                        side = side,
+                                        rotation = rotations[index].value,
+                                        rolling = flipping,
+                                        modifier = Modifier.size(coinSize),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -2407,31 +2882,47 @@ private fun CoinScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Button(
+                Surface(
                     onClick = ::tossCoins,
                     enabled = !flipping,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = C.accentFill,
-                        contentColor = C.onAccentFill,
-                    ),
+                    color = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (flipping) "翻转中" else "抛硬币")
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Rose,
+                        shape = CircleShape,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.tertiary.copy(
+                                        alpha = if (flipping) 0.035f else 0.10f,
+                                    ),
+                                )
+                                .padding(horizontal = 18.dp, vertical = 13.dp)
+                                .graphicsLayer { alpha = if (flipping) 0.42f else 1f },
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (flipping) "翻转中" else "抛硬币", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         }
-        Text(
-            "点击按钮或摇晃手机开始；每枚硬币独立随机，花面与字面各有 50% 概率。",
-            color = C.textSub,
-            style = MaterialTheme.typography.bodySmall,
-        )
         if (history.isNotEmpty()) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
+            GeminiGlassPanel(
+                tone = GeminiGlassTone.Neutral,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("最近结果", color = C.textMain, fontWeight = FontWeight.SemiBold)
@@ -2449,41 +2940,60 @@ private fun CoinVisual(
     rolling: Boolean,
     modifier: Modifier = Modifier.size(82.dp),
 ) {
-    val C = LocalFortunePalette.current
     val density = LocalDensity.current
     val visibleSide = if (rolling) {
         if (isCharacterCoinSideVisible(rotation)) CoinSide.Character else CoinSide.Flower
-    } else {
-        side
-    }
+    } else side
     val displayRotation = if (rolling) rotation else if (side == CoinSide.Character) 180f else 0f
     Box(
-        modifier = modifier
-            .graphicsLayer {
-                rotationY = displayRotation
-                rotationX = if (rolling) kotlin.math.sin(Math.toRadians(displayRotation.toDouble())).toFloat() * 7f else 0f
-                cameraDistance = 12f * density.density
-            },
+        modifier = modifier.graphicsLayer {
+            rotationY = displayRotation
+            rotationX = if (rolling) kotlin.math.sin(Math.toRadians(displayRotation.toDouble())).toFloat() * 7f else 0f
+            cameraDistance = 12f * density.density
+        },
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { rotationY = if (visibleSide == CoinSide.Character) 180f else 0f },
+            modifier = Modifier.fillMaxSize()
+                .graphicsLayer { rotationY = if (visibleSide == CoinSide.Character) 180f else 0f }
+                .clip(CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
-                val center = Offset(size.width / 2f, size.height / 2f)
-                val radius = size.minDimension * 0.42f
-                drawCircle(Color.Black.copy(alpha = 0.28f), radius = radius * 1.04f, center = center.copy(y = center.y + radius * 0.12f))
-                drawCircle(C.gold.copy(alpha = 0.95f), radius = radius, center = center)
-                drawCircle(C.gold.copy(alpha = 0.34f), radius = radius * 0.82f, center = center, style = Stroke(width = 2.dp.toPx()))
-                drawCircle(Color.White.copy(alpha = 0.18f), radius = radius * 0.68f, center = center, style = Stroke(width = 1.dp.toPx()))
+                val radius = size.minDimension / 2f
+                val rose = visibleSide == CoinSide.Flower
+                val light = if (rose) Color(0xFFFFF2EB) else Color(0xFFF1F7FC)
+                val middle = if (rose) Color(0xFFE0C9BD) else Color(0xFFC7D5DD)
+                val shade = if (rose) Color(0xFF9C8173) else Color(0xFF778C97)
+                drawCircle(
+                    brush = Brush.linearGradient(listOf(shade, light, middle, shade)),
+                    radius = radius,
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(light, middle, shade),
+                        center = Offset(size.width * 0.34f, size.height * 0.28f),
+                        radius = size.minDimension,
+                    ),
+                    radius = radius * 0.89f,
+                )
+                drawCircle(light.copy(alpha = 0.9f), radius * 0.91f,
+                    style = Stroke(width = (radius * 0.018f).coerceAtLeast(1f)))
+                drawCircle(shade.copy(alpha = 0.6f), radius * 0.80f,
+                    style = Stroke(width = (radius * 0.012f).coerceAtLeast(1f)))
+                repeat(48) { index ->
+                    val angle = index * Math.PI / 24
+                    val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
+                    drawLine(shade.copy(alpha = 0.58f),
+                        center + direction * radius * 0.94f,
+                        center + direction * radius * 0.98f,
+                        strokeWidth = (radius * 0.009f).coerceAtLeast(1f))
+                }
             }
             Text(
                 visibleSide.label.removeSuffix("面"),
-                color = C.ink,
-                style = MaterialTheme.typography.titleLarge,
+                color = if (visibleSide == CoinSide.Flower) Color(0xFF725346) else Color(0xFF405B69),
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -2520,7 +3030,12 @@ private fun winnerFromAngle(angle: Float, n: Int): Int {
 private enum class WheelSubPage { Main, Settings, History }
 
 @Composable
-private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
+private fun WheelScreen(
+    vm: FortuneViewModel,
+    subPage: WheelSubPage,
+    onSubPageChange: (WheelSubPage) -> Unit,
+    onBack: () -> Unit,
+) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
@@ -2528,20 +3043,31 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val haptics = remember(context) { ToolHaptics(context.applicationContext) }
     val segments = vm.wheelSegments
     val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = C.textMain)
+    val labelStyle = MaterialTheme.typography.labelMedium.copy(
+        color = C.textMain,
+        fontWeight = FontWeight.SemiBold,
+    )
     val palette = if (C.isLight) {
         listOf(
-            Color(0xFFFFD166),
-            Color(0xFFFF6B6B),
-            Color(0xFF56D6B1),
-            Color(0xFF58AEEF),
-            Color(0xFFA98AF4),
-            Color(0xFFFF9F43),
+            Color(0xFFD7E7F0),
+            Color(0xFFF1DCD6),
+            Color(0xFFDDECE1),
+            Color(0xFFECE8D4),
+            Color(0xFFE4E0ED),
+            Color(0xFFF2E2D6),
         )
     } else {
-        listOf(C.gold, C.rose, C.mint, Color(0xFF6C8EAD), Color(0xFFB07AA1), Color(0xFFD9A566))
+        listOf(
+            Color(0xFF344C5B),
+            Color(0xFF5B403B),
+            Color(0xFF354F40),
+            Color(0xFF504D37),
+            Color(0xFF464255),
+            Color(0xFF584638),
+        )
     }
-    val wheelDivider = if (C.isLight) Color.White.copy(alpha = 0.88f) else C.line
+    val wheelDivider = Color.White.copy(alpha = if (C.isLight) 0.76f else 0.38f)
+    val wheelPointer = MaterialTheme.colorScheme.tertiary
 
     val angle = remember { Animatable(0f) }
     val glow = remember { Animatable(0f) }
@@ -2549,8 +3075,17 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     var spinStartMs by remember { mutableStateOf(0L) }
     var spinJob by remember { mutableStateOf<Job?>(null) }
     var winnerIndex by remember { mutableStateOf(-1) }
-    var wheelSubPage by remember { mutableStateOf(WheelSubPage.Main) }
     var lastShakeAt by remember { mutableStateOf(0L) }
+
+    val handleBack: () -> Unit = {
+        if (subPage == WheelSubPage.Main) {
+            onBack()
+        } else {
+            onSubPageChange(WheelSubPage.Main)
+        }
+    }
+
+    BackHandler(onBack = handleBack)
 
     fun kick(direction: Float = 1f) {
         val n = vm.wheelSegments.size
@@ -2658,7 +3193,7 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                 val force = sqrt(x * x + y * y + z * z)
                 val now = System.currentTimeMillis()
                 val threshold = if (spinning) 45f else 25f
-                if (force > threshold && now - lastShakeAt > 350L && wheelSubPage == WheelSubPage.Main) {
+                if (force > threshold && now - lastShakeAt > 350L && subPage == WheelSubPage.Main) {
                     lastShakeAt = now
                     tryAccelerate()
                 }
@@ -2680,28 +3215,24 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            TextButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("小工具")
-            }
-            Text("转盘", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(72.dp))
-        }
+        SubScreenHeader(title = "转盘", onBack = handleBack) {}
 
-        when (wheelSubPage) {
+        when (subPage) {
             WheelSubPage.Settings -> WheelSettingsView(vm)
             WheelSubPage.History -> WheelHistoryView(vm)
             WheelSubPage.Main -> {
+                GeminiGlassPanel(
+                    tone = GeminiGlassTone.Neutral,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .widthIn(max = 520.dp)
+                        .fillMaxWidth()
+                        .aspectRatio(1f),
+                ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
+                        .fillMaxSize()
+                        .padding(12.dp)
                         .pointerInput(Unit) {
                         val cx = size.width / 2f
                         val cy = size.height / 2f
@@ -2778,15 +3309,6 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                             strokeWidth = 1.dp.toPx(),
                         )
                     }
-                    drawArc(
-                        color = C.line,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
-                        style = Stroke(width = 2.dp.toPx()),
-                    )
                     val labelR = r * 0.62f
                     for (i in 0 until n) {
                         val label = segments[i].take(6)
@@ -2806,6 +3328,21 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                             topLeft = topLeft,
                             size = arcSize,
                             style = Stroke(width = 6.dp.toPx()),
+                        )
+                    }
+                }
+                GeminiGlassPanel(
+                    tone = GeminiGlassTone.Neutral,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(72.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier
+                                .size(10.dp)
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.72f), CircleShape),
                         )
                     }
                 }
@@ -2829,8 +3366,9 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                         lineTo(w * 0.88f, 2f)
                         close()
                     }
-                    drawPath(tri, C.danger)
+                    drawPath(tri, wheelPointer)
                 }
+            }
             }
 
             val winnerLabel = segments.getOrNull(winnerIndex)
@@ -2844,33 +3382,43 @@ private fun WheelScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Surface(
-                    onClick = { wheelSubPage = WheelSubPage.Settings },
-                    color = C.panel,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, C.line),
+                    onClick = { onSubPageChange(WheelSubPage.Settings) },
+                    color = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Teal,
+                        shape = CircleShape,
                     ) {
-                        Icon(Icons.Default.Settings, contentDescription = null, tint = C.textSub, modifier = Modifier.size(18.dp))
-                        Text("设置", color = C.textMain, style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("设置", style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
                 Surface(
-                    onClick = { wheelSubPage = WheelSubPage.History },
-                    color = C.panel,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, C.line),
+                    onClick = { onSubPageChange(WheelSubPage.History) },
+                    color = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Neutral,
+                        shape = CircleShape,
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = C.textSub, modifier = Modifier.size(18.dp))
-                        Text("历史", color = C.textMain, style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("历史", style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }
@@ -2901,13 +3449,20 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             quickCounts.forEach { count ->
                 Surface(
                     onClick = { vm.setWheelSegmentCount(count) },
-                    color = if (segments.size == count) C.gold else C.panel,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, C.line),
+                    color = if (segments.size == count) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    contentColor = if (segments.size == count) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    shape = CircleShape,
                 ) {
                     Text(
                         count.toString(),
-                        color = if (segments.size == count) C.ink else C.textMain,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -2921,10 +3476,9 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             Text("重置为「是/否」", color = C.textSub)
         }
         segments.forEachIndexed { index, seg ->
-            Card(
-                colors = CardDefaults.cardColors(containerColor = C.panel),
-                border = BorderStroke(1.dp, C.line),
-                shape = RoundedCornerShape(8.dp),
+            GeminiGlassPanel(
+                tone = GeminiGlassTone.Neutral,
+                shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
@@ -2932,7 +3486,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedTextField(
+                    GeminiGlassTextField(
                         value = seg,
                         onValueChange = { vm.updateWheelSegment(index, it) },
                         label = { Text("第 ${index + 1} 块") },
@@ -2952,8 +3506,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             onClick = { vm.addWheelSegment() },
             enabled = segments.size < 25,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-            border = BorderStroke(1.dp, C.line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
         ) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(6.dp))
@@ -3008,10 +3561,9 @@ private fun WheelHistoryView(vm: FortuneViewModel) {
             Text("还没有转盘记录", color = C.textSub, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
         } else {
             history.forEach { entry ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = C.panel),
-                    border = BorderStroke(1.dp, C.line),
-                    shape = RoundedCornerShape(8.dp),
+                GeminiGlassPanel(
+                    tone = GeminiGlassTone.Neutral,
+                    shape = MaterialTheme.shapes.large,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
@@ -3047,6 +3599,7 @@ private fun DiceScreen(onBack: () -> Unit) {
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val rollInteractionSource = remember { MutableInteractionSource() }
     val haptics = remember(context) { ToolHaptics(context.applicationContext) }
     val physicsWorld = remember { DicePhysicsWorld() }
     var diceCount by remember { mutableStateOf(1) }
@@ -3146,30 +3699,19 @@ private fun DiceScreen(onBack: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.fillMaxWidth(),
+        SubScreenHeader(title = "摇骰子", onBack = onBack) {}
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier.padding(if (layout.compactWidth) 12.dp else 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 12.dp else 16.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    TextButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("小工具")
-                    }
-                    Text("摇骰子", color = C.textMain, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.width(72.dp))
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -3253,29 +3795,53 @@ private fun DiceScreen(onBack: () -> Unit) {
                         )
                     }
                 }
-                Button(
+                Surface(
                     onClick = { startRoll() },
                     enabled = !rolling,
-                    colors = ButtonDefaults.buttonColors(containerColor = C.accentFill, contentColor = C.onAccentFill),
-                    modifier = Modifier.fillMaxWidth(),
+                    interactionSource = rollInteractionSource,
+                    color = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(pressScaleModifier(rollInteractionSource)),
                 ) {
-                    Icon(Icons.Default.Casino, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (rolling) "摇动中" else "摇骰子")
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Gold,
+                        shape = CircleShape,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 14.dp)
+                                .graphicsLayer { alpha = if (rolling) 0.42f else 1f },
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.Casino,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (rolling) "摇动中" else "摇骰子",
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
-                Text(
-                    "点击按钮或摇动手机开始；向下滑动可遮住赌盘和结果。",
-                    color = C.textSub,
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
         }
 
         if (history.isNotEmpty()) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = C.panelAlt),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
+            GeminiGlassPanel(
+                tone = GeminiGlassTone.Neutral,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("最近结果", color = C.textMain, fontWeight = FontWeight.SemiBold)
@@ -3306,11 +3872,10 @@ private fun DiceDropdown(
                 onClick = { expanded = true },
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = C.textMain),
-                border = BorderStroke(1.dp, C.line),
+                shape = MaterialTheme.shapes.large,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
             ) {
-                Text(value, color = C.textMain, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { (rawValue, text) ->
@@ -3493,6 +4058,9 @@ private fun PhysicsDiceStage(
     val meshFaces = remember(sides) { buildPhysicsMeshFaces(mesh) }
     val meshEdges = remember(sides) { buildPhysicsMeshEdges(mesh) }
     val camera = remember(sides) { if (sides == 4) DICE_D4_CAMERA else DICE_TOP_CAMERA }
+    val glassLight = LocalGlassLightController.current
+    val rimTint = MaterialTheme.colorScheme.secondary
+    val rimAccent = MaterialTheme.colorScheme.primary
     val dice = world.renderState
     val fallbackBodies = remember(fallbackFaces, sides, world) {
         world.restingFallback(fallbackFaces, sides)
@@ -3511,11 +4079,14 @@ private fun PhysicsDiceStage(
             modifier = Modifier.fillMaxSize(),
         )
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(Color.Black.copy(alpha = 0.055f))
+            drawRect(Color.Black.copy(alpha = 0.10f))
             drawRoundRect(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFF0D0D0E), Color(0xFF343536), Color(0xFF0A0A0B)),
-                    start = Offset(0f, 0f),
+                    colors = listOf(Color(0xFF071013), Color(0xFF2B383E), Color(0xFF080D10)),
+                    start = Offset(
+                        size.width * (0.12f + glassLight.x * 0.10f),
+                        size.height * (0.10f + glassLight.y * 0.08f),
+                    ),
                     end = Offset(size.width, size.height),
                 ),
                 topLeft = Offset(5.dp.toPx(), 5.dp.toPx()),
@@ -3525,9 +4096,17 @@ private fun PhysicsDiceStage(
             )
             drawRoundRect(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFF3B1D0E), Color(0xFF9B5729), Color(0xFF41200F)),
-                    start = Offset(0f, size.height * 0.2f),
-                    end = Offset(size.width, size.height * 0.8f),
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.64f),
+                        rimTint.copy(alpha = 0.72f),
+                        rimAccent.copy(alpha = 0.54f),
+                        Color.White.copy(alpha = 0.38f),
+                    ),
+                    start = Offset(
+                        size.width * (0.08f + glassLight.x * 0.16f),
+                        size.height * (0.16f + glassLight.y * 0.12f),
+                    ),
+                    end = Offset(size.width * 0.92f, size.height * 0.84f),
                 ),
                 topLeft = Offset(11.dp.toPx(), 11.dp.toPx()),
                 size = Size(size.width - 22.dp.toPx(), size.height - 22.dp.toPx()),
@@ -3535,7 +4114,7 @@ private fun PhysicsDiceStage(
                 style = Stroke(width = 3.dp.toPx()),
             )
             drawRoundRect(
-                color = Color.White.copy(alpha = 0.16f),
+                color = Color.White.copy(alpha = 0.42f),
                 topLeft = Offset(13.dp.toPx(), 13.dp.toPx()),
                 size = Size(size.width - 26.dp.toPx(), size.height - 26.dp.toPx()),
                 cornerRadius = CornerRadius(13.dp.toPx(), 13.dp.toPx()),
@@ -4847,23 +5426,19 @@ private enum class SchedulePage {
 @Composable
 private fun ScheduleScreen(
     vm: FortuneViewModel,
+    navigation: ScheduleNavigationState,
     requestedDetailDate: String?,
     onDetailRequestHandled: () -> Unit,
 ) {
-    val C = LocalFortunePalette.current
     val selectedDate = vm.selectedScheduleDate
-    var detailDateText by rememberSaveable { mutableStateOf(requestedDetailDate) }
-    var pageName by rememberSaveable { mutableStateOf(SchedulePage.Calendar.name) }
-    var editorReturnPageName by rememberSaveable { mutableStateOf(SchedulePage.Calendar.name) }
-    var activeItemId by rememberSaveable { mutableStateOf<Long?>(null) }
-    val page = runCatching { SchedulePage.valueOf(pageName) }.getOrDefault(SchedulePage.Calendar)
-    val editorReturnPage = runCatching { SchedulePage.valueOf(editorReturnPageName) }
+    val page = runCatching { SchedulePage.valueOf(navigation.pageName) }.getOrDefault(SchedulePage.Calendar)
+    val editorReturnPage = runCatching { SchedulePage.valueOf(navigation.editorReturnPageName) }
         .getOrDefault(SchedulePage.Calendar)
-    val detailDate = remember(detailDateText) {
-        detailDateText?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
+    val detailDate = remember(navigation.detailDateText) {
+        navigation.detailDateText?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
     }
-    val activeItem = remember(vm.scheduleItems, activeItemId) {
-        activeItemId?.let { id -> vm.scheduleItems.firstOrNull { it.id == id } }
+    val activeItem = remember(vm.scheduleItems, navigation.activeItemId) {
+        navigation.activeItemId?.let { id -> vm.scheduleItems.firstOrNull { it.id == id } }
     }
 
     LaunchedEffect(requestedDetailDate) {
@@ -4871,8 +5446,8 @@ private fun ScheduleScreen(
             ?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
         if (requestedDate != null) {
             vm.selectScheduleDate(requestedDate)
-            pageName = SchedulePage.Calendar.name
-            detailDateText = requestedDate.toString()
+            navigation.pageName = SchedulePage.Calendar.name
+            navigation.detailDateText = requestedDate.toString()
             onDetailRequestHandled()
         }
     }
@@ -4884,17 +5459,17 @@ private fun ScheduleScreen(
 
     BackHandler(enabled = detailDate != null || page != SchedulePage.Calendar) {
         when {
-            detailDate != null -> detailDateText = null
-            page == SchedulePage.Editor -> pageName = editorReturnPage.name
-            page == SchedulePage.Detail -> pageName = SchedulePage.Memorial.name
-            page == SchedulePage.Memorial -> pageName = SchedulePage.Calendar.name
+            detailDate != null -> navigation.detailDateText = null
+            page == SchedulePage.Editor -> navigation.pageName = editorReturnPage.name
+            page == SchedulePage.Detail -> navigation.pageName = SchedulePage.Memorial.name
+            page == SchedulePage.Memorial -> navigation.pageName = SchedulePage.Calendar.name
         }
     }
     if (detailDate != null) {
         AlmanacDateDetailScreen(
             date = detailDate,
             scheduleItems = vm.scheduleItems.filter { it.date == detailDate.toString() },
-            onBack = { detailDateText = null },
+            onBack = { navigation.detailDateText = null },
             onToggleSchedule = vm::toggleScheduleItem,
             onDeleteSchedule = vm::deleteScheduleItem,
         )
@@ -4907,14 +5482,14 @@ private fun ScheduleScreen(
                 initialDate = activeItem?.let(::scheduleStartDate) ?: selectedDate,
                 existingItem = activeItem,
                 allItems = vm.scheduleItems,
-                onCancel = { pageName = editorReturnPage.name },
+                onCancel = { navigation.pageName = editorReturnPage.name },
                 onSave = { draft ->
                     val saved = vm.saveScheduleDraft(draft, activeItem?.id)
                     vm.selectScheduleDate(
                         runCatching { LocalDate.parse(saved.date) }.getOrDefault(selectedDate)
                     )
-                    activeItemId = saved.id
-                    pageName = editorReturnPage.name
+                    navigation.activeItemId = saved.id
+                    navigation.pageName = editorReturnPage.name
                 },
             )
             return
@@ -4922,30 +5497,30 @@ private fun ScheduleScreen(
         SchedulePage.Memorial -> {
             ScheduleMemorialScreen(
                 items = vm.scheduleItems,
-                onBack = { pageName = SchedulePage.Calendar.name },
+                onBack = { navigation.pageName = SchedulePage.Calendar.name },
                 onItemClick = { item ->
-                    activeItemId = item.id
-                    pageName = SchedulePage.Detail.name
+                    navigation.activeItemId = item.id
+                    navigation.pageName = SchedulePage.Detail.name
                 },
             )
             return
         }
         SchedulePage.Detail -> {
             if (activeItem == null) {
-                LaunchedEffect(activeItemId) { pageName = SchedulePage.Memorial.name }
+                LaunchedEffect(navigation.activeItemId) { navigation.pageName = SchedulePage.Memorial.name }
             } else {
                 ScheduleDetailScreen(
                     item = activeItem,
-                    onBack = { pageName = SchedulePage.Memorial.name },
+                    onBack = { navigation.pageName = SchedulePage.Memorial.name },
                     onEdit = {
-                        editorReturnPageName = SchedulePage.Detail.name
-                        pageName = SchedulePage.Editor.name
+                        navigation.editorReturnPageName = SchedulePage.Detail.name
+                        navigation.pageName = SchedulePage.Editor.name
                     },
                     onToggleDone = { vm.toggleScheduleItem(activeItem.id) },
                     onDelete = {
                         vm.deleteScheduleItem(activeItem.id)
-                        activeItemId = null
-                        pageName = SchedulePage.Memorial.name
+                        navigation.activeItemId = null
+                        navigation.pageName = SchedulePage.Memorial.name
                     },
                 )
             }
@@ -4963,24 +5538,26 @@ private fun ScheduleScreen(
                 vertical = LocalFortuneLayout.current.verticalPadding,
             ),
         verticalArrangement = Arrangement.spacedBy(LocalFortuneLayout.current.sectionSpacing),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        PageHeading("日历", "把值得记住的日子，留在这里")
         CalendarPanel(
             scheduleItems = vm.scheduleItems,
             selectedDate = selectedDate,
             onSelectedDateChange = vm::selectScheduleDate,
             onOpenDateDetail = {
                 vm.selectScheduleDate(it)
-                detailDateText = it.toString()
+                navigation.detailDateText = it.toString()
             },
             onAddSchedule = {
-                activeItemId = null
-                editorReturnPageName = SchedulePage.Calendar.name
-                pageName = SchedulePage.Editor.name
+                navigation.activeItemId = null
+                navigation.editorReturnPageName = SchedulePage.Calendar.name
+                navigation.pageName = SchedulePage.Editor.name
             },
         )
 
         ScheduleMemorialEntryCard(itemCount = vm.scheduleItems.size) {
-            pageName = SchedulePage.Memorial.name
+            navigation.pageName = SchedulePage.Memorial.name
         }
     }
 }
@@ -5089,14 +5666,9 @@ private fun CalendarPanel(
         animationScope.launch { moveToPage(targetPage, animateAdjacent = true) }
     }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    Box(Modifier.widthIn(max = 920.dp).fillMaxWidth()) {
         Column(
-            Modifier.padding(layout.cardPadding),
+            Modifier.padding(vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 10.dp else 14.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -5160,20 +5732,20 @@ private fun CalendarPanel(
                 }
             }
             Box(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { picker = CalendarPicker.Year }) {
                         Text(
                             "${visibleMonth.year}年",
-                            color = C.gold,
-                            style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
+                            color = C.textMain,
+                            style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
                     TextButton(onClick = { picker = CalendarPicker.Month }) {
                         Text(
                             "${visibleMonth.monthValue}月",
-                            color = C.gold,
-                            style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
+                            color = C.textMain,
+                            style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -5425,7 +5997,7 @@ private fun CalendarDayCell(
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnDoubleClick by rememberUpdatedState(onDoubleClick)
     val bgColor = when {
-        isSelected -> C.gold.copy(alpha = 0.18f)
+        isSelected -> MaterialTheme.colorScheme.primary
         isToday -> C.mint.copy(alpha = 0.14f)
         else -> Color.Transparent
     }
@@ -5437,8 +6009,8 @@ private fun CalendarDayCell(
     Box(
         modifier = modifier
             .height(layout.calendarCellHeight)
-            .background(bgColor, RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .background(bgColor, MaterialTheme.shapes.medium)
+            .border(1.dp, borderColor, MaterialTheme.shapes.medium)
             .pointerInput(date) {
                 var previousTapUptime = Long.MIN_VALUE
                 val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
@@ -5469,10 +6041,10 @@ private fun CalendarDayCell(
                 date.dayOfMonth.toString(),
                 color = when {
                     !inMonth -> C.textSub.copy(alpha = 0.42f)
-                    isSelected -> C.gold
+                    isSelected -> MaterialTheme.colorScheme.onPrimary
                     else -> C.textMain
                 },
-                style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -5480,6 +6052,7 @@ private fun CalendarDayCell(
             Text(
                 info.cellLabel,
                 color = when {
+                    isSelected -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.90f)
                     !inMonth -> C.textSub.copy(alpha = 0.36f)
                     info.solarTerm.isNotBlank() || info.traditionalFestivals.isNotEmpty() -> C.gold
                     else -> C.textSub
@@ -5494,7 +6067,7 @@ private fun CalendarDayCell(
                 overflow = TextOverflow.Ellipsis,
             )
             if (hasSchedule) {
-                Box(Modifier.size(3.dp).background(C.mint, CircleShape))
+                Box(Modifier.size(3.dp).background(if (isSelected) MaterialTheme.colorScheme.onPrimary else C.mint, CircleShape))
             }
         }
     }
@@ -5504,8 +6077,15 @@ private fun CalendarDayCell(
 private fun DateDetail(info: CalendarDateInfo, scheduleItems: List<ScheduleItem>) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
-    Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(layout.cardPadding), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(layout.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
             Text(
                 "${info.date.monthValue}月${info.date.dayOfMonth}日 周${info.weekday}",
                 color = C.textMain,
@@ -5558,7 +6138,10 @@ private fun AlmanacDateDetailScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         SubScreenHeader(title = "日期详情", onBack = onBack) {}
         val info = detail
         if (info == null) {
@@ -5570,6 +6153,7 @@ private fun AlmanacDateDetailScreen(
 
         LazyColumn(
             modifier = Modifier
+                .widthIn(max = 920.dp)
                 .fillMaxSize()
                 .padding(horizontal = layout.horizontalPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -5693,8 +6277,8 @@ private fun AlmanacDateDetailScreen(
             if (scheduleItems.isEmpty()) {
                 item(key = "schedule-empty") {
                     Surface(
-                        color = C.panelAlt,
-                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = MaterialTheme.shapes.large,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("当日还没有日程。", color = C.textSub, modifier = Modifier.padding(16.dp))
@@ -5725,11 +6309,9 @@ private fun AlmanacDateDetailScreen(
 
 @Composable
 private fun AlmanacSectionCard(title: String, content: @Composable () -> Unit) {
-    val C = LocalFortunePalette.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -5738,7 +6320,6 @@ private fun AlmanacSectionCard(title: String, content: @Composable () -> Unit) {
         ) {
             Text(
                 title,
-                color = C.textMain,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -5851,14 +6432,22 @@ private fun CalendarValuePicker(
                 items(values, key = { it }) { value ->
                     Surface(
                         onClick = { onSelect(value) },
-                        color = if (value == selected) C.gold.copy(alpha = 0.18f) else Color.Transparent,
-                        shape = RoundedCornerShape(6.dp),
+                        color = if (value == selected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            Color.Transparent
+                        },
+                        contentColor = if (value == selected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 label(value),
-                                color = if (value == selected) C.gold else C.textMain,
                                 fontWeight = if (value == selected) FontWeight.SemiBold else FontWeight.Normal,
                             )
                         }
@@ -6021,9 +6610,14 @@ private fun ScheduleItemCard(
     val C = LocalFortunePalette.current
     var confirm by remember { mutableStateOf(false) }
     Card(
-        colors = CardDefaults.cardColors(containerColor = if (item.done) C.panelAlt else C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.done) {
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        ),
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -6100,7 +6694,7 @@ private fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun MineScreen(vm: FortuneViewModel) {
-    var section by remember { mutableStateOf(MineSection.Profile) }
+    var section by rememberSaveable { mutableStateOf(MineSection.Profile) }
     BackHandler(enabled = section != MineSection.Profile) { section = MineSection.Profile }
     when (section) {
         MineSection.Profile -> MineProfile(
@@ -6155,6 +6749,7 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(
                 horizontal = layout.horizontalPadding,
@@ -6162,36 +6757,59 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
             ),
         verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
-        Row(
+        PageHeading("我的", "记录生活，也了解自己")
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.extraLarge,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Surface(
-                color = C.gold.copy(alpha = 0.16f),
-                shape = CircleShape,
-                modifier = Modifier.size(if (layout.compactWidth) 54.dp else 64.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(layout.cardPadding),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.AccountCircle,
-                        contentDescription = null,
-                        tint = C.gold,
-                        modifier = Modifier.size(if (layout.compactWidth) 36.dp else 42.dp),
+                GeminiGlassPanel(
+                    tone = GeminiGlassTone.Rose,
+                    shape = CircleShape,
+                    modifier = Modifier.size(if (layout.compactWidth) 54.dp else 64.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(vm.nickname.firstOrNull()?.toString() ?: "知", color = MaterialTheme.colorScheme.tertiary,
+                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Medium)
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        vm.nickname.ifBlank { "知否用户" },
+                        style = if (layout.compactWidth) {
+                            MaterialTheme.typography.titleMedium
+                        } else {
+                            MaterialTheme.typography.titleLarge
+                        },
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "个人空间",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    vm.nickname.ifBlank { "知否用户" },
-                    color = C.textMain,
-                    style = (if (layout.compactWidth) {
-                        MaterialTheme.typography.titleMedium
-                    } else {
-                        MaterialTheme.typography.titleLarge
-                    }).copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
-                )
-                Text("本地账户", color = C.textSub, style = MaterialTheme.typography.bodyMedium)
+                if (editingProfile) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = ::cancelEditingProfile) {
+                            Text("取消", style = MaterialTheme.typography.labelMedium)
+                        }
+                        TextButton(onClick = ::finishEditingProfile, enabled = draftBirthDateValid) {
+                            Text("完成", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                } else {
+                    IconButton(onClick = ::startEditingProfile) {
+                        Icon(Icons.Default.Edit, contentDescription = "修改个人资料")
+                    }
+                }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -6200,10 +6818,9 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
         }
         SettingsEntryRow(icon = Icons.AutoMirrored.Filled.List, title = "占卜记录", subtitle = "查看历史占卜与解读", onClick = onOpenHistory)
         SettingsEntryRow(icon = Icons.Default.Settings, title = "设置", subtitle = "主题、AI 解读、语音与隐私", onClick = onOpenSettings)
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(Modifier.padding(layout.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -6213,35 +6830,16 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("个人资料", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                    if (editingProfile) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = ::cancelEditingProfile) {
-                                Text("取消", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                            }
-                            TextButton(
-                                onClick = ::finishEditingProfile,
-                                enabled = draftBirthDateValid,
-                            ) {
-                                Text("完成", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    } else {
-                        TextButton(onClick = ::startEditingProfile) {
-                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("修改")
-                        }
-                    }
                 }
                 if (editingProfile) {
-                    OutlinedTextField(
+                    GeminiGlassTextField(
                         value = draftNickname,
                         onValueChange = { draftNickname = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("昵称") },
                         singleLine = true,
                     )
-                    OutlinedTextField(
+                    GeminiGlassTextField(
                         value = draftBirthDate,
                         onValueChange = { draftBirthDate = it.take(10) },
                         modifier = Modifier.fillMaxWidth(),
@@ -6255,7 +6853,7 @@ private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpen
                             null
                         },
                     )
-                    OutlinedTextField(
+                    GeminiGlassTextField(
                         value = draftFortuneKeywords,
                         onValueChange = { draftFortuneKeywords = it.take(120) },
                         modifier = Modifier.fillMaxWidth(),
@@ -6281,27 +6879,36 @@ private fun ProfileMetric(label: String, value: String, modifier: Modifier = Mod
     val layout = LocalFortuneLayout.current
     Surface(
         onClick = onClick ?: {},
-        color = C.panelAlt,
-        shape = RoundedCornerShape(8.dp),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
         modifier = modifier,
         enabled = onClick != null,
     ) {
-        Column(
-            modifier = Modifier.padding(if (layout.compactWidth) 12.dp else 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Teal,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = if (layout.compactWidth) 88.dp else 100.dp),
         ) {
-            Text(
-                value,
-                color = C.gold,
-                style = if (layout.compactWidth) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                label,
-                color = C.textSub,
-                style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
-            )
+            Column(
+                modifier = Modifier.fillMaxSize().padding(if (layout.compactWidth) 12.dp else 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    value,
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = if (layout.compactWidth) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    label,
+                    color = C.textSub,
+                    style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
@@ -6309,28 +6916,32 @@ private fun ProfileMetric(label: String, value: String, modifier: Modifier = Mod
 // 二级页面顶部：返回按钮 + 标题 + 可选右侧操作。
 @Composable
 internal fun SubScreenHeader(title: String, onBack: () -> Unit, actions: @Composable () -> Unit) {
-    val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                horizontal = if (layout.compactWidth) 6.dp else 12.dp,
-                vertical = if (layout.compactHeight) 4.dp else 8.dp,
+                horizontal = if (layout.compactWidth) 4.dp else 8.dp,
+                vertical = if (layout.compactHeight) 4.dp else 6.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = C.textMain)
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "返回",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
         }
         Text(
             title,
-            color = C.textMain,
-            style = MaterialTheme.typography.titleLarge.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.weight(1f))
         actions()
     }
 }
@@ -6342,30 +6953,48 @@ private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String,
     val layout = LocalFortuneLayout.current
     Surface(
         onClick = onClick,
-        color = C.panel,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, C.line),
+        color = Color.Transparent,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.padding(
-                horizontal = layout.cardPadding,
-                vertical = if (layout.compactHeight) 11.dp else 14.dp,
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 10.dp else 14.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Icon(icon, contentDescription = null, tint = C.gold, modifier = Modifier.size(if (layout.compactWidth) 22.dp else 24.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    title,
-                    color = C.textMain,
-                    style = if (layout.compactWidth) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(subtitle, color = C.textSub, style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.padding(
+                    horizontal = layout.cardPadding,
+                    vertical = if (layout.compactHeight) 11.dp else 14.dp,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 10.dp else 14.dp),
+            ) {
+                GeminiGlassPanel(
+                    tone = GeminiGlassTone.Rose,
+                    shape = CircleShape,
+                    modifier = Modifier.size(if (layout.compactWidth) 38.dp else 42.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(21.dp),
+                        )
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        title,
+                        color = C.textMain,
+                        style = if (layout.compactWidth) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(subtitle, color = C.textSub, style = MaterialTheme.typography.bodySmall)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
         }
     }
 }
@@ -6375,22 +7004,37 @@ private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String,
 private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
+    val context = LocalContext.current
+    val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            vm.updateCustomBackgroundUri(uri.toString())
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         SubScreenHeader(title = "设置", onBack = onBack) {}
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
             verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
         ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("主题", color = C.textMain, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("外观", color = C.textMain, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                Text("明暗模式", color = C.textSub, style = MaterialTheme.typography.labelMedium)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     val labels = listOf("深色" to ThemeMode.Dark, "浅色" to ThemeMode.Light, "跟随系统" to ThemeMode.System)
                     labels.forEachIndexed { i, (label, mode) ->
@@ -6401,12 +7045,69 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                         ) { Text(label) }
                     }
                 }
+                Text("背景", color = C.textSub, style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    BackgroundChoice(
+                        label = AppBackgroundStyle.Solid.label,
+                        selected = vm.backgroundStyle == AppBackgroundStyle.Solid,
+                        onClick = { vm.updateBackgroundStyle(AppBackgroundStyle.Solid) },
+                    )
+                    AppBackgroundStyle.entries
+                        .filter { it.drawableRes != null }
+                        .forEach { style ->
+                            BackgroundChoice(
+                                label = style.label,
+                                imageRes = style.drawableRes,
+                                selected = vm.backgroundStyle == style,
+                                onClick = { vm.updateBackgroundStyle(style) },
+                            )
+                        }
+                    BackgroundChoice(
+                        label = AppBackgroundStyle.Custom.label,
+                        custom = true,
+                        customImageUri = vm.customBackgroundUri,
+                        selected = vm.backgroundStyle == AppBackgroundStyle.Custom,
+                        onClick = {
+                            if (vm.customBackgroundUri.isBlank()) {
+                                backgroundPicker.launch(arrayOf("image/*"))
+                            } else {
+                                vm.updateBackgroundStyle(AppBackgroundStyle.Custom)
+                            }
+                        },
+                    )
+                }
+                if (vm.backgroundStyle == AppBackgroundStyle.Custom && vm.customBackgroundUri.isNotBlank()) {
+                    TextButton(onClick = { backgroundPicker.launch(arrayOf("image/*")) }) {
+                        Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("更换背景图片")
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("动态玻璃高光", color = C.textMain, style = MaterialTheme.typography.bodyLarge)
+                        Text("随设备倾斜缓慢流动", color = C.textSub, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(
+                        checked = vm.glassMotionEnabled,
+                        onCheckedChange = vm::updateGlassMotionEnabled,
+                    )
+                }
             }
         }
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
@@ -6441,7 +7142,7 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                OutlinedTextField(
+                GeminiGlassTextField(
                     value = vm.aiApiKey,
                     onValueChange = { vm.updateAiApiKey(it) },
                     modifier = Modifier.fillMaxWidth(),
@@ -6450,14 +7151,14 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                 )
-                OutlinedTextField(
+                GeminiGlassTextField(
                     value = vm.aiModel,
                     onValueChange = { vm.updateAiModel(it) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("模型") },
                     singleLine = true,
                 )
-                OutlinedTextField(
+                GeminiGlassTextField(
                     value = vm.aiEndpoint,
                     onValueChange = { vm.updateAiEndpoint(it) },
                     modifier = Modifier.fillMaxWidth(),
@@ -6465,16 +7166,16 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                     singleLine = true,
                 )
                 Text(
-                    "AI Key、模型和接口地址只写入本机设置，不会进入 Git 仓库。未配置 Key 时仍可使用本地占卜，但不能生成 AI 解读或对话回复。",
+                    "密钥与接口配置仅保存在本机。开启 AI 后，问题和相关占卜内容会发送到你配置的服务。",
                     color = C.textSub,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Teal,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
@@ -6493,7 +7194,7 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                 }
                 AnimatedVisibility(vm.cloudSpeechEnabled) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
+                        GeminiGlassTextField(
                             value = vm.cloudSpeechApiKey,
                             onValueChange = { vm.updateCloudSpeechApiKey(it) },
                             modifier = Modifier.fillMaxWidth(),
@@ -6502,14 +7203,14 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
                         )
-                        OutlinedTextField(
+                        GeminiGlassTextField(
                             value = vm.cloudSpeechModel,
                             onValueChange = { vm.updateCloudSpeechModel(it) },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("语音模型") },
                             singleLine = true,
                         )
-                        OutlinedTextField(
+                        GeminiGlassTextField(
                             value = vm.cloudSpeechEndpoint,
                             onValueChange = { vm.updateCloudSpeechEndpoint(it) },
                             modifier = Modifier.fillMaxWidth(),
@@ -6525,14 +7226,14 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
                 }
             }
         }
-        Card(
-            colors = CardDefaults.cardColors(containerColor = C.panel),
-            border = BorderStroke(1.dp, C.line),
-            shape = RoundedCornerShape(8.dp),
+        GeminiGlassPanel(
+            tone = GeminiGlassTone.Neutral,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("应用定位", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                Text("知否运势是安装即用的手机端应用，所有基础记录都保存在本机。后续可以继续扩展账号同步、AI 解读、提醒和会员能力。", color = C.textSub)
+                Text("数据与隐私", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                Text("占卜记录、日程和个人资料保存在本机。离线功能无需联网；AI 服务仅在使用时发送相关内容。", color = C.textSub)
             }
         }
     }
@@ -6540,12 +7241,113 @@ private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
 }
 
 @Composable
+private fun BackgroundChoice(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    imageRes: Int? = null,
+    custom: Boolean = false,
+    customImageUri: String = "",
+) {
+    val palette = LocalFortunePalette.current
+    Column(
+        modifier = Modifier
+            .width(104.dp)
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .clip(MaterialTheme.shapes.large)
+                .background(
+                    if (imageRes == null && !custom) {
+                        Brush.linearGradient(
+                            0.0f to Color(0xFF0F1116),
+                            0.48f to Color(0xFF20242C),
+                            0.52f to Color(0xFFF1F3F7),
+                            1.0f to Color.White,
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                                MaterialTheme.colorScheme.surfaceContainerLow,
+                            ),
+                        )
+                    },
+                )
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                    },
+                    shape = MaterialTheme.shapes.large,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                imageRes != null -> Image(
+                    painter = painterResource(imageRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                custom && customImageUri.isNotBlank() -> AppBackgroundImage(
+                    style = AppBackgroundStyle.Custom,
+                    customImageUri = customImageUri,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                custom -> Icon(
+                    Icons.Default.Wallpaper,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(25.dp),
+                )
+            }
+            if (selected) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(20.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            text = label,
+            color = if (selected) MaterialTheme.colorScheme.onSurface else palette.textSub,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.heightIn(min = 32.dp),
+        )
+    }
+}
+
+@Composable
 private fun CoinCastingProgressCard(lines: List<CoinLineResult>, question: String) {
     val C = LocalFortunePalette.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.gold.copy(alpha = 0.55f)),
-        shape = RoundedCornerShape(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Gold,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -6586,48 +7388,51 @@ private fun CoinCastingProgressCard(lines: List<CoinLineResult>, question: Strin
 private fun CoinHexagramDetail(reading: FortuneReading) {
     val C = LocalFortunePalette.current
     val movingCount = reading.coinLines.count { it.isMoving }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(C.panelAlt, RoundedCornerShape(6.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Gold,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Text("六次投掷记录", color = C.textMain, fontWeight = FontWeight.SemiBold)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("本卦", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                Text(
-                    reading.primaryHexagram.ifBlank { reading.title },
-                    color = C.gold,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
+            Text("六次投掷记录", color = C.textMain, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("本卦", color = C.textSub, style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        reading.primaryHexagram.ifBlank { reading.title },
+                        color = C.gold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(if (movingCount == 0) "动爻" else "变卦", color = C.textSub, style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        if (movingCount == 0) "无 · 六爻皆静" else reading.transformedHexagram,
+                        color = if (movingCount == 0) C.textMain else C.mint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            for (position in 6 downTo 1) {
+                CoinLineRow(
+                    position = position,
+                    line = reading.coinLines.firstOrNull { it.position == position },
                 )
             }
-            Column(Modifier.weight(1f)) {
-                Text(if (movingCount == 0) "动爻" else "变卦", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                Text(
-                    if (movingCount == 0) "无 · 六爻皆静" else reading.transformedHexagram,
-                    color = if (movingCount == 0) C.textMain else C.mint,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-        for (position in 6 downTo 1) {
-            CoinLineRow(
-                position = position,
-                line = reading.coinLines.firstOrNull { it.position == position },
+            Text(
+                "阳面=3，阴面=2；第一次投掷为最下方初爻。6、9 为动爻。",
+                color = C.textSub,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
-        Text(
-            "阳面=3，阴面=2；第一次投掷为最下方初爻。6、9 为动爻。",
-            color = C.textSub,
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }
 
@@ -6774,23 +7579,40 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
 @Composable
 private fun CoinFaceChip(isYang: Boolean, revealProgress: Float) {
     val C = LocalFortunePalette.current
-    val density = LocalDensity.current.density
+    val localDensity = LocalDensity.current
+    val density = localDensity.density
+    val labelSize = with(localDensity) { 8.dp.toSp() }
     Box(
         modifier = Modifier
-            .size(19.dp)
+            .size(23.dp)
             .graphicsLayer {
                 rotationY = (1f - revealProgress) * 90f
                 cameraDistance = 8f * density
             }
-            .background(if (isYang) C.gold.copy(alpha = 0.2f) else C.panel, CircleShape)
-            .border(1.dp, if (isYang) C.gold else C.line, CircleShape),
+            .background(
+                Brush.radialGradient(
+                    colors = if (isYang) {
+                        listOf(Color.White.copy(alpha = 0.22f), C.gold.copy(alpha = 0.16f))
+                    } else {
+                        listOf(Color.White.copy(alpha = 0.12f), MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.26f))
+                    },
+                    center = Offset(0f, 0f),
+                ),
+                CircleShape,
+            )
+            .border(1.dp, if (isYang) C.gold.copy(alpha = 0.88f) else C.line, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             if (isYang) "阳" else "阴",
             color = if (isYang) C.gold else C.textSub,
-            fontSize = 9.sp,
+            fontSize = labelSize,
+            lineHeight = labelSize,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -6828,10 +7650,9 @@ private fun TarotDrawingProgressCard(
     question: String,
 ) {
     val C = LocalFortunePalette.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Rose,
+        shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -6976,19 +7797,22 @@ private fun TarotSpreadDetail(reading: FortuneReading) {
                             Text(
                                 "${draw.positionIndex}. ${draw.position.name}",
                                 color = C.textSub,
-                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.labelSmall,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "${draw.card.nameZh} · ${draw.orientationLabel}",
+                                draw.card.nameZh,
                                 color = C.textMain,
-                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.labelSmall,
                                 textAlign = TextAlign.Center,
+                                minLines = 2,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            Text(draw.orientationLabel, color = C.textSub,
+                                style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
                         }
                     }
                     repeat(5 - rowDraws.size) { Spacer(Modifier.weight(1f)) }
@@ -7006,9 +7830,8 @@ private fun TarotSpreadDetail(reading: FortuneReading) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 reading.tarotDraws.sortedBy(TarotDraw::positionIndex).forEach { draw ->
                     Surface(
-                        color = C.panelAlt,
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, C.line),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Column(
                             modifier = Modifier.padding(10.dp),
@@ -7055,10 +7878,9 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     val dense = compact || layout.compactWidth
-    Card(
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        border = BorderStroke(1.dp, C.line),
-        shape = RoundedCornerShape(8.dp),
+    GeminiGlassPanel(
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -7113,8 +7935,31 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
                 Text(reading.aiStatus, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             }
             if (reading.aiInterpretation.isNotBlank()) {
-                Surface(color = C.panelAlt, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, C.line)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = if (C.isLight) 0.12f else 0.09f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                            MaterialTheme.shapes.medium,
+                        )
+                        .padding(vertical = 12.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .width(3.dp)
+                            .background(C.mint, CircleShape),
+                    )
+                    Column(
+                        Modifier.padding(start = 12.dp, end = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         Text(
                             when (reading.kind) {
                                 "铜钱卦" -> "AI 详细解读"
@@ -7134,9 +7979,16 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
 
 @Composable
 private fun Badge(text: String) {
-    val C = LocalFortunePalette.current
-    Surface(color = C.panelAlt, shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, C.line)) {
-        Text(text, color = C.gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+    Surface(
+        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f),
+        contentColor = MaterialTheme.colorScheme.tertiary,
+        shape = CircleShape,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        )
     }
 }
 
@@ -7144,25 +7996,30 @@ private fun Badge(text: String) {
 private fun FortuneDial(score: Int) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
-    val trackColor = if (C.isLight) Color(0xFFE7EDF3) else C.panelAlt
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     val dialColors = if (C.isLight) {
         listOf(
-            Color(0xFF35C8AD),
-            Color(0xFFFFD05C),
-            Color(0xFFFF7394),
-            Color(0xFF35C8AD),
+            Color(0xFF6F95F8),
+            Color(0xFF45C7B5),
+            Color(0xFFF0C859),
+            Color(0xFF6F95F8),
         )
     } else {
-        listOf(C.mint, C.gold, C.rose, C.mint)
+        listOf(
+            Color(0xFF91AFFF),
+            C.mint,
+            C.gold,
+            Color(0xFF91AFFF),
+        )
     }
-    Card(
+    GeminiGlassPanel(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = C.panel),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, C.line),
+        tone = GeminiGlassTone.Neutral,
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
         Row(
-            modifier = Modifier.padding(if (layout.compactWidth) 14.dp else 20.dp),
+            modifier = Modifier
+                .padding(if (layout.compactWidth) 16.dp else 22.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 12.dp else 18.dp),
         ) {
@@ -7183,7 +8040,12 @@ private fun FortuneDial(score: Int) {
                         size = Size(size.width, size.height),
                     )
                 }
-                Text("$score", color = C.textMain, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "$score",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                )
             }
             Column(
                 modifier = Modifier.weight(1f),
@@ -7191,12 +8053,12 @@ private fun FortuneDial(score: Int) {
             ) {
                 Text(
                     "今日节奏",
-                    color = C.textMain,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = if (layout.compactWidth) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                 )
                 Text(
                     "用于排列今日提示的相对刻度，不代表概率或确定结论。",
-                    color = C.textSub,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -7210,81 +8072,98 @@ private fun InsightStrip(
     aiConnected: Boolean,
     onTap: (DailyInsightCategory) -> Unit,
 ) {
-    val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
-    val dots = listOf(C.mint, C.rose, C.gold)
-    Surface(
-        color = C.panelAlt,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, C.line),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = if (layout.compactHeight) 88.dp else 104.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    val accents = listOf(
+        MaterialTheme.colorScheme.secondary,
+        MaterialTheme.colorScheme.tertiary,
+        MaterialTheme.colorScheme.primary,
+    )
+    if (layout.compactWidth || LocalDensity.current.fontScale > 1.2f) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             insights.forEachIndexed { index, insight ->
-                val accent = dots[index]
-                val interactionSource = remember(insight.category) { MutableInteractionSource() }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(
-                            interactionSource = interactionSource,
-                            indication = null,
-                            onClick = { onTap(insight.category) },
-                        )
-                        .then(pressScaleModifier(interactionSource))
-                        .padding(
-                            horizontal = if (layout.compactWidth) 9.dp else 12.dp,
-                            vertical = if (layout.compactHeight) 10.dp else 14.dp,
-                        ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(6.dp)
-                                .background(accent.copy(alpha = 0.9f), CircleShape),
-                        )
-                        Spacer(Modifier.width(7.dp))
-                        Text(
-                            insight.category.label,
-                            color = C.textSub,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Spacer(Modifier.weight(1f))
-                        if (aiConnected) {
-                            Icon(
-                                Icons.Default.AutoAwesome,
-                                contentDescription = "查看${insight.category.label} AI 解读",
-                                tint = accent.copy(alpha = 0.66f),
-                                modifier = Modifier.size(13.dp),
-                            )
-                        }
-                    }
-                    Text(
-                        insight.headline,
-                        color = C.textMain,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                InsightTile(
+                    insight = insight,
+                    aiConnected = aiConnected,
+                    accent = accents[index % accents.size],
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onTap(insight.category) },
+                )
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            insights.forEachIndexed { index, insight ->
+                InsightTile(
+                    insight = insight,
+                    aiConnected = aiConnected,
+                    accent = accents[index % accents.size],
+                    modifier = Modifier.weight(1f),
+                    onClick = { onTap(insight.category) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsightTile(
+    insight: DailyInsight,
+    aiConnected: Boolean,
+    accent: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember(insight.category) { MutableInteractionSource() }
+    val colors = MaterialTheme.colorScheme
+    val compact = LocalFortuneLayout.current.compactWidth || LocalDensity.current.fontScale > 1.2f
+    val (icon, fill) = when (insight.category) {
+        DailyInsightCategory.Career -> Icons.Outlined.WorkOutline to colors.secondaryContainer
+        DailyInsightCategory.Relationship -> Icons.Outlined.FavoriteBorder to colors.tertiaryContainer
+        DailyInsightCategory.Finance -> Icons.Outlined.AccountBalanceWallet to colors.primaryContainer
+    }
+    Surface(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = modifier
+            .heightIn(min = if (compact) 76.dp else 120.dp)
+            .then(pressScaleModifier(interactionSource)),
+        color = fill,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        if (compact) {
+            Row(
+                Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(icon, null, tint = accent, modifier = Modifier.size(24.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(insight.category.label, color = accent, style = MaterialTheme.typography.labelMedium)
+                    Text(insight.headline, style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                if (index < insights.lastIndex) {
-                    Box(
-                        Modifier
-                            .height(if (layout.compactHeight) 58.dp else 72.dp)
-                            .width(1.dp)
-                            .background(C.line.copy(alpha = 0.9f)),
-                    )
+                if (aiConnected) Icon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(18.dp))
+            }
+        } else {
+            Column(
+                Modifier.padding(horizontal = 13.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
+                    Text(insight.category.label, color = accent, style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.weight(1f))
+                    if (aiConnected) Icon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(14.dp))
                 }
+                Text(insight.headline, style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -7300,37 +8179,174 @@ private fun DailyAiInsightDialog(
     onDismiss: () -> Unit,
 ) {
     val C = LocalFortunePalette.current
-    AlertDialog(
+    val configuration = LocalConfiguration.current
+    val tone = when (insight.category) {
+        DailyInsightCategory.Career -> GeminiGlassTone.Gold
+        DailyInsightCategory.Relationship -> GeminiGlassTone.Rose
+        DailyInsightCategory.Finance -> GeminiGlassTone.Teal
+    }
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("${insight.category.label} · 今日解读") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(insight.summary, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
-                when {
-                    loading -> Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("正在生成今日解读", color = C.textMain)
-                    }
-                    !aiContent.isNullOrBlank() -> MarkdownText(
-                        aiContent,
-                        color = C.textMain,
-                        style = MaterialTheme.typography.bodyMedium,
-                        onLight = C.isLight,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            val scrimInteraction = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.52f))
+                    .clickable(
+                        interactionSource = scrimInteraction,
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                GeminiGlassPanel(
+                    tone = tone,
+                    shape = MaterialTheme.shapes.extraLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 560.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                    alpha = if (C.isLight) 0.26f else 0.34f,
+                                ),
+                            ),
                     )
-                    error.isNotBlank() -> Text(error, color = C.rose, style = MaterialTheme.typography.bodyMedium)
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = (configuration.screenHeightDp * 0.82f).dp)
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Text(
+                                    "${insight.category.label} · 今日解读",
+                                    color = C.textMain,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    insight.headline,
+                                    color = when (tone) {
+                                        GeminiGlassTone.Gold -> MaterialTheme.colorScheme.primary
+                                        GeminiGlassTone.Teal -> MaterialTheme.colorScheme.secondary
+                                        GeminiGlassTone.Rose -> MaterialTheme.colorScheme.tertiary
+                                        GeminiGlassTone.Neutral -> C.textSub
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                            IconButton(onClick = onDismiss) {
+                                Icon(Icons.Default.Close, contentDescription = "关闭", tint = C.textSub)
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            Text(
+                                insight.summary,
+                                color = C.textSub,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            when {
+                                loading -> Row(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Text("正在生成今日解读", color = C.textMain)
+                                }
+                                !aiContent.isNullOrBlank() -> MarkdownText(
+                                    aiContent,
+                                    color = C.textMain,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    onLight = C.isLight,
+                                )
+                                error.isNotBlank() -> Text(
+                                    error,
+                                    color = C.rose,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                        ) {
+                            if (!loading && aiContent.isNullOrBlank() && error.isNotBlank()) {
+                                InsightDialogGlassAction(
+                                    label = "重试",
+                                    tone = tone,
+                                    onClick = onRetry,
+                                )
+                            }
+                            InsightDialogGlassAction(
+                                label = "完成",
+                                tone = GeminiGlassTone.Neutral,
+                                onClick = onDismiss,
+                            )
+                        }
+                    }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
-        dismissButton = {
-            if (!loading && aiContent.isNullOrBlank() && error.isNotBlank()) {
-                TextButton(onClick = onRetry) { Text("重试") }
-            }
-        },
-    )
+        }
+    }
+}
+
+@Composable
+private fun InsightDialogGlassAction(
+    label: String,
+    tone: GeminiGlassTone,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = CircleShape,
+    ) {
+        GeminiGlassPanel(
+            tone = tone,
+            shape = CircleShape,
+        ) {
+            Text(
+                label,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
 }
 
 @Composable
@@ -7429,6 +8445,12 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     var fortuneKeywords by mutableStateOf(repo.fortuneKeywords)
         private set
     var themeMode by mutableStateOf(repo.themeMode)
+        private set
+    var backgroundStyle by mutableStateOf(repo.backgroundStyle)
+        private set
+    var customBackgroundUri by mutableStateOf(repo.customBackgroundUri)
+        private set
+    var glassMotionEnabled by mutableStateOf(repo.glassMotionEnabled)
         private set
     private val initialFortuneDate = LocalDate.now()
     var todayFortune by mutableStateOf(
@@ -7585,6 +8607,22 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     fun updateThemeMode(value: ThemeMode) {
         themeMode = value
         repo.themeMode = value
+    }
+
+    fun updateBackgroundStyle(value: AppBackgroundStyle) {
+        backgroundStyle = value
+        repo.backgroundStyle = value
+    }
+
+    fun updateCustomBackgroundUri(value: String) {
+        customBackgroundUri = value
+        repo.customBackgroundUri = value
+        if (value.isNotBlank()) updateBackgroundStyle(AppBackgroundStyle.Custom)
+    }
+
+    fun updateGlassMotionEnabled(value: Boolean) {
+        glassMotionEnabled = value
+        repo.glassMotionEnabled = value
     }
 
     fun updateBirthDate(value: String) {
@@ -8141,6 +9179,23 @@ class FortuneRepository(context: Context) {
     var themeMode: ThemeMode
         get() = runCatching { ThemeMode.valueOf(prefs.getString("theme_mode", ThemeMode.System.name) ?: ThemeMode.System.name) }.getOrDefault(ThemeMode.System)
         set(value) = prefs.edit().putString("theme_mode", value.name).apply()
+
+    var backgroundStyle: AppBackgroundStyle
+        get() = runCatching {
+            AppBackgroundStyle.valueOf(
+                prefs.getString("background_style", AppBackgroundStyle.Solid.name)
+                    ?: AppBackgroundStyle.Solid.name,
+            )
+        }.getOrDefault(AppBackgroundStyle.Solid)
+        set(value) = prefs.edit().putString("background_style", value.name).apply()
+
+    var customBackgroundUri: String
+        get() = prefs.getString("custom_background_uri", "").orEmpty()
+        set(value) = prefs.edit().putString("custom_background_uri", value).apply()
+
+    var glassMotionEnabled: Boolean
+        get() = prefs.getBoolean("glass_motion_enabled", true)
+        set(value) = prefs.edit().putBoolean("glass_motion_enabled", value).apply()
 
     var birthDate: String
         get() {

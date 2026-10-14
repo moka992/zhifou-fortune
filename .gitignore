@@ -10,5 +10,13 @@ captures/
 *.apk
 *.aab
 *.keystore
+*.jks
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+keystore.properties
+signing.properties
 app/src/main/assets/asr/sherpa-onnx-whisper-tiny-int8/*.onnx
 app/src/main/assets/asr/sherpa-onnx-whisper-tiny-int8/tiny-tokens.txt

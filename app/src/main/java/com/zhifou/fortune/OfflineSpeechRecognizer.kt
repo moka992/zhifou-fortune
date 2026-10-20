@@ -24,7 +24,12 @@ private const val ENCODER_FILE = "$MODEL_DIR/tiny-encoder.int8.onnx"
 private const val DECODER_FILE = "$MODEL_DIR/tiny-decoder.int8.onnx"
 private const val TOKENS_FILE = "$MODEL_DIR/tiny-tokens.txt"
 
-class OfflineSpeechRecognizer(private val context: Context) {
+class OfflineSpeechRecognizer internal constructor(
+    private val context: Context,
+    private val cloudTranscribe: (CloudSpeechConfig, FloatArray, Int) -> String = { config, samples, rate ->
+        ConfiguredSpeechTranscriber(config).transcribe(samples, rate).getOrThrow()
+    },
+) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelLock = Any()
     private val modelDispatcher = Executors.newSingleThreadExecutor { task ->
@@ -49,7 +54,12 @@ class OfflineSpeechRecognizer(private val context: Context) {
     @Volatile
     private var discardResult = false
 
+    @Volatile
+    private var transcribing = false
+
+    @Volatile
     private var audioRecord: AudioRecord? = null
+    @Volatile
     private var recordingThread: Thread? = null
 
     suspend fun prepare(): Result<Unit> = withContext(modelDispatcher) {
@@ -83,28 +93,33 @@ class OfflineSpeechRecognizer(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun start(
+    @Synchronized
+    internal fun start(
         cloudConfig: CloudSpeechConfig? = null,
         onFinal: (String) -> Unit,
         onLevel: (Float) -> Unit,
         onError: (String) -> Unit,
-    ): Boolean {
-        val activeRecognizer = if (cloudConfig == null) recognizer ?: return false else recognizer
-        if (recording || recordingThread?.isAlive == true) return false
+    ): SpeechStartResult {
+        if (transcribing) return SpeechStartResult.Transcribing
+        if (recording) return SpeechStartResult.Recording
+        if (recordingThread?.isAlive == true) return SpeechStartResult.Finishing
+        val activeRecognizer = if (cloudConfig == null) {
+            recognizer ?: return SpeechStartResult.ModelUnavailable
+        } else recognizer
 
         val minBufferSize = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
-        if (minBufferSize <= 0) return false
+        if (minBufferSize <= 0) return SpeechStartResult.MicrophoneUnavailable
 
         val recorder = createAudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, minBufferSize)
             ?: createAudioRecord(MediaRecorder.AudioSource.MIC, minBufferSize)
-            ?: return false
+            ?: return SpeechStartResult.MicrophoneUnavailable
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
             recorder.release()
-            return false
+            return SpeechStartResult.MicrophoneUnavailable
         }
 
         return try {
@@ -118,17 +133,21 @@ class OfflineSpeechRecognizer(private val context: Context) {
                 name = "zhifou-offline-asr"
                 start()
             }
-            true
-        } catch (_: Throwable) {
+            SpeechStartResult.Started
+        } catch (error: Throwable) {
             recording = false
             recorder.release()
             audioRecord = null
-            false
+            if (error is SecurityException) SpeechStartResult.PermissionDenied
+            else SpeechStartResult.MicrophoneUnavailable
         }
     }
 
+    @Synchronized
     fun stop(cancelled: Boolean) {
+        if (!recording && recordingThread?.isAlive != true) return
         discardResult = cancelled
+        if (recording && !cancelled) transcribing = true
         recording = false
         try {
             audioRecord?.stop()
@@ -166,6 +185,7 @@ class OfflineSpeechRecognizer(private val context: Context) {
         val buffer = ShortArray(1_600)
         val recordedChunks = ArrayList<FloatArray>()
         var stream: com.k2fsa.sherpa.onnx.OfflineStream? = null
+        var recorderReleased = false
         try {
             while (recording) {
                 val count = try {
@@ -184,13 +204,14 @@ class OfflineSpeechRecognizer(private val context: Context) {
                 mainHandler.post { if (recording) onLevel(level) }
             }
 
+            // The microphone is not needed while local decoding or a network request is running.
+            releaseRecorder(recorder)
+            recorderReleased = true
             if (!discardResult) {
+                transcribing = true
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
                 val finalText = if (cloudConfig != null) {
-                    OpenAiCompatibleSpeechTranscriber(cloudConfig)
-                        .transcribe(mergeChunks(recordedChunks), SAMPLE_RATE)
-                        .getOrThrow()
-                        .trim()
+                    cloudTranscribe(cloudConfig, mergeChunks(recordedChunks), SAMPLE_RATE).trim()
                 } else {
                     requireNotNull(recognizer)
                     val decodeStream = recognizer.createStream()
@@ -213,16 +234,22 @@ class OfflineSpeechRecognizer(private val context: Context) {
                 mainHandler.post { onError(message) }
             }
         } finally {
-            try {
-                recorder.stop()
-            } catch (_: Throwable) {
-                // Recorder may already be stopped by the UI thread.
-            }
-            recorder.release()
-            if (audioRecord === recorder) audioRecord = null
-            if (recordingThread === Thread.currentThread()) recordingThread = null
+            if (!recorderReleased) releaseRecorder(recorder)
             stream?.release()
+            recording = false
+            transcribing = false
+            if (recordingThread === Thread.currentThread()) recordingThread = null
         }
+    }
+
+    private fun releaseRecorder(recorder: AudioRecord) {
+        if (audioRecord === recorder) audioRecord = null
+        try {
+            recorder.stop()
+        } catch (_: IllegalStateException) {
+            // The UI may already have stopped capture.
+        }
+        recorder.release()
     }
 
     private fun requireAsset(path: String) {

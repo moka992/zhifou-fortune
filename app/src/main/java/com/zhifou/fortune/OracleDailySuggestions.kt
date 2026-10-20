@@ -33,11 +33,8 @@ internal fun dailyOracleSuggestions(snapshot: DailyFortuneSnapshot): List<String
 internal fun shouldShowDailyOraclePrompt(lastShownDate: String, today: LocalDate): Boolean =
     lastShownDate != today.toString()
 
-internal fun isUpwardOraclePageSwipe(totalDragY: Float, thresholdPx: Float): Boolean =
-    totalDragY <= -thresholdPx
-
-internal fun isDownwardOraclePageSwipe(totalDragY: Float, thresholdPx: Float): Boolean =
-    totalDragY >= thresholdPx
+internal fun initiallyShowOraclePrompt(firstVisitToday: Boolean, hasTimeline: Boolean): Boolean =
+    firstVisitToday || !hasTimeline
 
 // 黄历原始事项包含丧葬、疾病、祭祀等不适合作为消费级推荐文案的词。
 // 推荐只允许使用审校后的日常语义白名单，其他事项一律回退，不直接拼接原文。

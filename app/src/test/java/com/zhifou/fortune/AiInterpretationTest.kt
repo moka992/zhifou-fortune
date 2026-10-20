@@ -87,6 +87,10 @@ class AiInterpretationTest {
         assertTrue(DAILY_INSIGHT_MAX_OUTPUT_TOKENS <= 700)
         assertTrue(prompt.contains("本次只解读“事业”"))
         assertTrue(prompt.contains("220至320个汉字"))
+        assertTrue(prompt.contains("节月干支：${snapshot.almanac.monthGanZhi}"))
+        assertTrue(prompt.contains("不是古籍算法或吉凶概率"))
+        assertTrue(prompt.contains(snapshot.rhythmBasis))
+        assertTrue(prompt.contains("不得向用户复述分值构成、权重或内部校准"))
     }
 
     @Test
@@ -113,6 +117,7 @@ class AiInterpretationTest {
         assertTrue(coinPrompt.contains("700至1100个汉字"))
         assertFalse(dailyPrompt.contains("六次投掷"))
         assertFalse(dailyPrompt.contains("700至1100个汉字"))
+        assertFalse(coinPrompt.contains("节奏刻度："))
     }
 
     @Test
@@ -129,7 +134,7 @@ class AiInterpretationTest {
         )
         val snapshot = original.copy(
             almanac = filteredAlmanac,
-            insights = DailyInsightEngine.create(filteredAlmanac, "filtered"),
+            insights = DailyInsightEngine.create(filteredAlmanac),
         )
         val prompt = buildDailyAiInsightPrompt(
             snapshot,

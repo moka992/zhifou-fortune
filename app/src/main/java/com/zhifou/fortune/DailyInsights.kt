@@ -1,173 +1,168 @@
 package com.zhifou.fortune
 
-import java.security.MessageDigest
-
 enum class DailyInsightCategory(val key: String, val label: String) {
     Career("career", "事业"),
     Relationship("relationship", "关系"),
     Finance("finance", "财务"),
 }
 
-enum class DailyInsightTone {
-    Favorable,
-    Balanced,
-    Cautious,
-}
+enum class DailyInsightTone { Favorable, Balanced, Cautious }
 
 data class DailyInsight(
     val category: DailyInsightCategory,
     val headline: String,
     val summary: String,
     val tone: DailyInsightTone,
+    val advice: String = "",
 )
 
-data class DailyAiInsight(
-    val date: String,
+data class DailyAiInsight(val date: String, val category: DailyInsightCategory, val content: String)
+
+enum class AiConnectionStatus { Unconfigured, NeedsValidation, Checking, Connected, NoNetwork, Failed }
+
+internal data class DailyDomainSignal(
     val category: DailyInsightCategory,
-    val content: String,
+    val balance: Int,
+    val suitable: List<String>,
+    val avoid: List<String>,
+    val conflicting: Boolean,
+    val restricted: Boolean,
 )
-
-enum class AiConnectionStatus {
-    Unconfigured,
-    NeedsValidation,
-    Checking,
-    Connected,
-    NoNetwork,
-    Failed,
-}
 
 internal object DailyInsightEngine {
-    private data class DomainRules(
-        val suitableTerms: Set<String>,
-        val avoidTerms: Set<String>,
-        val favorableStems: Set<Char>,
-        val cautiousStems: Set<Char>,
-        val headlines: Map<DailyInsightTone, List<String>>,
-        val neutralFocus: List<String>,
-    )
+    private data class Activity(val terms: Set<String>, val categories: Set<DailyInsightCategory>)
+    private data class Guidance(val headline: String, val action: String, val classic: String)
 
-    fun create(almanac: DailyAlmanacInfo, seed: String): List<DailyInsight> =
-        DailyInsightCategory.entries.map { category ->
-            createOne(category, almanac, seed)
-        }
+    // Synonyms share one signal: related terms must not count as separate opportunities.
+    private val activities = listOf(
+        Activity(setOf("开市", "开工", "赴任", "上任", "求职"), setOf(DailyInsightCategory.Career)),
+        Activity(setOf("交易", "立券"), setOf(DailyInsightCategory.Career, DailyInsightCategory.Finance)),
+        Activity(setOf("入学", "求学", "习艺"), setOf(DailyInsightCategory.Career)),
+        Activity(setOf("修造", "扫舍"), setOf(DailyInsightCategory.Career)),
+        Activity(setOf("会亲友"), setOf(DailyInsightCategory.Relationship)),
+        Activity(setOf("嫁娶", "纳采", "订盟"), setOf(DailyInsightCategory.Relationship)),
+        Activity(setOf("出行"), setOf(DailyInsightCategory.Relationship)),
+        Activity(setOf("纳财", "开仓"), setOf(DailyInsightCategory.Finance)),
+        Activity(setOf("置产", "求财", "借贷"), setOf(DailyInsightCategory.Finance)),
+    )
+    private val safeTerms = activities.flatMap { it.terms }.toSet()
+    private val restrictiveTerms = setOf("诸事不宜", "馀事勿取", "余事勿取")
 
     fun safeSuitable(almanac: DailyAlmanacInfo): List<String> = sanitize(almanac.suitable)
-
     fun safeAvoid(almanac: DailyAlmanacInfo): List<String> = sanitize(almanac.avoid)
-
-    private fun createOne(
-        category: DailyInsightCategory,
-        almanac: DailyAlmanacInfo,
-        seed: String,
-    ): DailyInsight {
-        val rules = rules.getValue(category)
-        val suitable = safeSuitable(almanac).firstOrNull { item ->
-            rules.suitableTerms.any { term -> term in item }
-        }
-        val avoid = safeAvoid(almanac).firstOrNull { item ->
-            rules.avoidTerms.any { term -> term in item }
-        }
-        val broadCaution = (almanac.suitable + almanac.avoid).any { item ->
-            broadCautionTerms.any { term -> term in item }
-        }
-        val stem = almanac.dayGanZhi.firstOrNull()
-        val signal = (if (suitable != null) 2 else 0) -
-            (if (avoid != null) 2 else 0) +
-            (if (stem in rules.favorableStems) 1 else 0) -
-            (if (stem in rules.cautiousStems) 1 else 0) -
-            (if (broadCaution && suitable == null && avoid == null) 3 else 0)
-        val tone = when {
-            signal >= 2 -> DailyInsightTone.Favorable
-            signal <= -2 -> DailyInsightTone.Cautious
-            else -> DailyInsightTone.Balanced
-        }
-        val headlineOptions = rules.headlines.getValue(tone)
-        val headline = headlineOptions[stableIndex("headline#${category.key}#$seed", headlineOptions.size)]
-        val neutral = rules.neutralFocus[stableIndex("focus#${category.key}#$seed", rules.neutralFocus.size)]
-        val summary = when {
-            suitable != null && avoid != null ->
-                "黄历同时见宜“$suitable”与忌“$avoid”，今天宜先确认条件，再分步处理$neutral。"
-            suitable != null ->
-                "黄历宜“$suitable”，可适度推进$neutral，同时保留复核和调整空间。"
-            avoid != null ->
-                "黄历忌“$avoid”，涉及${neutral}时宜放慢确认，避免一次性作出过重承诺。"
-            broadCaution ->
-                "当日黄历没有适合直接转译为现代生活的明确项目，处理${neutral}时宜缩小决策范围，并以事实和实际反馈为准。"
-            else ->
-                "${almanac.dayGanZhi}日没有直接对应的宜忌信号，处理${neutral}时以事实和实际反馈为准。"
-        }
-        return DailyInsight(category, headline, summary, tone)
-    }
-
-    private fun stableIndex(value: String, size: Int): Int {
-        require(size > 0)
-        val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-        val number = ((bytes[0].toInt() and 0xFF) shl 24) or
-            ((bytes[1].toInt() and 0xFF) shl 16) or
-            ((bytes[2].toInt() and 0xFF) shl 8) or
-            (bytes[3].toInt() and 0xFF)
-        return Math.floorMod(number, size)
-    }
+    fun safeActivities(items: List<String>): List<String> = sanitize(items)
 
     private fun sanitize(items: List<String>): List<String> = items
-        .asSequence()
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .filter { item -> excludedTerms.none { term -> term in item } }
-        .filter { item -> safeModernTerms.any { term -> term in item } }
-        .distinct()
-        .take(8)
-        .toList()
+        .map(String::trim).filter { it in safeTerms }.distinct().sorted()
 
-    private val broadCautionTerms = setOf("诸事不宜", "馀事勿取", "余事勿取")
+    fun signals(almanac: DailyAlmanacInfo): List<DailyDomainSignal> {
+        val suitable = safeSuitable(almanac).toSet()
+        val avoid = safeAvoid(almanac).toSet()
+        val restricted = (almanac.suitable + almanac.avoid).any { it.trim() in restrictiveTerms }
+        return DailyInsightCategory.entries.map { category ->
+            val groups = activities.filter { category in it.categories }
+            val positive = groups.filter { group -> group.terms.any { it in suitable } }.toSet()
+            val negative = groups.filter { group -> group.terms.any { it in avoid } }.toSet()
+            val conflicting = positive.intersect(negative).isNotEmpty()
+            val net = positive.size - negative.size
+            val balance = (if (restricted) minOf(net, 0) - 1 else net).coerceIn(-2, 2)
+            DailyDomainSignal(
+                category, balance,
+                suitable.filter { item -> groups.any { item in it.terms } },
+                avoid.filter { item -> groups.any { item in it.terms } },
+                conflicting, restricted,
+            )
+        }
+    }
 
-    private val excludedTerms = broadCautionTerms + setOf(
-        "安葬", "出殡", "殡葬", "入殓", "移柩", "启钻", "破土", "修坟", "立碑",
-        "谢土", "开生坟", "合寿木", "行丧", "成服", "除服", "破屋", "坏垣",
-    )
+    fun create(almanac: DailyAlmanacInfo, keywords: List<String> = emptyList()): List<DailyInsight> {
+        val seasonal = DailyTraditionEngine.seasonalContext(almanac)
+        return signals(almanac).map { signal ->
+            val tone = when {
+                signal.restricted || signal.balance < 0 -> DailyInsightTone.Cautious
+                signal.balance > 0 && !signal.conflicting -> DailyInsightTone.Favorable
+                else -> DailyInsightTone.Balanced
+            }
+            val guidance = guidance(signal.category, tone, seasonal.day)
+            val evidence = when {
+                signal.conflicting -> "同类事项的宜忌有交叉，不取单一吉凶判断，先核对实际条件。"
+                signal.restricted -> "当天可直接用于日常安排的依据较少，以整理和保留余量为主。"
+                signal.suitable.isNotEmpty() && signal.avoid.isNotEmpty() ->
+                    "日常相关事项中，宜${signal.suitable.joinToString("、")}，忌${signal.avoid.joinToString("、")}，需区分场景。"
+                signal.suitable.isNotEmpty() -> "黄历宜${signal.suitable.joinToString("、")}，可借其意作小步安排，并非结果保证。"
+                signal.avoid.isNotEmpty() -> "黄历忌${signal.avoid.joinToString("、")}，可借其意增加复核，不必因此否定正常安排。"
+                else -> "当天没有与此项直接对应的日常宜忌，不额外推断好坏。"
+            }
+            val focus = keywords.firstOrNull { keyword -> keywordCategory(keyword) == signal.category }
+            val personal = if (focus == null) "" else " 可从你关注的“${focus.take(24)}”中选一件小事落实。"
+            DailyInsight(signal.category, guidance.headline,
+                "$evidence ${guidance.classic} 现代参考：${guidance.action}$personal", tone,
+                guidance.action + personal)
+        }
+    }
 
-    private val safeModernTerms = setOf(
-        "开市", "交易", "立券", "求职", "赴任", "上任", "开工", "修造",
-        "嫁娶", "纳采", "订盟", "会亲友", "出行", "祈福", "诉讼", "词讼",
-        "纳财", "开仓", "置产", "求财", "借贷",
-    )
+    internal fun keywordCategory(keyword: String): DailyInsightCategory? = when {
+        listOf("工作", "事业", "学习", "求职", "项目", "考试").any { it in keyword } -> DailyInsightCategory.Career
+        listOf("关系", "沟通", "亲友", "家庭", "感情", "伴侣").any { it in keyword } -> DailyInsightCategory.Relationship
+        listOf("财务", "预算", "存钱", "收入", "支出", "理财").any { it in keyword } -> DailyInsightCategory.Finance
+        else -> null
+    }
 
-    private val rules = mapOf(
-        DailyInsightCategory.Career to DomainRules(
-            suitableTerms = setOf("开市", "交易", "立券", "求职", "赴任", "上任", "开工", "修造"),
-            avoidTerms = setOf("开市", "交易", "立券", "赴任", "上任", "开工", "修造"),
-            favorableStems = setOf('甲', '乙', '丙', '丁'),
-            cautiousStems = setOf('庚', '辛'),
-            headlines = mapOf(
-                DailyInsightTone.Favorable to listOf("可推进重点", "行动稍主动", "先做关键一步", "表达带动进展"),
-                DailyInsightTone.Balanced to listOf("稳中推进", "聚焦一项重点", "先理顺再行动", "按节奏处理"),
-                DailyInsightTone.Cautious to listOf("先核对再推进", "减少临时承诺", "以整理为主", "决定保留余地"),
-            ),
-            neutralFocus = listOf("核心任务", "团队协作", "工作边界", "计划执行", "重要沟通"),
-        ),
-        DailyInsightCategory.Relationship to DomainRules(
-            suitableTerms = setOf("嫁娶", "纳采", "订盟", "会亲友", "出行", "祈福"),
-            avoidTerms = setOf("嫁娶", "纳采", "订盟", "会亲友", "出行", "诉讼", "词讼"),
-            favorableStems = setOf('乙', '丁', '己', '癸'),
-            cautiousStems = setOf('庚', '壬'),
-            headlines = mapOf(
-                DailyInsightTone.Favorable to listOf("适合坦诚交流", "关系可向前一步", "主动表达善意", "回应重于猜测"),
-                DailyInsightTone.Balanced to listOf("先听后说", "尊重彼此节奏", "以行动确认", "边界与体谅并重"),
-                DailyInsightTone.Cautious to listOf("避免急下结论", "重要话慢一点说", "先处理误解", "给情绪留缓冲"),
-            ),
-            neutralFocus = listOf("重要关系", "沟通分寸", "共同安排", "彼此期待", "分歧处理"),
-        ),
-        DailyInsightCategory.Finance to DomainRules(
-            suitableTerms = setOf("纳财", "开市", "交易", "立券", "开仓", "置产", "求财"),
-            avoidTerms = setOf("纳财", "开市", "交易", "立券", "开仓", "置产", "求财", "借贷"),
-            favorableStems = setOf('戊', '己', '庚', '辛'),
-            cautiousStems = setOf('丙', '壬'),
-            headlines = mapOf(
-                DailyInsightTone.Favorable to listOf("可做小步安排", "账目适合梳理", "投入先看回报", "稳妥配置资源"),
-                DailyInsightTone.Balanced to listOf("控制变量", "先核对再决定", "收支保持清楚", "预留调整空间"),
-                DailyInsightTone.Cautious to listOf("避免冲动投入", "大额决定暂缓", "先守住预算", "谨慎新增负担"),
-            ),
-            neutralFocus = listOf("预算与现金流", "交易条件", "资源投入", "非必要支出", "长期安排"),
-        ),
-    )
+    private fun guidance(category: DailyInsightCategory, tone: DailyInsightTone, phase: FivePhase?): Guidance =
+        when (category) {
+            DailyInsightCategory.Career -> when (tone) {
+                DailyInsightTone.Favorable -> Guidance("先做关键一步", "把主要任务拆成可验证的一步，完成后再扩展。",
+                    "《说卦》“震，动也”；《道德经》第六十三章“图难于其易，为大于其细”。")
+                DailyInsightTone.Cautious -> Guidance("先核对再推进", "先补齐信息与交付条件，对不确定的承诺留出调整空间。",
+                    "《说卦》“艮，止也”；《道德经》第六十四章“为之于未有，治之于未乱”。")
+                DailyInsightTone.Balanced -> when (phase) {
+                    FivePhase.Wood -> Guidance("先规划再行动", "先写清目标与边界，再做一次小范围尝试。",
+                        "《说卦》“巽，入也”；《道德经》第六十四章“千里之行，始于足下”。")
+                    FivePhase.Fire -> Guidance("表达重在落实", "把想法说清楚，也约定一个可以确认的交付点。",
+                        "《说卦》“离，丽也”；《道德经》第六十四章“慎终如始”。")
+                    FivePhase.Earth -> Guidance("先把基础做稳", "梳理手头事项，完成一项能为后续铺路的工作。",
+                        "《说卦》“坤，顺也”；《道德经》第六十四章“九层之台，起于累土”。")
+                    FivePhase.Metal -> Guidance("聚焦一项重点", "先排优先级，减少同时开展的任务。",
+                        "《说卦》“艮，止也”；《道德经》第四十四章“知止不殆”。")
+                    else -> Guidance("观察后再调整", "先确认一处信息缺口，得到反馈后再调整计划。",
+                        "《说卦》“坎，陷也”；《道德经》第六十四章“为之于未有，治之于未乱”。")
+                }
+            }
+            DailyInsightCategory.Relationship -> when (tone) {
+                DailyInsightTone.Favorable -> Guidance("主动表达善意", "以一次具体交流了解彼此需要，不替对方作决定。",
+                    "《周易·兑·象》“君子以朋友讲习”；《道德经》第八章“言善信”。")
+                DailyInsightTone.Balanced -> when (phase) {
+                    FivePhase.Wood -> Guidance("先了解彼此期待", "先问清对方需要什么，再提出一个双方可调整的安排。",
+                        "《说卦》“巽，入也”；《道德经》第八章“言善信”。")
+                    FivePhase.Fire -> Guidance("表达清楚不过量", "把自己的期待说具体，避免一次要求对方回应太多。",
+                        "《周易·兑·象》“君子以朋友讲习”；《道德经》第五章“多言数穷，不如守中”。")
+                    FivePhase.Earth -> Guidance("体谅也守边界", "照顾共同安排，也如实说明自己能承担的部分。",
+                        "《说卦》“坤，顺也”；《道德经》第四十四章“知止不殆”。")
+                    FivePhase.Metal -> Guidance("分歧先讲事实", "先把事实与个人感受分开，再讨论能够共同确认的部分。",
+                        "《说卦》“艮，止也”；《道德经》第八章“言善信”。")
+                    else -> Guidance("先听后说", "先确认对方的意思，再说明自己的期待和边界。",
+                        "《说卦》“巽，入也”；《道德经》第五章“多言数穷，不如守中”。")
+                }
+                DailyInsightTone.Cautious -> Guidance("给沟通留余地", "分歧出现时先复述事实，重要回复不必急于当场作出。",
+                    "《说卦》“艮，止也”；《道德经》第八章“夫唯不争，故无尤”。")
+            }
+            DailyInsightCategory.Finance -> when (tone) {
+                DailyInsightTone.Favorable -> Guidance("按预算小步安排", "先核对收支和约定条件，只安排能够承担的日常支出。",
+                    "《说卦》“坤，顺也”；《道德经》第四十四章“知足不辱，知止不殆”。")
+                DailyInsightTone.Balanced -> when (phase) {
+                    FivePhase.Wood -> Guidance("计划先定上限", "新计划先列出预算上限，再决定是否需要这笔支出。",
+                        "《说卦》“巽，入也”；《道德经》第六十三章“图难于其易，为大于其细”。")
+                    FivePhase.Fire -> Guidance("决定前停一停", "付款前再核对需求和总费用，不把当下兴致当成长期需要。",
+                        "《说卦》“艮，止也”；《道德经》第四十四章“知止不殆”。")
+                    FivePhase.Earth -> Guidance("收支保持清楚", "核对一笔账目，区分必要支出与可以稍后决定的项目。",
+                        "《说卦》“坤，顺也”；《道德经》第四十四章“知足不辱”。")
+                    FivePhase.Metal -> Guidance("条款再核对", "核对价格、额外费用和约定，优先消除一处模糊条件。",
+                        "《说卦》“艮，止也”；《道德经》第六十四章“慎终如始”。")
+                    else -> Guidance("留一点周转余量", "先看近期固定支出，给临时需要留出可支配的余量。",
+                        "《说卦》“坎，陷也”；《道德经》第六十四章“为之于未有，治之于未乱”。")
+                }
+                DailyInsightTone.Cautious -> Guidance("先守住预算", "增加支出前核对预算、费用与退出条件，不凭黄历决定投资。",
+                    "《说卦》“艮，止也”；《道德经》第九章“持而盈之，不如其已”。")
+            }
+        }
 }

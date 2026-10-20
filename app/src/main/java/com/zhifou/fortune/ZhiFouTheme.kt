@@ -12,6 +12,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,6 +23,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 
 @Immutable
 data class FortunePalette(
@@ -172,7 +176,13 @@ private val ZhiFouShapes = Shapes(
 
 @Composable
 fun ZhiFouTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalFortunePalette provides if (darkTheme) DarkPalette else LightPalette) {
+    val reduced = rememberReducedFortuneMotion()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    CompositionLocalProvider(
+        LocalFortunePalette provides if (darkTheme) DarkPalette else LightPalette,
+        LocalReducedFortuneMotion provides reduced,
+        LocalFortuneMotionVisible provides lifecycle.isAtLeast(Lifecycle.State.RESUMED),
+    ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
             typography = ZhiFouTypography, shapes = ZhiFouShapes, content = content,

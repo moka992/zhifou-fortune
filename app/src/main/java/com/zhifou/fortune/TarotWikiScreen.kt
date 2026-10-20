@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -64,10 +63,15 @@ private const val TAROT_CARD_ASPECT_RATIO = 0.58f
 fun TarotWikiScreen(onBack: () -> Unit) {
     val layout = LocalFortuneLayout.current
     var selectedCardId by rememberSaveable { mutableStateOf<String?>(null) }
+    HapticPageFeedback(selectedCardId ?: "library", if (selectedCardId == null) 0 else 1)
     var sectionIndex by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var filterName by rememberSaveable { mutableStateOf(TarotWikiFilter.ALL.name) }
     val listState = rememberLazyListState()
+    val systemListState = rememberLazyListState()
+    LaunchedEffect(query, filterName) {
+        listState.scrollToItem(0)
+    }
 
     BackHandler {
         if (selectedCardId != null) {
@@ -79,24 +83,36 @@ fun TarotWikiScreen(onBack: () -> Unit) {
 
     val selectedEntry = selectedCardId?.let(TarotWikiLibrary::entry)
     if (selectedEntry != null) {
+        Box(Modifier.fillMaxSize()) {
         TarotWikiDetail(
             entry = selectedEntry,
             onBack = { selectedCardId = null },
             onSelectCard = { selectedCardId = it },
         )
+        }
         return
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TarotWikiTopBar(title = "韦特塔罗 Wiki", onBack = onBack) {
+            if (layout.shortWide) {
+                Row {
+                listOf("牌库", "体系").forEachIndexed { index, title ->
+                    androidx.compose.material3.TextButton(onClick = hapticAction { sectionIndex = index }) {
+                        Text(title, color = if (sectionIndex == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                }
+            } else {
             Text(
                 "78 张",
                 color = LocalFortunePalette.current.gold,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
+            }
         }
-        Row(
+        if (!layout.shortWide) Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = layout.horizontalPadding, vertical = 4.dp),
@@ -105,7 +121,7 @@ fun TarotWikiScreen(onBack: () -> Unit) {
             listOf("牌库", "体系").forEachIndexed { index, label ->
                 val selected = sectionIndex == index
                 Surface(
-                    onClick = { sectionIndex = index },
+                    onClick = hapticAction { sectionIndex = index },
                     color = if (selected) {
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
                     } else {
@@ -143,7 +159,7 @@ fun TarotWikiScreen(onBack: () -> Unit) {
                 onOpenCard = { selectedCardId = it.card.id },
             )
         } else {
-            TarotWikiSystemView()
+            TarotWikiSystemView(listState = systemListState)
         }
     }
 }
@@ -161,6 +177,7 @@ private fun TarotWikiLibraryView(
     val layout = LocalFortuneLayout.current
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val columns = when {
+        layout.shortWide -> ((screenWidthDp - 120) / 112).coerceIn(4, 8)
         layout.windowWidth == FortuneWindowWidth.Expanded -> 5
         layout.windowWidth == FortuneWindowWidth.Medium -> 4
         screenWidthDp >= 360 -> 3
@@ -170,15 +187,12 @@ private fun TarotWikiLibraryView(
     val results = remember(query, selectedFilter) {
         TarotWikiLibrary.search(query, selectedFilter)
     }
-    LaunchedEffect(query, selectedFilter) {
-        listState.scrollToItem(0)
-    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = layout.horizontalPadding, vertical = 6.dp),
+                .padding(horizontal = layout.horizontalPadding, vertical = if (layout.shortWide) 2.dp else 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -186,11 +200,11 @@ private fun TarotWikiLibraryView(
                 value = query,
                 onValueChange = onQueryChange,
                 singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                leadingIcon = { FortuneIcon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = if (query.isNotEmpty()) {
                     {
                         IconButton(onClick = { onQueryChange("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "清空搜索")
+                            FortuneIcon(Icons.Default.Close, contentDescription = "清空搜索")
                         }
                     }
                 } else {
@@ -203,7 +217,7 @@ private fun TarotWikiLibraryView(
             )
             Box {
                 Surface(
-                    onClick = { filterMenuExpanded = true },
+                    onClick = hapticAction(HapticCue.MenuOpen) { filterMenuExpanded = true },
                     color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.74f),
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     shape = RoundedCornerShape(50),
@@ -215,13 +229,13 @@ private fun TarotWikiLibraryView(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Icon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(18.dp))
+                        FortuneIcon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(
                             "${selectedFilter.label} ${results.size}",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        Icon(Icons.Default.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+                        FortuneIcon(Icons.Default.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                 }
                 DropdownMenu(
@@ -231,12 +245,12 @@ private fun TarotWikiLibraryView(
                     TarotWikiFilter.entries.forEach { filter ->
                         DropdownMenuItem(
                             text = { Text(filter.label) },
-                            onClick = {
+                            onClick = hapticAction {
                                 filterMenuExpanded = false
                                 onFilterChange(filter)
                             },
                             leadingIcon = if (filter == selectedFilter) {
-                                { Icon(Icons.Default.Style, contentDescription = null) }
+                                { FortuneIcon(Icons.Default.Style, contentDescription = null) }
                             } else {
                                 null
                             },
@@ -254,7 +268,7 @@ private fun TarotWikiLibraryView(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Icon(
+                FortuneIcon(
                     Icons.Default.Search,
                     contentDescription = null,
                     tint = C.textSub,
@@ -310,6 +324,8 @@ private fun TarotWikiCardTile(
     modifier: Modifier = Modifier,
 ) {
     val C = LocalFortunePalette.current
+    val shortWide = LocalFortuneLayout.current.shortWide
+    val imageHeight = (LocalConfiguration.current.screenHeightDp - 246).coerceIn(60, 116).dp
     Surface(
         onClick = onClick,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -330,13 +346,13 @@ private fun TarotWikiCardTile(
                     contentDescription = entry.card.nameZh,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .fillMaxWidth(if (dense) 0.90f else 0.84f)
+                        .then(if (shortWide) Modifier.height(imageHeight) else Modifier.fillMaxWidth(if (dense) 0.90f else 0.84f))
                         .aspectRatio(TAROT_CARD_ASPECT_RATIO)
                         .clip(RoundedCornerShape(3.dp)),
                 )
             }
             Column(
-                modifier = Modifier.padding(if (dense) 8.dp else 11.dp),
+                modifier = Modifier.padding(if (shortWide) 6.dp else if (dense) 8.dp else 11.dp),
                 verticalArrangement = Arrangement.spacedBy(if (dense) 1.dp else 3.dp),
             ) {
                 Text(
@@ -347,7 +363,7 @@ private fun TarotWikiCardTile(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                if (!shortWide) Text(
                     entry.card.nameEn,
                     color = C.textSub,
                     style = MaterialTheme.typography.labelSmall,
@@ -367,10 +383,11 @@ private fun TarotWikiCardTile(
 }
 
 @Composable
-private fun TarotWikiSystemView() {
+private fun TarotWikiSystemView(listState: LazyListState) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = layout.horizontalPadding,
@@ -492,7 +509,7 @@ private fun TarotWikiDetail(
                             contentDescription = entry.card.nameZh,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
-                                .width(if (layout.compactWidth) 104.dp else 136.dp)
+                                .width(if (layout.shortWide) 88.dp else if (layout.compactWidth) 104.dp else 136.dp)
                                 .aspectRatio(TAROT_CARD_ASPECT_RATIO)
                                 .clip(RoundedCornerShape(4.dp)),
                         )
@@ -596,28 +613,7 @@ private fun TarotWikiTopBar(
     onBack: () -> Unit,
     trailing: @Composable () -> Unit,
 ) {
-    val C = LocalFortunePalette.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(58.dp)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = C.gold)
-        }
-        Text(
-            title,
-            color = C.textMain,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 4.dp),
-        )
+    SubScreenHeader(title = title, onBack = onBack) {
         Box(modifier = Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
             trailing()
         }
@@ -709,7 +705,7 @@ private fun TarotWikiAdjacentButton(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (iconLeft) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(20.dp))
+                    FortuneIcon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
@@ -721,7 +717,7 @@ private fun TarotWikiAdjacentButton(
                 )
                 if (!iconLeft) {
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(20.dp))
+                    FortuneIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -791,7 +787,7 @@ fun TarotWikiToolCard(onClick: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(18.dp))
+                        FortuneIcon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text("78 张完整牌库", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                     }
                 }

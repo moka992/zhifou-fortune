@@ -8,7 +8,7 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -52,7 +52,6 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -72,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -132,7 +132,7 @@ internal fun ScheduleMemorialEntryCard(itemCount: Int, onClick: () -> Unit) {
                     .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
+                FortuneIcon(
                     Icons.Default.CalendarMonth,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -142,7 +142,7 @@ internal fun ScheduleMemorialEntryCard(itemCount: Int, onClick: () -> Unit) {
                 Text("日程纪念", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("${itemCount}项", color = C.textSub, style = MaterialTheme.typography.bodySmall)
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
+            FortuneIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
         }
         }
     }
@@ -162,6 +162,7 @@ internal fun ScheduleEditorScreen(
     val initial = remember(existingItem?.id, initialDate) {
         existingItem?.toDraft(initialDate) ?: ScheduleDraft(date = initialDate)
     }
+    val editorHaptics = LocalAppHaptics.current
     var title by rememberSaveable(existingItem?.id, initialDate.toString()) { mutableStateOf(initial.title) }
     var note by rememberSaveable(existingItem?.id, initialDate.toString()) { mutableStateOf(initial.note) }
     var dateText by rememberSaveable(existingItem?.id, initialDate.toString()) { mutableStateOf(initial.date.toString()) }
@@ -178,6 +179,8 @@ internal fun ScheduleEditorScreen(
         mutableStateOf(existingItem?.hasAdvancedScheduleContent() == true)
     }
     var picker by remember { mutableStateOf<ScheduleEditorPicker?>(null) }
+    val advancedRotation = animateFloatAsState(if (advancedExpanded) 180f else 0f,
+        fortuneSpatialSpec(fast = true), label = "schedule-advanced-chevron")
     val selectedDate = runCatching { LocalDate.parse(dateText) }.getOrDefault(initialDate)
     val dayItems = remember(allItems, selectedDate) {
         allItems
@@ -210,9 +213,9 @@ internal fun ScheduleEditorScreen(
             done = done,
         )
         when {
-            title.isBlank() -> Toast.makeText(context, "请填写事项名称", Toast.LENGTH_SHORT).show()
-            !isScheduleEndValid(draft) -> Toast.makeText(context, "结束时间不能早于开始时间", Toast.LENGTH_SHORT).show()
-            else -> onSave(draft)
+            title.isBlank() -> { editorHaptics.scene(HapticCue.Reject); Toast.makeText(context, "请填写事项名称", Toast.LENGTH_SHORT).show() }
+            !isScheduleEndValid(draft) -> { editorHaptics.scene(HapticCue.Reject); Toast.makeText(context, "结束时间不能早于开始时间", Toast.LENGTH_SHORT).show() }
+            else -> { editorHaptics.scene(HapticCue.Confirm); onSave(draft) }
         }
     }
 
@@ -256,7 +259,7 @@ internal fun ScheduleEditorScreen(
                 SchedulePickerField(
                     label = "日期",
                     value = formatScheduleFullDate(selectedDate),
-                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = C.gold) },
+                    icon = { FortuneIcon(Icons.Default.CalendarMonth, contentDescription = null, tint = C.gold) },
                     onClick = { picker = ScheduleEditorPicker.StartDate },
                 )
             }
@@ -266,12 +269,13 @@ internal fun ScheduleEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("高级选项", modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-                    Icon(
-                        if (advancedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    FortuneIcon(
+                        Icons.Default.ExpandMore,
                         contentDescription = if (advancedExpanded) "收起" else "展开",
+                        modifier = Modifier.graphicsLayer { rotationZ = advancedRotation.value },
                     )
                 }
-                AnimatedVisibility(advancedExpanded) {
+                FortuneAnimatedVisibility(advancedExpanded) {
                     Column(
                         modifier = Modifier.padding(top = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -280,7 +284,7 @@ internal fun ScheduleEditorScreen(
                             label = "开始时间",
                             value = startTime.ifBlank { "未设置" },
                             onClear = if (startTime.isBlank()) null else ({ startTime = "" }),
-                            icon = { Icon(Icons.Default.Schedule, contentDescription = null, tint = C.gold) },
+                            icon = { FortuneIcon(Icons.Default.Schedule, contentDescription = null, tint = C.gold) },
                             onClick = { picker = ScheduleEditorPicker.StartTime },
                         )
                         ScheduleEndDateTimeField(
@@ -334,7 +338,7 @@ internal fun ScheduleEditorScreen(
                                         onClick = { imagePicker.launch(arrayOf("image/*")) },
                                         modifier = Modifier.weight(1f),
                                         leadingIcon = {
-                                            Icon(
+                                            FortuneIcon(
                                                 Icons.Default.AddPhotoAlternate,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp),
@@ -387,7 +391,7 @@ internal fun ScheduleEditorScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            if (item.pinned) Icon(Icons.Default.PushPin, contentDescription = "置顶", tint = scheduleAccent(item, C))
+                            if (item.pinned) FortuneIcon(Icons.Default.PushPin, contentDescription = "置顶", tint = scheduleAccent(item, C))
                             Text(item.title, color = C.textMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(item.startTime, color = C.textSub, style = MaterialTheme.typography.bodySmall)
                         }
@@ -451,6 +455,8 @@ internal fun ScheduleMemorialScreen(
     var sortName by rememberSaveable { mutableStateOf(ScheduleSortOrder.StartDateDescending.name) }
     val sort = runCatching { ScheduleSortOrder.valueOf(sortName) }.getOrDefault(ScheduleSortOrder.StartDateDescending)
     val sortedItems = remember(items, sort, today) { sortScheduleItems(items, sort, today) }
+    val placement = fortuneSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+    val fade = fortuneEffectsSpec<Float>()
     var menuExpanded by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
@@ -461,13 +467,13 @@ internal fun ScheduleMemorialScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(sort.label, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-                Icon(Icons.Default.ExpandMore, contentDescription = null)
+                FortuneIcon(Icons.Default.ExpandMore, contentDescription = null)
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 ScheduleSortOrder.entries.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option.label) },
-                        leadingIcon = if (option == sort) ({ Icon(Icons.Default.Check, contentDescription = null) }) else null,
+                        leadingIcon = if (option == sort) ({ FortuneIcon(Icons.Default.Check, contentDescription = null) }) else null,
                         onClick = {
                             sortName = option.name
                             menuExpanded = false
@@ -490,7 +496,9 @@ internal fun ScheduleMemorialScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sortedItems, key = { it.id }) { item ->
+                    Box(Modifier.animateItem(fadeInSpec = fade, placementSpec = placement, fadeOutSpec = fade)) {
                     ScheduleMemorialCard(item = item, today = today, onClick = { onItemClick(item) })
+                    }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
@@ -516,7 +524,7 @@ internal fun ScheduleDetailScreen(
     Column(Modifier.fillMaxSize()) {
         SubScreenHeader(title = "日程详情", onBack = onBack) {
             IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "修改日程", tint = C.gold)
+                FortuneIcon(Icons.Default.Edit, contentDescription = "修改日程", tint = C.gold)
             }
         }
         LazyColumn(
@@ -569,7 +577,7 @@ internal fun ScheduleDetailScreen(
                         tone = GeminiGlassTone.Rose,
                         contentColor = C.danger,
                         leadingIcon = {
-                            Icon(
+                            FortuneIcon(
                                 Icons.Default.Delete,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
@@ -590,7 +598,7 @@ internal fun ScheduleDetailScreen(
             content = { Text("确定删除“${item.title}”吗？", color = C.textMain) },
             actions = {
                 TextButton(onClick = { confirmDelete = false }) { Text("取消") }
-                TextButton(onClick = {
+                TextButton(onClick = hapticAction(HapticCue.Reject) {
                     confirmDelete = false
                     onDelete()
                 }) { Text("删除", color = C.danger) }
@@ -605,12 +613,14 @@ private fun ScheduleMemorialCard(item: ScheduleItem, today: LocalDate, onClick: 
     val accent = scheduleAccent(item, C)
     val distance = scheduleDayDistance(item, today)
     val hasImage = item.backgroundImageUri.isNotBlank()
+    val interaction = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
+        interactionSource = interaction,
         color = Color.Transparent,
         shape = MaterialTheme.shapes.extraLarge,
         border = if (item.pinned) BorderStroke(1.dp, accent.copy(alpha = 0.72f)) else null,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().fortunePress(interaction),
     ) {
         GeminiGlassPanel(
             tone = GeminiGlassTone.Neutral,
@@ -642,7 +652,7 @@ private fun ScheduleMemorialCard(item: ScheduleItem, today: LocalDate, onClick: 
                         modifier = Modifier.weight(1f),
                     )
                     if (item.pinned) {
-                        Icon(Icons.Default.PushPin, contentDescription = "置顶", tint = if (hasImage) Color.White else accent, modifier = Modifier.size(18.dp))
+                        FortuneIcon(Icons.Default.PushPin, contentDescription = "置顶", tint = if (hasImage) Color.White else accent, modifier = Modifier.size(18.dp))
                     }
                 }
                 ScheduleDistanceLabel(distance, accent, onImage = hasImage)
@@ -690,7 +700,7 @@ private fun ScheduleDetailHero(item: ScheduleItem, today: LocalDate) {
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
                     )
-                    if (item.pinned) Icon(Icons.Default.PushPin, contentDescription = "置顶", tint = if (hasImage) Color.White else accent)
+                    if (item.pinned) FortuneIcon(Icons.Default.PushPin, contentDescription = "置顶", tint = if (hasImage) Color.White else accent)
                 }
                 ScheduleDistanceLabel(scheduleDayDistance(item, today), accent, onImage = hasImage)
             }
@@ -764,12 +774,14 @@ private fun ScheduleGlassControl(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
+        interactionSource = interaction,
         color = Color.Transparent,
         contentColor = contentColor,
         shape = MaterialTheme.shapes.large,
-        modifier = modifier,
+        modifier = modifier.fortunePress(interaction),
     ) {
         GeminiGlassPanel(
             tone = tone,
@@ -799,7 +811,7 @@ private fun ScheduleGlassButton(
     leadingIcon: @Composable (() -> Unit)? = null,
 ) {
     ScheduleGlassControl(
-        onClick = onClick,
+        onClick = hapticAction(action = onClick),
         modifier = modifier,
         tone = tone,
         contentColor = contentColor,
@@ -901,7 +913,7 @@ private fun SchedulePickerField(
 ) {
     val C = LocalFortunePalette.current
     Surface(
-        onClick = onClick,
+        onClick = hapticAction(HapticCue.MenuOpen, onClick),
         color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.large,
@@ -925,7 +937,7 @@ private fun SchedulePickerField(
             if (onClear != null) {
                 TextButton(onClick = onClear) { Text("清除", style = MaterialTheme.typography.labelMedium) }
             } else {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
+                FortuneIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
             }
         }
         }
@@ -947,7 +959,7 @@ private fun ScheduleEndDateTimeField(
         else -> "日期未设置  $timeText"
     }
     Surface(
-        onClick = onClick,
+        onClick = hapticAction(HapticCue.MenuOpen, onClick),
         color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.large,
@@ -963,7 +975,7 @@ private fun ScheduleEndDateTimeField(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Default.Schedule, contentDescription = null, tint = C.gold)
+            FortuneIcon(Icons.Default.Schedule, contentDescription = null, tint = C.gold)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("结束时间", color = C.textSub, style = MaterialTheme.typography.labelMedium)
                 Text(value, color = C.textMain, style = MaterialTheme.typography.bodyMedium)
@@ -971,7 +983,7 @@ private fun ScheduleEndDateTimeField(
             if (onClear != null) {
                 TextButton(onClick = onClear) { Text("清除", style = MaterialTheme.typography.labelMedium) }
             } else {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
+                FortuneIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
             }
         }
         }
@@ -981,8 +993,9 @@ private fun ScheduleEndDateTimeField(
 @Composable
 private fun ScheduleSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     val C = LocalFortunePalette.current
+    val haptics = LocalAppHaptics.current
     Surface(
-        onClick = { onCheckedChange(!checked) },
+        onClick = { haptics.toggle(!checked); onCheckedChange(!checked) },
         color = Color.Transparent,
         contentColor = C.textMain,
         shape = MaterialTheme.shapes.large,
@@ -1007,6 +1020,7 @@ private fun ScheduleSwitchRow(label: String, checked: Boolean, onCheckedChange: 
 @Composable
 private fun ScheduleColorPicker(selected: String, onSelected: (String) -> Unit) {
     val C = LocalFortunePalette.current
+    val colorHaptics = LocalAppHaptics.current
     GeminiGlassPanel(
         tone = GeminiGlassTone.Neutral,
         shape = MaterialTheme.shapes.large,
@@ -1025,10 +1039,10 @@ private fun ScheduleColorPicker(selected: String, onSelected: (String) -> Unit) 
                             .size(36.dp)
                             .background(color, CircleShape)
                             .border(if (selected == value) 3.dp else 1.dp, if (selected == value) C.textMain else C.line, CircleShape)
-                            .clickable { onSelected(value) },
+                            .clickable { if (selected != value) colorHaptics.selection(); onSelected(value) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (selected == value) Icon(Icons.Default.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(18.dp))
+                        if (selected == value) FortuneIcon(Icons.Default.Check, contentDescription = "已选择", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -1088,7 +1102,7 @@ private fun ScheduleDateWheelDialog(
         },
         actions = {
             TextButton(onClick = onDismiss) { Text("取消") }
-            TextButton(onClick = { onConfirm(selectedDate) }) { Text("确定") }
+            TextButton(onClick = hapticAction(HapticCue.Confirm) { onConfirm(selectedDate) }) { Text("确定") }
         },
     )
 }
@@ -1116,7 +1130,7 @@ private fun ScheduleTimeWheelDialog(
         },
         actions = {
             TextButton(onClick = onDismiss) { Text("取消") }
-            TextButton(onClick = { onConfirm("%02d:%02d".format(hour, minute)) }) { Text("确定") }
+            TextButton(onClick = hapticAction(HapticCue.Confirm) { onConfirm("%02d:%02d".format(hour, minute)) }) { Text("确定") }
         },
     )
 }
@@ -1200,7 +1214,7 @@ private fun ScheduleDateTimeWheelDialog(
         },
         actions = {
             TextButton(onClick = onDismiss) { Text("取消") }
-            TextButton(onClick = { onConfirm(selectedDate, selectedTime) }) { Text("确定") }
+            TextButton(onClick = hapticAction(HapticCue.Confirm) { onConfirm(selectedDate, selectedTime) }) { Text("确定") }
         },
     )
 }
@@ -1223,6 +1237,7 @@ private fun ScheduleNumberWheel(
     val selectedIndex = values.indexOf(selected).coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
     val flingBehavior = rememberSnapFlingBehavior(listState)
+    HapticWheelFeedback(listState)
 
     LaunchedEffect(values, selected) {
         if (!listState.isScrollInProgress) {
@@ -1300,7 +1315,7 @@ private fun ScheduleBackgroundImage(uri: String, modifier: Modifier = Modifier) 
         Image(bitmap = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier)
     } else {
         Box(modifier.background(LocalFortunePalette.current.panelAlt), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Image, contentDescription = null, tint = LocalFortunePalette.current.textSub)
+            FortuneIcon(Icons.Default.Image, contentDescription = null, tint = LocalFortunePalette.current.textSub)
         }
     }
 }

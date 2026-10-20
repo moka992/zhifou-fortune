@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -40,6 +41,7 @@ internal fun GeminiGlassTextField(
     maxLines: Int = Int.MAX_VALUE,
     isError: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     shape: Shape = MaterialTheme.shapes.large,
     tone: GeminiGlassTone = GeminiGlassTone.Neutral,
 ) {
@@ -88,6 +90,7 @@ internal fun GeminiGlassTextField(
                 supportingText = supportingText,
                 isError = isError,
                 visualTransformation = visualTransformation,
+                keyboardOptions = keyboardOptions,
                 singleLine = singleLine,
                 minLines = minLines,
                 maxLines = maxLines,

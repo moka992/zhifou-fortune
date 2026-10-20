@@ -148,10 +148,11 @@ class CoinDivinationTest {
 
         val prompt = AiInterpreter.buildAiPrompt(reading)
 
-        assertTrue(prompt.contains("用户明确提出的问题是本次解读的核心：我是否应该接受这份新工作？"))
-        assertTrue(prompt.contains("1. 针对所问"))
+        val data = OraclePromptBuilder.data(reading)
+        assertEquals("我是否应该接受这份新工作？", data.getString("问题"))
+        assertEquals("已提供文字问题", data.getString("提问状态"))
         assertTrue(prompt.contains("现实对象、条件、阻力、时机与可选行动"))
-        assertTrue(prompt.contains("禁止输出“起卦复核”"))
+        assertTrue(prompt.contains("不展示后台复核"))
         assertFalse(prompt.contains("1. 起卦复核"))
     }
 
@@ -166,8 +167,8 @@ class CoinDivinationTest {
 
         assertTrue(prompt.contains("可能选择在心中默念"))
         assertTrue(prompt.contains("不得猜测、复述或虚构用户心中的问题"))
-        assertTrue(prompt.contains("1. 整体提示"))
-        assertTrue(prompt.contains("3. 自省方向"))
+        assertEquals("", OraclePromptBuilder.data(reading).getString("问题"))
+        assertTrue(prompt.contains("自省方向"))
         assertFalse(prompt.contains("1. 针对所问"))
     }
 

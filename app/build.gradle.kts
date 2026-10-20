@@ -6,6 +6,16 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val dicePhysicsNatives by configurations.creating
+val diceNativeDirectory = layout.buildDirectory.dir("generated/dicePhysics/jniLibs")
+val extractDicePhysicsNatives by tasks.registering(Sync::class) {
+    from(dicePhysicsNatives.elements.map { files -> files.map { zipTree(it.asFile) } }) {
+        include("*.so")
+        into("arm64-v8a")
+    }
+    into(diceNativeDirectory)
+}
+
 android {
     namespace = "com.zhifou.fortune"
     compileSdk = 36
@@ -14,8 +24,8 @@ android {
         applicationId = "com.zhifou.fortune"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.0.0"
+        versionCode = 17
+        versionName = "1.1.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -44,7 +54,11 @@ android {
     androidResources {
         noCompress += "onnx"
     }
+
+    sourceSets.getByName("main").jniLibs.srcDir(diceNativeDirectory)
 }
+
+tasks.named("preBuild") { dependsOn(extractDicePhysicsNatives) }
 
 kotlin {
     compilerOptions {
@@ -74,6 +88,22 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.json:json:20240303")
     implementation(files("libs/sherpa-onnx-1.13.2-arm64.aar"))
+
+    val gdxVersion = "1.14.2"
+    implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
+    implementation("com.badlogicgames.gdx:gdx-bullet:$gdxVersion")
+    val filamentVersion = "1.68.4"
+    implementation("com.google.android.filament:filament-android:$filamentVersion") {
+        exclude(group = "org.jetbrains.kotlin")
+    }
+    implementation("com.google.android.filament:gltfio-android:$filamentVersion") {
+        exclude(group = "org.jetbrains.kotlin")
+    }
+    dicePhysicsNatives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a")
+    dicePhysicsNatives("com.badlogicgames.gdx:gdx-bullet-platform:$gdxVersion:natives-arm64-v8a")
+    testRuntimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop")
+    testRuntimeOnly("com.badlogicgames.gdx:gdx-bullet-platform:$gdxVersion:natives-desktop")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

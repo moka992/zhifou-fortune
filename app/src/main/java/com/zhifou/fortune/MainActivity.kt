@@ -6,15 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.SensorManager
-import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.VibrationAttributes
-import android.os.Vibrator
-import android.os.VibratorManager
+import android.os.SystemClock
 import android.hardware.SensorEventListener
 import android.hardware.SensorEvent
 import android.hardware.Sensor
@@ -28,7 +24,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Easing
@@ -44,6 +40,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -63,6 +60,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -73,6 +71,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
@@ -83,7 +83,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.mandatorySystemGestures
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
@@ -110,6 +113,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -139,13 +143,16 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -170,6 +177,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -190,8 +199,18 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -213,6 +232,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
@@ -240,6 +260,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -249,6 +270,9 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CompletableDeferred
 import com.nlf.calendar.Solar
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -278,14 +302,6 @@ import kotlin.random.Random
 private val LinearDecelEasing = Easing { p -> 2f * p - p * p }
 
 private const val COIN_TOSS_REVEAL_DURATION_MS = 520
-private const val COIN_FIRST_TOSS_DELAY_MS = 180L
-private const val COIN_NEXT_TOSS_DELAY_MS = 400L
-private const val COIN_FINAL_SETTLE_DELAY_MS = 100L
-private const val TAROT_CARD_FLIP_DURATION_MS = 900
-private const val TAROT_FIRST_CARD_DELAY_MS = 180L
-private const val TAROT_NEXT_CARD_DELAY_MS = 260L
-private const val TAROT_CARD_REVEAL_DELAY_MS = 320L
-private const val TAROT_FINAL_SETTLE_DELAY_MS = 180L
 
 enum class ThemeMode { Dark, Light, System }
 
@@ -302,181 +318,15 @@ private fun ComponentActivity.configureEdgeToEdge(dark: Boolean) {
     }
 }
 
-/** Small, event-based haptic vocabulary shared by tools and primary actions. */
-private class ToolHaptics(context: Context) {
-    private val appContext = context.applicationContext
-    private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        appContext.getSystemService(VibratorManager::class.java)?.defaultVibrator
-    } else {
-        @Suppress("DEPRECATION")
-        appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-    }
-    private val gameAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_GAME)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-        .build()
-    private var lastDiceImpactAt = 0L
-    private var lastWheelTickAt = 0L
-    private var lastCoinPulseAt = 0L
-
-    private fun effectiveAmplitude(motor: Vibrator, amplitude: Int): Int {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && motor.hasAmplitudeControl()) {
-            amplitude.coerceIn(1, 255)
-        } else {
-            VibrationEffect.DEFAULT_AMPLITUDE
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun vibrate(motor: Vibrator, effect: VibrationEffect) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            motor.vibrate(
-                effect,
-                VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA),
-            )
-        } else {
-            motor.vibrate(effect, gameAttributes)
-        }
-    }
-
-    private fun oneShot(durationMs: Long, amplitude: Int) {
-        val motor = vibrator ?: return
-        if (!motor.hasVibrator()) return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrate(
-                    motor,
-                    VibrationEffect.createOneShot(
-                        durationMs,
-                        effectiveAmplitude(motor, amplitude),
-                    ),
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                motor.vibrate(durationMs)
-            }
-        } catch (_: Throwable) {
-            // Haptics are optional; a missing or restricted motor must not affect gameplay.
-        }
-    }
-
-    private fun waveform(timings: LongArray, amplitudes: IntArray) {
-        val motor = vibrator ?: return
-        if (!motor.hasVibrator()) return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val effectiveAmplitudes = if (motor.hasAmplitudeControl()) {
-                    amplitudes.map { amplitude -> amplitude.coerceIn(0, 255) }.toIntArray()
-                } else {
-                    amplitudes.map { amplitude ->
-                        if (amplitude == 0) 0 else VibrationEffect.DEFAULT_AMPLITUDE
-                    }.toIntArray()
-                }
-                vibrate(
-                    motor,
-                    VibrationEffect.createWaveform(timings, effectiveAmplitudes, -1),
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                motor.vibrate(timings, -1)
-            }
-        } catch (_: Throwable) {
-            // Haptics are optional; a missing or restricted motor must not affect gameplay.
-        }
-    }
-
-    fun diceStart() = oneShot(42L, 220)
-
-    fun diceImpact(strength: Float) {
-        val now = System.currentTimeMillis()
-        if (now - lastDiceImpactAt < 48L) return
-        lastDiceImpactAt = now
-        val intensity = (strength / 5f).coerceIn(0.15f, 1f)
-        oneShot(
-            durationMs = (13f + intensity * 17f).toLong(),
-            amplitude = (155f + intensity * 100f).toInt(),
-        )
-    }
-
-    fun diceSettle() = waveform(
-        timings = longArrayOf(0L, 30L, 46L, 22L),
-        amplitudes = intArrayOf(0, 235, 0, 175),
-    )
-
-    fun wheelStart() = waveform(
-        timings = longArrayOf(0L, 20L, 30L, 14L),
-        amplitudes = intArrayOf(0, 185, 0, 120),
-    )
-
-    fun wheelTick() {
-        val now = System.currentTimeMillis()
-        if (now - lastWheelTickAt < 30L) return
-        lastWheelTickAt = now
-        oneShot(13L, 135)
-    }
-
-    fun wheelSettle() = waveform(
-        timings = longArrayOf(0L, 28L, 48L, 34L),
-        amplitudes = intArrayOf(0, 210, 0, 255),
-    )
-
-    fun wheelGlideStop() = oneShot(22L, 150)
-
-    fun coinStart() = waveform(
-        timings = longArrayOf(0L, 14L, 20L, 9L),
-        amplitudes = intArrayOf(0, 150, 0, 105),
-    )
-
-    fun coinSpinPulse(index: Int) {
-        val now = System.currentTimeMillis()
-        if (now - lastCoinPulseAt < 42L) return
-        lastCoinPulseAt = now
-        oneShot(
-            durationMs = 11L + index % 2,
-            amplitude = 150 + (index % 4) * 10,
-        )
-    }
-
-    fun coinSettle() = waveform(
-        timings = longArrayOf(0L, 22L, 34L, 26L),
-        amplitudes = intArrayOf(0, 165, 0, 195),
-    )
-
-    fun sendAccepted() = oneShot(16L, 72)
-}
-
-// 按压反馈：按下时缩放 0.97，松开回弹（redesign: physical press feedback）。
-// 用法：Button(interactionSource = src, modifier = Modifier.pressScale(src))
 @Composable
-private fun pressScaleModifier(interaction: MutableInteractionSource): Modifier {
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, animationSpec = tween(120), label = "pressScale")
-    return Modifier.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }
-}
+private fun pressScaleModifier(interaction: MutableInteractionSource): Modifier = Modifier.fortunePress(interaction)
 
 @Composable
 private fun sendButtonFeedbackModifier(
     interaction: MutableInteractionSource,
     enabled: Boolean,
 ): Modifier {
-    val pressed by interaction.collectIsPressedAsState()
-    val activePress = enabled && pressed
-    val scale by animateFloatAsState(
-        targetValue = if (activePress) 0.9f else 1f,
-        animationSpec = tween(
-            durationMillis = if (activePress) 65 else 140,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "sendButtonScale",
-    )
-    return Modifier.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-        alpha = if (activePress) 0.84f else 1f
-    }
+    return Modifier.fortunePress(interaction, enabled = enabled, depth = 0.9f)
 }
 
 class MainActivity : ComponentActivity() {
@@ -499,7 +349,11 @@ class MainActivity : ComponentActivity() {
             SideEffect { configureEdgeToEdge(resolvedDark) }
             ZhiFouTheme(darkTheme = resolvedDark) {
                 val glassLightController = rememberGlassLightController(vm.glassMotionEnabled)
-                CompositionLocalProvider(LocalGlassLightController provides glassLightController) {
+                val appHaptics = rememberAppHaptics(vm.hapticsEnabled)
+                CompositionLocalProvider(
+                    LocalGlassLightController provides glassLightController,
+                    LocalAppHaptics provides appHaptics,
+                ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -567,6 +421,7 @@ internal data class FortuneLayoutMetrics(
     val windowWidth: FortuneWindowWidth,
     val compactWidth: Boolean,
     val compactHeight: Boolean,
+    val shortWide: Boolean = false,
     val contentMaxWidth: Dp,
     val horizontalPadding: Dp,
     val verticalPadding: Dp,
@@ -597,7 +452,7 @@ internal val LocalFortuneLayout = staticCompositionLocalOf {
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-private fun rememberFortuneLayoutMetrics(): FortuneLayoutMetrics {
+internal fun rememberFortuneLayoutMetrics(): FortuneLayoutMetrics {
     val windowSize = currentWindowDpSize()
     val fontScale = LocalDensity.current.fontScale
     val windowWidth = when {
@@ -607,29 +462,33 @@ private fun rememberFortuneLayoutMetrics(): FortuneLayoutMetrics {
     }
     val compactWidth = windowSize.width < 380.dp
     val compactHeight = windowSize.height < 700.dp
+    val shortWide = isShortWideWindow(windowSize.width.value, windowSize.height.value)
     return remember(windowSize, windowWidth, compactWidth, compactHeight, fontScale) {
         FortuneLayoutMetrics(
             windowWidth = windowWidth,
             compactWidth = compactWidth,
             compactHeight = compactHeight,
-            contentMaxWidth = if (compactHeight) 720.dp else when (windowWidth) {
+            shortWide = shortWide,
+            contentMaxWidth = if (shortWide) 1120.dp else if (compactHeight) 720.dp else when (windowWidth) {
                 FortuneWindowWidth.Compact -> 720.dp
                 FortuneWindowWidth.Medium -> 760.dp
                 FortuneWindowWidth.Expanded -> 960.dp
             },
             horizontalPadding = when {
+                shortWide -> 16.dp
                 compactWidth -> 12.dp
                 windowWidth == FortuneWindowWidth.Compact -> 16.dp
                 windowWidth == FortuneWindowWidth.Medium -> 24.dp
                 else -> 32.dp
             },
-            verticalPadding = if (compactHeight) 12.dp else 18.dp,
-            sectionSpacing = if (compactHeight) 14.dp else 20.dp,
+            verticalPadding = if (shortWide) 8.dp else if (compactHeight) 12.dp else 18.dp,
+            sectionSpacing = if (shortWide) 10.dp else if (compactHeight) 14.dp else 20.dp,
             cardPadding = if (compactWidth) 14.dp else 18.dp,
             bottomBarHeight = if (compactHeight) 96.dp else 112.dp,
             navigationBarHeight = if (compactHeight) 68.dp else 76.dp,
             oracleButtonSize = if (compactWidth || compactHeight) 50.dp else 58.dp,
             calendarCellHeight = maxOf(when {
+                shortWide -> 44.dp
                 compactWidth || compactHeight -> 50.dp
                 windowWidth == FortuneWindowWidth.Compact -> 58.dp
                 else -> 64.dp
@@ -655,6 +514,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
     var showWheelTool by rememberSaveable { mutableStateOf(false) }
     var showCoinTool by rememberSaveable { mutableStateOf(false) }
     var showTarotWiki by rememberSaveable { mutableStateOf(false) }
+    var showFourCardTarot by rememberSaveable { mutableStateOf(false) }
     var wheelSubPageName by rememberSaveable { mutableStateOf(WheelSubPage.Main.name) }
     var requestedScheduleDetailDate by rememberSaveable { mutableStateOf<String?>(null) }
     val scheduleNavigation = rememberScheduleNavigationState()
@@ -699,6 +559,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                                     showWheelTool = false
                                     showCoinTool = false
                                     showTarotWiki = false
+                                    showFourCardTarot = false
                                 }
                             },
                             icon = {
@@ -718,7 +579,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                                             .padding(horizontal = 12.dp, vertical = 4.dp),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(22.dp))
+                                        FortuneIcon(item.icon, contentDescription = item.label, modifier = Modifier.size(22.dp))
                                     }
                                 }
                             },
@@ -747,6 +608,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             showWheelTool = false
                             showCoinTool = false
                             showTarotWiki = false
+                            showFourCardTarot = false
                         },
                         color = C.accentFill,
                         shape = CircleShape,
@@ -757,7 +619,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                             .graphicsLayer { translationY = -2.dp.toPx() },
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(
+                            FortuneIcon(
                                 Tab.Oracle.icon,
                                 contentDescription = Tab.Oracle.label,
                                 tint = C.onAccentFill,
@@ -810,12 +672,14 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
                         )
                         showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
                         showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
-                        showTarotWiki -> TarotWikiScreen(onBack = { showTarotWiki = false })
+                    showTarotWiki -> TarotWikiScreen(onBack = { showTarotWiki = false })
+                    showFourCardTarot -> FourCardTarotScreen(vm, onBack = { showFourCardTarot = false })
                         else -> ToolsScreen(
                             onOpenDice = { showDiceTool = true },
                             onOpenWheel = { showWheelTool = true },
                             onOpenCoin = { showCoinTool = true },
                             onOpenTarotWiki = { showTarotWiki = true },
+                        onOpenFourCardTarot = { showFourCardTarot = true },
                         )
                     }
                     Tab.Schedule -> ScheduleScreen(
@@ -838,16 +702,16 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
 private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
     val layout = rememberFortuneLayoutMetrics()
     val context = LocalContext.current
-    val appMotionScope = rememberCoroutineScope()
-    val pageReveal = remember { Animatable(1f) }
-    val pageRevealDistance = with(LocalDensity.current) { 7.dp.toPx() }
+    val haptics = LocalAppHaptics.current
     val offlineRecognizer = remember(context) { OfflineSpeechRecognizer(context.applicationContext) }
     var tab by rememberTabState()
+    var previousFeedbackTab by remember { mutableStateOf(tab) }
     val tabStateHolder = rememberSaveableStateHolder()
     var showDiceTool by rememberSaveable { mutableStateOf(false) }
     var showWheelTool by rememberSaveable { mutableStateOf(false) }
     var showCoinTool by rememberSaveable { mutableStateOf(false) }
     var showTarotWiki by rememberSaveable { mutableStateOf(false) }
+    var showFourCardTarot by rememberSaveable { mutableStateOf(false) }
     var wheelSubPageName by rememberSaveable { mutableStateOf(WheelSubPage.Main.name) }
     var requestedScheduleDetailDate by rememberSaveable { mutableStateOf<String?>(null) }
     val scheduleNavigation = rememberScheduleNavigationState()
@@ -855,28 +719,46 @@ private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
         initialFirstVisibleItemIndex = if (vm.oracleTimeline.isEmpty()) 0 else vm.oracleTimeline.size,
     )
 
+    LaunchedEffect(tab) {
+        if (previousFeedbackTab != tab) {
+            previousFeedbackTab = tab
+            haptics.selection()
+        }
+    }
+
     fun openDestination(destination: Tab) {
         if (tab != destination) {
-            appMotionScope.launch {
-                pageReveal.snapTo(0.78f)
-                tab = destination
-                pageReveal.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(220, easing = FastOutSlowInEasing),
-                )
-            }
+            haptics.cancel()
+            tab = destination
         }
         if (destination != Tab.Tools) {
             showDiceTool = false
             showWheelTool = false
             showCoinTool = false
             showTarotWiki = false
+            showFourCardTarot = false
         }
     }
 
-    BackHandler(enabled = showDiceTool) { showDiceTool = false }
-    BackHandler(enabled = showCoinTool) { showCoinTool = false }
-    BackHandler(enabled = showTarotWiki) { showTarotWiki = false }
+    val toolsScrollState = rememberScrollState()
+    val toolRoute = when {
+        showDiceTool -> "dice"
+        showWheelTool -> "wheel/$wheelSubPageName"
+        showCoinTool -> "coin"
+        showTarotWiki -> "wiki"
+        showFourCardTarot -> "four-card"
+        else -> "catalog"
+    }
+    HapticPageFeedback(toolRoute, when {
+        toolRoute == "catalog" -> 0
+        showWheelTool && wheelSubPageName != WheelSubPage.Main.name -> 2
+        else -> 1
+    }, active = tab == Tab.Tools)
+    BackHandler(enabled = mainBackDestination(tab) != null) {
+        mainBackDestination(tab)?.let(::openDestination)
+    }
+    BackHandler(enabled = tab == Tab.Tools && showDiceTool) { showDiceTool = false }
+    BackHandler(enabled = tab == Tab.Tools && showCoinTool) { showCoinTool = false }
 
     DisposableEffect(offlineRecognizer) {
         onDispose {
@@ -885,10 +767,11 @@ private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
     }
 
     val pageScaffold: @Composable (Boolean) -> Unit = { usePhoneBottomBar ->
+        val editingOracle = tab == Tab.Oracle && WindowInsets.ime.getBottom(LocalDensity.current) > 0
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                if (usePhoneBottomBar) {
+                if (usePhoneBottomBar && !editingOracle && !(tab == Tab.Tools && showFourCardTarot)) {
                     FortuneLiquidBottomBar(
                         selectedTab = tab,
                         onTabSelected = ::openDestination,
@@ -897,23 +780,20 @@ private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
             },
             contentWindowInsets = if (usePhoneBottomBar) WindowInsets.safeDrawing.only(
                 WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-            ) else WindowInsets.safeDrawing,
+            ) else WindowInsets.safeDrawing.union(WindowInsets.mandatorySystemGestures),
         ) { padding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .consumeWindowInsets(padding),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Box(
                     modifier = Modifier
                         .widthIn(max = layout.contentMaxWidth)
                         .fillMaxWidth()
-                        .fillMaxHeight()
-                        .graphicsLayer {
-                            alpha = 0.72f + pageReveal.value * 0.28f
-                            translationY = (1f - pageReveal.value) * pageRevealDistance
-                        },
+                        .fillMaxHeight(),
                 ) {
                     tabStateHolder.SaveableStateProvider(tab.name) {
                         when (tab) {
@@ -937,11 +817,17 @@ private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
                                 showDiceTool -> DiceScreen(onBack = { showDiceTool = false })
                                 showCoinTool -> CoinScreen(onBack = { showCoinTool = false })
                                 showTarotWiki -> TarotWikiScreen(onBack = { showTarotWiki = false })
+                                showFourCardTarot -> FourCardTarotScreen(vm, onBack = { showFourCardTarot = false })
                                 else -> ToolsScreenMd3(
+                                    scrollState = toolsScrollState,
                                     onOpenDice = { showDiceTool = true },
-                                    onOpenWheel = { showWheelTool = true },
+                                    onOpenWheel = {
+                                        wheelSubPageName = WheelSubPage.Main.name
+                                        showWheelTool = true
+                                    },
                                     onOpenCoin = { showCoinTool = true },
                                     onOpenTarotWiki = { showTarotWiki = true },
+                                    onOpenFourCardTarot = { showFourCardTarot = true },
                                 )
                             }
                             Tab.Schedule -> ScheduleScreen(
@@ -964,13 +850,13 @@ private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
             backgroundStyle = vm.backgroundStyle,
             customImageUri = vm.customBackgroundUri,
         ) {
-        if (layout.windowWidth != FortuneWindowWidth.Compact) {
-            Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
-                FortuneSideRail(selectedTab = tab, onTabSelected = ::openDestination)
-                Box(Modifier.weight(1f)) { pageScaffold(false) }
-            }
-        } else {
-            pageScaffold(true)
+        val showSideRail = layout.windowWidth != FortuneWindowWidth.Compact
+        // Keep the page at one composition location when navigation changes shape.
+        Row(Modifier.fillMaxSize().then(
+            if (showSideRail) Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)) else Modifier,
+        )) {
+            if (showSideRail) FortuneSideRail(selectedTab = tab, onTabSelected = ::openDestination)
+            Box(Modifier.weight(1f)) { pageScaffold(!showSideRail) }
         }
         }
     }
@@ -987,7 +873,10 @@ private fun FortuneLiquidBottomBar(selectedTab: Tab, onTabSelected: (Tab) -> Uni
     val colors = MaterialTheme.colorScheme
     val palette = LocalFortunePalette.current
     val safe = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal).asPaddingValues()
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottom = maxOf(
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+        WindowInsets.mandatorySystemGestures.asPaddingValues().calculateBottomPadding(),
+    )
     val short = layout.compactHeight
     val barHeight = maxOf(if (short) 68.dp else 76.dp,
         ((if (short) 43f else 49f) + 18f * LocalDensity.current.fontScale + 6f).dp)
@@ -1007,7 +896,14 @@ private fun FortuneLiquidBottomBar(selectedTab: Tab, onTabSelected: (Tab) -> Uni
                 val selected = destination == selectedTab
                 val oracle = destination == Tab.Oracle
                 val source = remember(destination) { MutableInteractionSource() }
-                val selectedScale by animateFloatAsState(if (selected) 1f else 0.96f, tween(180), label = "navigation")
+                val selectedScale = animateFloatAsState(if (selected) 1f else 0.96f,
+                    fortuneSpatialSpec(fast = true), label = "navigation")
+                val indicator by animateColorAsState(
+                    when { oracle -> colors.primary; selected -> colors.primaryContainer; else -> colors.primaryContainer.copy(alpha = 0f) },
+                    fortuneEffectsSpec(), label = "navigation-indicator")
+                val iconColor by animateColorAsState(
+                    when { oracle -> colors.onPrimary; selected -> colors.primary; else -> colors.onSurfaceVariant },
+                    fortuneEffectsSpec(), label = "navigation-icon")
                 Column(
                     Modifier.weight(1f).fillMaxHeight()
                         .selectable(selected = selected, interactionSource = source, indication = null,
@@ -1017,15 +913,15 @@ private fun FortuneLiquidBottomBar(selectedTab: Tab, onTabSelected: (Tab) -> Uni
                 ) {
                     Box(Modifier.height(if (short) 43.dp else 49.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Surface(
-                            color = when { oracle -> colors.primary; selected -> colors.primaryContainer; else -> Color.Transparent },
+                            color = indicator,
                             shape = if (oracle) CircleShape else RoundedCornerShape(16.dp),
                             modifier = (if (oracle) Modifier.offset(y = (-7).dp).requiredSize(if (short) 48.dp else 54.dp)
                                 else Modifier.size(width = 48.dp, height = 32.dp))
-                                .graphicsLayer { scaleX = selectedScale; scaleY = selectedScale },
+                                .graphicsLayer { scaleX = selectedScale.value; scaleY = selectedScale.value },
                         ) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(destination.icon, null,
-                                    tint = when { oracle -> colors.onPrimary; selected -> colors.primary; else -> colors.onSurfaceVariant },
+                                FortuneIcon(destination.icon, null, active = selected, interactionSource = source,
+                                    tint = iconColor,
                                     modifier = Modifier.size(if (oracle) 26.dp else 23.dp))
                             }
                         }
@@ -1048,12 +944,27 @@ private fun HomeScreen(
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
-    val actionScope = rememberCoroutineScope()
-    val oracleClickScale = remember { Animatable(1f) }
-    var oracleOpening by remember { mutableStateOf(false) }
     val snapshot = vm.todayFortune
+    val homeHaptics = LocalAppHaptics.current
     val today = snapshot.reading
     var selectedInsight by remember { mutableStateOf<DailyInsightCategory?>(null) }
+    val homeListState = rememberLazyListState()
+    val overviewScroll = rememberLazyListState()
+    val insightsScroll = rememberLazyListState()
+    fun openInsight(category: DailyInsightCategory) {
+        if (vm.ensureAiReady()) {
+            homeHaptics.menu(true)
+            selectedInsight = category
+            vm.requestDailyAiInsight(category)
+        } else {
+            val message = when (vm.aiConnectionStatus) {
+                AiConnectionStatus.NoNetwork -> "当前没有可用网络"
+                AiConnectionStatus.Checking -> "AI模型正在连接测试"
+                else -> "请配置AI模型获得完整功能"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
     LaunchedEffect(Unit) {
         var activeDate = snapshot.almanac.date
         while (true) {
@@ -1065,7 +976,31 @@ private fun HomeScreen(
             }
         }
     }
-    LazyColumn(
+    if (layout.shortWide) {
+        Row(Modifier.fillMaxSize().padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
+            horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = overviewScroll,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item(key = "home-title") { PageHeading("知否运势", snapshot.almanac.dateLabel) }
+                    item(key = "today-reading") { DailyOverview(snapshot) }
+                }
+                HomeQuickActions(onOpenOracle = onOpenOracle,
+                    onOpenTodayAlmanac = { onOpenTodayAlmanac(snapshot.almanac.date) })
+            }
+            LazyColumn(Modifier.weight(1f).fillMaxHeight(), state = insightsScroll,
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item(key = "insights") { SectionHeading("今日关照", "事业 · 关系 · 财务") }
+                item(key = "insight-items") {
+                    InsightStrip(snapshot.insights, vm.aiConnectionStatus == AiConnectionStatus.Connected, ::openInsight)
+                }
+                item(key = "today-almanac") {
+                    DailyAlmanacPanel(snapshot.almanac, snapshot.personalizationBasis, snapshot.environmentSummary)
+                }
+            }
+        }
+    } else LazyColumn(
+        state = homeListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = layout.horizontalPadding,
@@ -1076,7 +1011,7 @@ private fun HomeScreen(
         item(key = "home-title") {
             PageHeading("知否运势", snapshot.almanac.dateLabel) {
                 Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape) {
-                    Icon(Icons.Default.AutoAwesome, null, tint = C.gold, modifier = Modifier.padding(12.dp).size(22.dp))
+                    FortuneIcon(Icons.Default.AutoAwesome, null, tint = C.gold, modifier = Modifier.padding(12.dp).size(22.dp))
                 }
             }
         }
@@ -1084,49 +1019,7 @@ private fun HomeScreen(
             DailyOverview(snapshot)
         }
         item(key = "home-actions") {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                val pressSrc = remember { MutableInteractionSource() }
-                HomeActionButton(
-                    onClick = { onOpenTodayAlmanac(snapshot.almanac.date) },
-                    interactionSource = pressSrc,
-                    modifier = Modifier.weight(1f).then(pressScaleModifier(pressSrc)),
-                    icon = Icons.Default.CalendarMonth,
-                    label = "今日黄历",
-                    primary = false,
-                )
-                val oracleSrc = remember { MutableInteractionSource() }
-                HomeActionButton(
-                    onClick = {
-                        if (!oracleOpening) {
-                            oracleOpening = true
-                            actionScope.launch {
-                                oracleClickScale.animateTo(
-                                    targetValue = 0.94f,
-                                    animationSpec = tween(70, easing = FastOutSlowInEasing),
-                                )
-                                oracleClickScale.animateTo(
-                                    targetValue = 0.98f,
-                                    animationSpec = tween(45, easing = FastOutSlowInEasing),
-                                )
-                                onOpenOracle()
-                                oracleClickScale.snapTo(1f)
-                                oracleOpening = false
-                            }
-                        }
-                    },
-                    interactionSource = oracleSrc,
-                    modifier = Modifier
-                        .weight(1f)
-                        .then(pressScaleModifier(oracleSrc))
-                        .graphicsLayer {
-                            scaleX = oracleClickScale.value
-                            scaleY = oracleClickScale.value
-                        },
-                    icon = Icons.Default.AutoAwesome,
-                    label = "去占卜",
-                    primary = true,
-                )
-            }
+            HomeQuickActions(onOpenOracle = onOpenOracle, onOpenTodayAlmanac = { onOpenTodayAlmanac(snapshot.almanac.date) })
         }
         item(key = "insights") {
             SectionHeading("今日关照", "事业 · 关系 · 财务")
@@ -1135,19 +1028,7 @@ private fun HomeScreen(
             InsightStrip(
                 insights = snapshot.insights,
                 aiConnected = vm.aiConnectionStatus == AiConnectionStatus.Connected,
-                onTap = { category ->
-                    if (vm.ensureAiReady()) {
-                        selectedInsight = category
-                        vm.requestDailyAiInsight(category)
-                    } else {
-                        val message = when (vm.aiConnectionStatus) {
-                            AiConnectionStatus.NoNetwork -> "当前没有可用网络"
-                            AiConnectionStatus.Checking -> "AI模型正在连接测试"
-                            else -> "请配置AI模型获得完整功能"
-                        }
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                    }
-                },
+                onTap = ::openInsight,
             )
         }
         item(key = "today-almanac") {
@@ -1165,8 +1046,20 @@ private fun HomeScreen(
             loading = vm.dailyAiInsightLoading == category,
             error = vm.dailyAiInsightError.takeIf { vm.dailyAiInsightErrorCategory == category }.orEmpty(),
             onRetry = { vm.requestDailyAiInsight(category, forceRetry = true) },
-            onDismiss = { selectedInsight = null },
+            onDismiss = { homeHaptics.menu(false); selectedInsight = null },
         )
+    }
+}
+
+@Composable
+private fun HomeQuickActions(onOpenOracle: () -> Unit, onOpenTodayAlmanac: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        val calendarSource = remember { MutableInteractionSource() }
+        HomeActionButton("今日黄历", Icons.Default.CalendarMonth, false, calendarSource, onOpenTodayAlmanac,
+            Modifier.weight(1f).then(pressScaleModifier(calendarSource)))
+        val oracleSource = remember { MutableInteractionSource() }
+        HomeActionButton("去占卜", Icons.Default.AutoAwesome, true, oracleSource, onOpenOracle,
+            Modifier.weight(1f).then(pressScaleModifier(oracleSource)))
     }
 }
 
@@ -1180,20 +1073,21 @@ private fun HomeActionButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shortWide = LocalFortuneLayout.current.shortWide
     Surface(
         onClick = onClick, interactionSource = interactionSource,
         color = if (primary) colors.primary else colors.surfaceContainerHigh,
         contentColor = if (primary) colors.onPrimary else colors.onSurface,
         shape = RoundedCornerShape(18.dp),
-        modifier = modifier.heightIn(min = 52.dp),
+        modifier = modifier.heightIn(min = if (shortWide) 48.dp else 52.dp),
     ) {
         Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+            Modifier.padding(horizontal = if (shortWide) 6.dp else 10.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(icon, null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            FortuneIcon(icon, null, modifier = Modifier.size(if (shortWide) 18.dp else 20.dp))
+            Spacer(Modifier.width(if (shortWide) 4.dp else 8.dp))
+            Text(label, style = if (shortWide) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
 }
@@ -1328,7 +1222,9 @@ private fun OracleScreen(
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
-    val sendHaptics = remember(context) { ToolHaptics(context.applicationContext) }
+    val sendHaptics = LocalAppHaptics.current
+    if (vm.coinCasting) OracleMotionFeedback(vm.coinCastingStartedAt, OracleMotionKind.Coins)
+    if (vm.tarotDrawing) OracleMotionFeedback(vm.tarotDrawingStartedAt, OracleMotionKind.Tarot)
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val voiceUiScope = rememberCoroutineScope()
@@ -1345,6 +1241,10 @@ private fun OracleScreen(
     var isCancelling by remember { mutableStateOf(false) }
     var textEditing by remember { mutableStateOf(false) }
     var keyboardEdited by remember { mutableStateOf(false) }
+    var questionEditor by remember { mutableStateOf(TextFieldValue(vm.question, TextRange(vm.question.length))) }
+    val questionValue = syncOracleEditorValue(questionEditor, vm.question)
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    SideEffect { if (questionEditor != questionValue) questionEditor = questionValue }
     var voiceLevel by remember { mutableStateOf(0f) }
     var questionBeforeRecording by remember { mutableStateOf("") }
     var toolMenuExpanded by remember { mutableStateOf(false) }
@@ -1354,12 +1254,24 @@ private fun OracleScreen(
     }
     val oracleDate = remember { LocalDate.now() }
     val oracleDateKey = oracleDate.toString()
-    var showDailyPrompt by rememberSaveable(oracleDateKey) {
-        mutableStateOf(vm.consumeDailyOraclePrompt(oracleDate))
+    val initialOraclePage = rememberSaveable(oracleDateKey) {
+        if (initiallyShowOraclePrompt(
+            firstVisitToday = vm.consumeDailyOraclePrompt(oracleDate),
+            hasTimeline = vm.oracleTimeline.isNotEmpty(),
+        )) ORACLE_INSPIRATION_PAGE else ORACLE_MESSAGES_PAGE
+    }
+    val oraclePagerState = rememberPagerState(initialPage = initialOraclePage) { ORACLE_PAGE_COUNT }
+    HapticPagerFeedback(oraclePagerState)
+    fun showOracleMessages(animated: Boolean = false) {
+        voiceUiScope.launch {
+            if (oraclePagerState.currentPage == ORACLE_MESSAGES_PAGE && !oraclePagerState.isScrollInProgress) return@launch
+            if (animated) oraclePagerState.animateScrollToPage(ORACLE_MESSAGES_PAGE, animationSpec = tween(240, easing = FastOutSlowInEasing))
+            else oraclePagerState.scrollToPage(ORACLE_MESSAGES_PAGE)
+        }
     }
     val suggestedQuestions = remember(vm.todayFortune) { dailyOracleSuggestions(vm.todayFortune) }
-    val oraclePageSwipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
     val oracleTimeline = vm.oracleTimeline
+    val timelineFade = fortuneEffectsSpec<Float>()
     var observedFollowSnapshot by remember {
         mutableStateOf(
             OracleFollowSnapshot(
@@ -1380,14 +1292,13 @@ private fun OracleScreen(
     LaunchedEffect(oracleDate) {
         if (vm.todayFortune.almanac.date != oracleDate) vm.refreshToday(oracleDate)
     }
-    BackHandler(enabled = showDailyPrompt) { showDailyPrompt = false }
-
     fun entryKey(entry: OracleTimelineEntry) = when (entry) {
         is OracleTimelineEntry.Reading -> "reading-${entry.reading.id}"
         is OracleTimelineEntry.Chat -> "chat-${entry.message.id}"
     }
     fun toggleSelection(entry: OracleTimelineEntry) {
         val key = entryKey(entry)
+        sendHaptics.selection()
         if (selectedKeys.containsKey(key)) selectedKeys.remove(key) else selectedKeys[key] = true
     }
     fun exitSelection() {
@@ -1450,6 +1361,7 @@ private fun OracleScreen(
                     endpoint = vm.cloudSpeechEndpoint,
                     apiKey = vm.cloudSpeechApiKey,
                     model = vm.cloudSpeechModel,
+                    providerId = vm.cloudSpeechProviderId,
                 )
             }
         } else {
@@ -1463,7 +1375,7 @@ private fun OracleScreen(
         keyboardController?.hide()
         isCancelling = false
         voiceLevel = 0.06f
-        isRecording = offlineRecognizer.start(
+        val startResult = offlineRecognizer.start(
             cloudConfig = cloudConfig,
             onFinal = { text ->
                 voiceLevel = 0f
@@ -1481,13 +1393,17 @@ private fun OracleScreen(
                 showVoiceMessage(it)
             },
         )
-        if (!isRecording) {
-            showVoiceMessage("无法启动麦克风，请重试")
+        isRecording = startResult == SpeechStartResult.Started
+        if (isRecording) {
+            sendHaptics.scene(HapticCue.VoiceStart)
+        } else {
+            startResult.message?.let(::showVoiceMessage)
         }
     }
 
     fun finishRecording(cancelled: Boolean) {
         if (!isRecording) return
+        sendHaptics.scene(if (cancelled) HapticCue.VoiceCancel else HapticCue.VoiceStop)
         isRecording = false
         isCancelling = false
         textEditing = false
@@ -1508,7 +1424,7 @@ private fun OracleScreen(
                 keyboardController?.hide()
                 textEditing = false
                 keyboardEdited = false
-                showDailyPrompt = false
+                showOracleMessages()
                 vm.sendChatMessage()
             }
         }
@@ -1525,21 +1441,25 @@ private fun OracleScreen(
         when (selectedTool) {
             OracleTool.COIN -> {
                 dismissTextInput()
-                showDailyPrompt = false
+                showOracleMessages()
                 vm.castCoins()
             }
             OracleTool.ANSWER_BOOK -> {
                 dismissTextInput()
-                showDailyPrompt = false
+                showOracleMessages()
                 vm.drawAnswerBook()
             }
             OracleTool.TAROT -> {
                 dismissTextInput()
-                showDailyPrompt = false
+                showOracleMessages()
                 vm.drawTarot()
             }
             null -> sendChatMessage()
         }
+    }
+
+    LaunchedEffect(isCancelling) {
+        if (isRecording) sendHaptics.selection()
     }
 
     LaunchedEffect(
@@ -1564,7 +1484,9 @@ private fun OracleScreen(
         observedFollowSnapshot = currentSnapshot
 
         if (shouldFollowNewContent) {
-            showDailyPrompt = false
+            if (oraclePagerState.currentPage != ORACLE_MESSAGES_PAGE || oraclePagerState.isScrollInProgress) {
+                oraclePagerState.scrollToPage(ORACLE_MESSAGES_PAGE)
+            }
             withFrameNanos { }
             val targetIndex = (timelineState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
             if (targetIndex - timelineState.firstVisibleItemIndex > 3) {
@@ -1590,6 +1512,7 @@ private fun OracleScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { dismissTextInput() })
             }
@@ -1599,57 +1522,52 @@ private fun OracleScreen(
                 top = layout.verticalPadding,
                 bottom = 4.dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 8.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (layout.shortWide) 4.dp else if (layout.compactHeight) 8.dp else 12.dp),
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .then(oraclePagerGestureRegion()),
         ) {
-            if (showDailyPrompt || (oracleTimeline.isEmpty() && !vm.coinCasting &&
-                    !vm.tarotDrawing && !vm.chatSending && vm.chatStatus.isBlank())) {
+            val oracleBodyHeight = maxHeight
+            HorizontalPager(
+                state = oraclePagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !selectionMode && !isRecording,
+                key = { if (it == ORACLE_INSPIRATION_PAGE) "inspiration" else "messages" },
+            ) { page ->
+            if (page == ORACLE_INSPIRATION_PAGE) {
                 DailyOraclePrompt(
                     questions = suggestedQuestions,
                     onQuestionClick = { question ->
+                        sendHaptics.selection()
                         vm.question = question
                         keyboardEdited = true
+                        dismissTextInput()
+                        showOracleMessages(animated = true)
                     },
-                    onReturnToTimeline = { showDailyPrompt = false },
-                    swipeThresholdPx = oraclePageSwipeThreshold,
                 )
             } else {
             LazyColumn(
                 state = timelineState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(timelineState, oraclePageSwipeThreshold, selectionMode) {
+                    .pointerInput(selectionMode) {
                         if (selectionMode) return@pointerInput
                         awaitEachGesture {
                             val down = awaitFirstDown(
                                 requireUnconsumed = false,
                                 pass = PointerEventPass.Initial,
                             )
-                            val startedAtTimelineEnd = !timelineState.canScrollForward
-                            var totalDragX = 0f
-                            var totalDragY = 0f
-                            var revealPrompt = false
+                            var dragged = false
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                totalDragX = change.position.x - down.position.x
-                                totalDragY = change.position.y - down.position.y
-                                revealPrompt = startedAtTimelineEnd &&
-                                    isUpwardOraclePageSwipe(totalDragY, oraclePageSwipeThreshold)
-                                if (revealPrompt) change.consume()
+                                val delta = change.position - down.position
+                                dragged = dragged || delta.getDistance() > viewConfiguration.touchSlop
                                 if (!change.pressed) {
-                                    if (revealPrompt) {
-                                        showDailyPrompt = true
-                                    } else if (
-                                        sqrt(totalDragX * totalDragX + totalDragY * totalDragY) <=
-                                        viewConfiguration.touchSlop
-                                    ) {
-                                        dismissTextInput()
-                                    }
+                                    if (!dragged) dismissTextInput()
                                     break
                                 }
                             }
@@ -1657,6 +1575,18 @@ private fun OracleScreen(
                     },
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (oracleTimeline.isEmpty() && !vm.coinCasting && !vm.tarotDrawing &&
+                    !vm.chatSending && vm.chatStatus.isBlank()) {
+                    item(key = "timeline-empty") {
+                        Text(
+                            "还没有消息",
+                            color = C.textSub,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
                 items(oracleTimeline, key = { entry ->
                     when (entry) {
                         is OracleTimelineEntry.Reading -> "reading-${entry.reading.id}"
@@ -1668,10 +1598,14 @@ private fun OracleScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .animateItem(fadeInSpec = timelineFade, placementSpec = null, fadeOutSpec = timelineFade)
                             .combinedClickable(
                                 enabled = true,
                                 onLongClick = {
-                                    if (!selectedKeys.containsKey(key)) selectedKeys[key] = true
+                                    if (!selectedKeys.containsKey(key)) {
+                                        sendHaptics.selection()
+                                        selectedKeys[key] = true
+                                    }
                                 },
                                 onClick = {
                                     if (selectionMode) toggleSelection(entry)
@@ -1698,7 +1632,7 @@ private fun OracleScreen(
                             is OracleTimelineEntry.Chat -> ChatBubble(entry.message)
                         }
                         if (selectionMode) {
-                            Icon(
+                            FortuneIcon(
                                 if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                                 contentDescription = null,
                                 tint = if (selected) C.gold else C.textSub,
@@ -1714,6 +1648,9 @@ private fun OracleScreen(
                         CoinCastingProgressCard(
                             lines = vm.coinCastingLines,
                             question = vm.coinCastingQuestion,
+                            currentThrow = vm.coinCastingThrow,
+                            startedAt = vm.coinCastingStartedAt,
+                            availableHeight = oracleBodyHeight,
                         )
                     }
                 }
@@ -1723,6 +1660,8 @@ private fun OracleScreen(
                             draws = vm.tarotDrawingCards,
                             revealedCount = vm.tarotRevealedCount,
                             question = vm.tarotDrawingQuestion,
+                            startedAt = vm.tarotDrawingStartedAt,
+                            availableHeight = oracleBodyHeight,
                         )
                     }
                 }
@@ -1734,7 +1673,7 @@ private fun OracleScreen(
                 if (vm.chatStatus.isNotBlank()) {
                     item(key = "chat-status") {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = C.rose, modifier = Modifier.size(14.dp))
+                            FortuneIcon(Icons.Default.Info, contentDescription = null, tint = C.rose, modifier = Modifier.size(14.dp))
                             Text(vm.chatStatus, color = C.rose, style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -1742,6 +1681,12 @@ private fun OracleScreen(
                 item(key = "timeline-bottom") { Spacer(Modifier.height(4.dp)) }
             }
             }
+            }
+            OraclePagerIndicator(
+                state = oraclePagerState,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp),
+                enabled = !selectionMode && !isRecording,
+            )
         }
         if (selectionMode) {
             Surface(
@@ -1756,7 +1701,7 @@ private fun OracleScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     TextButton(onClick = { exitSelection() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        FortuneIcon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("取消")
                     }
@@ -1766,7 +1711,7 @@ private fun OracleScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                     TextButton(onClick = { confirmDeleteSelection = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
+                        FortuneIcon(Icons.Default.Delete, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("删除", color = C.danger)
                     }
@@ -1785,7 +1730,7 @@ private fun OracleScreen(
                     .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                AnimatedVisibility(visible = selectedTool != null) {
+                FortuneAnimatedVisibility(visible = selectedTool != null && !layout.shortWide) {
                     selectedTool?.let { tool ->
                         GeminiGlassPanel(
                             tone = when (tool) {
@@ -1800,7 +1745,7 @@ private fun OracleScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
-                                Icon(
+                                FortuneIcon(
                                     imageVector = tool.icon(),
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
@@ -1810,10 +1755,13 @@ private fun OracleScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                 )
                                 IconButton(
-                                    onClick = { selectedToolName = null },
+                                    onClick = {
+                                        sendHaptics.selection()
+                                        selectedToolName = null
+                                    },
                                     modifier = Modifier.size(28.dp),
                                 ) {
-                                    Icon(
+                                    FortuneIcon(
                                         Icons.Default.Close,
                                         contentDescription = "取消${tool.label}",
                                         modifier = Modifier.size(16.dp),
@@ -1831,7 +1779,10 @@ private fun OracleScreen(
                     Box {
                         val addInteractionSource = remember { MutableInteractionSource() }
                         Surface(
-                            onClick = { toolMenuExpanded = !toolMenuExpanded },
+                            onClick = {
+                                sendHaptics.menu(!toolMenuExpanded)
+                                toolMenuExpanded = !toolMenuExpanded
+                            },
                             interactionSource = addInteractionSource,
                             modifier = Modifier
                                 .size(if (layout.compactWidth) 44.dp else 48.dp)
@@ -1846,9 +1797,11 @@ private fun OracleScreen(
                                 modifier = Modifier.fillMaxSize(),
                             ) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(
+                                    FortuneIcon(
                                         Icons.Default.Add,
                                         contentDescription = "选择占卜功能",
+                                        replayKey = toolMenuExpanded,
+                                        interactionSource = addInteractionSource,
                                         tint = if (selectedTool == null) {
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         } else {
@@ -1860,7 +1813,7 @@ private fun OracleScreen(
                         }
                         DropdownMenu(
                             expanded = toolMenuExpanded,
-                            onDismissRequest = { toolMenuExpanded = false },
+                            onDismissRequest = { sendHaptics.menu(false); toolMenuExpanded = false },
                         ) {
                             OracleTool.entries.forEach { tool ->
                                 val isSelected = selectedTool == tool
@@ -1874,10 +1827,11 @@ private fun OracleScreen(
                                     },
                                     onClick = {
                                         selectedToolName = if (isSelected) null else tool.name
+                                        sendHaptics.selection()
                                         toolMenuExpanded = false
                                     },
                                     leadingIcon = {
-                                        Icon(
+                                        FortuneIcon(
                                             imageVector = tool.icon(),
                                             contentDescription = null,
                                             tint = if (isSelected) C.gold else C.textSub,
@@ -1885,7 +1839,7 @@ private fun OracleScreen(
                                     },
                                     trailingIcon = {
                                         if (isSelected) {
-                                            Icon(
+                                            FortuneIcon(
                                                 Icons.Default.CheckCircle,
                                                 contentDescription = "已选择",
                                                 tint = C.gold,
@@ -1900,11 +1854,18 @@ private fun OracleScreen(
                             }
                         }
                     }
+                    if (layout.shortWide) selectedTool?.let { tool ->
+                        OracleSelectedToolChip(tool, onClear = {
+                            sendHaptics.selection()
+                            selectedToolName = null
+                        })
+                    }
                     TextField(
-                        value = vm.question,
+                        value = questionValue,
                         onValueChange = {
-                            vm.question = it
-                            keyboardEdited = it.isNotBlank()
+                            questionEditor = it
+                            vm.question = it.text
+                            keyboardEdited = it.text.isNotBlank()
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -1954,6 +1915,9 @@ private fun OracleScreen(
                                                 }
                                                 change.consume()
                                                 cancelled = change.position.y < down.position.y - VOICE_CANCEL_DISTANCE_DP.dp.toPx()
+                                                if (isRecording && cancelled != isCancelling) {
+                                                    sendHaptics.scene(if (cancelled) HapticCue.GestureArm else HapticCue.GestureDisarm)
+                                                }
                                                 isCancelling = cancelled
                                                 if (!change.pressed) {
                                                     finishRecording(cancelled)
@@ -1972,7 +1936,7 @@ private fun OracleScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         },
-                        maxLines = 3,
+                        maxLines = if (layout.shortWide) 2 else if (layout.compactHeight) 3 else 5,
                         readOnly = !textEditing && !keyboardEdited,
                         shape = MaterialTheme.shapes.extraLarge,
                         colors = TextFieldDefaults.colors(
@@ -1985,7 +1949,7 @@ private fun OracleScreen(
                         ),
                     )
                     val sendSrc = remember { MutableInteractionSource() }
-                    val sendEnabled = when (selectedTool) {
+                    val sendEnabled = !vm.coinCasting && !vm.tarotDrawing && when (selectedTool) {
                         OracleTool.COIN -> !vm.coinCasting
                         OracleTool.ANSWER_BOOK -> true
                         OracleTool.TAROT -> !vm.tarotDrawing
@@ -2013,9 +1977,11 @@ private fun OracleScreen(
                                 .graphicsLayer { alpha = if (sendEnabled) 1f else 0.65f },
                         ) {
                             Box(Modifier.fillMaxSize().background(if (sendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-                                Icon(
+                                FortuneIcon(
                                     Icons.AutoMirrored.Filled.Send,
                                     contentDescription = selectedTool?.let { "使用${it.label}" } ?: "发送给 AI",
+                                    active = sendEnabled,
+                                    interactionSource = sendSrc,
                                     tint = if (sendEnabled) {
                                         MaterialTheme.colorScheme.onPrimary
                                     } else {
@@ -2026,7 +1992,7 @@ private fun OracleScreen(
                         }
                     }
                 }
-                Text(
+                if (!keyboardVisible && !layout.shortWide) Text(
                     "轻触输入文字，按住输入语音",
                     color = C.textSub,
                     style = MaterialTheme.typography.bodySmall,
@@ -2055,11 +2021,21 @@ private fun OracleScreen(
 }
 
 @Composable
+private fun OracleSelectedToolChip(tool: OracleTool, onClear: () -> Unit) {
+    GeminiGlassPanel(shape = CircleShape, tone = GeminiGlassTone.Neutral) {
+        Row(Modifier.padding(start = 8.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(tool.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
+                FortuneIcon(Icons.Default.Close, contentDescription = "取消${tool.label}", modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
 private fun DailyOraclePrompt(
     questions: List<String>,
     onQuestionClick: (String) -> Unit,
-    onReturnToTimeline: () -> Unit,
-    swipeThresholdPx: Float,
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
@@ -2071,37 +2047,53 @@ private fun DailyOraclePrompt(
         GeminiGlassTone.Rose,
         GeminiGlassTone.Neutral,
     )
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(swipeThresholdPx) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    var totalDragY = 0f
-                    var returnToTimeline = false
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        totalDragY = change.position.y - down.position.y
-                        returnToTimeline = isDownwardOraclePageSwipe(totalDragY, swipeThresholdPx) && !suggestionScroll.canScrollForward
-                        if (returnToTimeline) change.consume()
-                        if (!change.pressed) {
-                            if (returnToTimeline) onReturnToTimeline()
-                            break
+    if (layout.shortWide) {
+        Column(Modifier.fillMaxSize().verticalScroll(suggestionScroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("今天，想问些什么？", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            questions.take(4).chunked(2).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { question ->
+                        val source = remember(question) { MutableInteractionSource() }
+                        Surface(onClick = { onQuestionClick(question) }, interactionSource = source,
+                            color = Color.Transparent, shape = MaterialTheme.shapes.large,
+                            modifier = Modifier.weight(1f).then(pressScaleModifier(source))) {
+                            GeminiGlassPanel(tone = GeminiGlassTone.Neutral, modifier = Modifier.fillMaxWidth()) {
+                            Text(question, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
+                            }
                         }
                     }
+                    repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-            },
-    ) {
+            }
+        }
+        return
+    }
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FortuneIcon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f)) {
+                Text("今日灵感", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                Text(
+                    "${today.monthValue}月${today.dayOfMonth}日",
+                    color = C.textSub,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Column(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(suggestionScroll)
-                .padding(top = if (layout.compactHeight) 12.dp else 26.dp, bottom = 16.dp),
+                .padding(top = 12.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 10.dp else 14.dp),
         ) {
-            Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-            Text("${today.monthValue}月${today.dayOfMonth}日 · 今日灵感", color = C.textSub, style = MaterialTheme.typography.labelMedium)
             Text(
                 "今天，\n想问些什么？",
                 color = MaterialTheme.colorScheme.onBackground,
@@ -2143,7 +2135,7 @@ private fun DailyOraclePrompt(
                             },
                             modifier = Modifier.weight(1f),
                         )
-                        Icon(
+                        FortuneIcon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2352,18 +2344,21 @@ private fun ChatBubble(message: ChatMessage) {
 @Composable
 private fun ThinkingBubble() {
     val C = LocalFortunePalette.current
-    val transition = rememberInfiniteTransition(label = "thinking")
-    val dots = listOf(0, 1, 2).map { i ->
-        transition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 600, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse,
-                initialStartOffset = androidx.compose.animation.core.StartOffset(i * 180),
-            ),
-            label = "dot$i",
-        )
+    val lifecycle by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val dots = if (!LocalReducedFortuneMotion.current && lifecycle.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+        val transition = rememberInfiniteTransition(label = "thinking")
+        List(3) { i ->
+            transition.animateFloat(
+                initialValue = 0.3f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 600, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                    initialStartOffset = androidx.compose.animation.core.StartOffset(i * 180),
+                ), label = "dot$i",
+            )
+        }
+    } else {
+        remember { List(3) { mutableStateOf(0.65f) } }
     }
     GeminiGlassPanel(
         tone = GeminiGlassTone.Neutral,
@@ -2381,7 +2376,8 @@ private fun ThinkingBubble() {
                 Box(
                     Modifier
                         .size(8.dp)
-                        .background(C.chatText.copy(alpha = d.value), CircleShape),
+                        .graphicsLayer { alpha = d.value }
+                        .background(C.chatText, CircleShape),
                 )
             }
         }
@@ -2455,6 +2451,7 @@ private fun ToolsScreen(
     onOpenWheel: () -> Unit,
     onOpenCoin: () -> Unit,
     onOpenTarotWiki: () -> Unit,
+    onOpenFourCardTarot: () -> Unit,
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
@@ -2483,7 +2480,7 @@ private fun ToolsScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Image(
-                    painter = painterResource(id = R.drawable.tool_dice_card),
+                    painter = painterResource(id = R.drawable.tool_dice_refined),
                     contentDescription = "摇骰子",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -2541,7 +2538,7 @@ private fun ToolsScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Image(
-                    painter = painterResource(id = R.drawable.tool_coin_card),
+                    painter = painterResource(id = R.drawable.tool_coin_refined),
                     contentDescription = "抛硬币",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -2561,6 +2558,8 @@ private fun ToolsScreen(
                 }
             }
         }
+        ToolFeatureCard(ToolFeature("四牌塔罗", "亲手抽牌 · 四牌十字阵", ToolVisual.FourTarot, onOpenFourCardTarot),
+            compactCard = false)
         TarotWikiToolCard(onClick = onOpenTarotWiki)
     }
 }
@@ -2572,22 +2571,21 @@ private data class ToolFeature(
     val onClick: () -> Unit,
 )
 
-private enum class ToolVisual { Dice, Wheel, Coin, Tarot }
+private enum class ToolVisual { Dice, Wheel, Coin, Tarot, FourTarot }
 
 @Composable
 private fun ToolsScreenMd3(
+    scrollState: ScrollState,
     onOpenDice: () -> Unit,
     onOpenWheel: () -> Unit,
     onOpenCoin: () -> Unit,
     onOpenTarotWiki: () -> Unit,
+    onOpenFourCardTarot: () -> Unit,
 ) {
     val layout = LocalFortuneLayout.current
-    val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    val columns = when {
-        layout.windowWidth == FortuneWindowWidth.Expanded -> 3
-        screenWidthDp >= 340 -> 2
-        else -> 1
-    }
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val columns = toolCatalogColumns((maxWidth - layout.horizontalPadding * 2).value, layout.shortWide, fontScale)
     val tools = listOf(
         ToolFeature(
             title = "摇骰子",
@@ -2608,6 +2606,12 @@ private fun ToolsScreenMd3(
             onClick = onOpenCoin,
         ),
         ToolFeature(
+            title = "四牌塔罗",
+            description = "亲手抽牌 · 四牌十字阵",
+            visual = ToolVisual.FourTarot,
+            onClick = onOpenFourCardTarot,
+        ),
+        ToolFeature(
             title = "韦特塔罗 Wiki",
             description = "塔罗牌 · 牌义与历史",
             visual = ToolVisual.Tarot,
@@ -2618,16 +2622,16 @@ private fun ToolsScreenMd3(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
         verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
     ) {
         PageHeading("小工具", "给生活一点偶然")
-        SectionHeading("探索与发现", "4 个小工具")
+        if (!layout.shortWide) SectionHeading("探索与发现", "${tools.size} 个小工具")
         tools.chunked(columns).forEach { rowTools ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (layout.shortWide) 10.dp else 14.dp),
             ) {
                 rowTools.forEach { tool ->
                     ToolFeatureCard(
@@ -2640,17 +2644,19 @@ private fun ToolsScreenMd3(
             }
         }
     }
+    }
 }
 
 @Composable
 private fun ToolFeatureCard(feature: ToolFeature, compactCard: Boolean, modifier: Modifier = Modifier) {
     val source = remember(feature.title) { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
+    val shortWide = LocalFortuneLayout.current.shortWide
     val fill = when (feature.visual) {
         ToolVisual.Dice -> colors.primaryContainer
         ToolVisual.Wheel -> colors.secondaryContainer
         ToolVisual.Coin -> colors.tertiaryContainer
-        ToolVisual.Tarot -> colors.surfaceContainerHigh
+        ToolVisual.Tarot, ToolVisual.FourTarot -> colors.surfaceContainerHigh
     }
     Surface(
         onClick = feature.onClick, interactionSource = source,
@@ -2659,18 +2665,19 @@ private fun ToolFeatureCard(feature: ToolFeature, compactCard: Boolean, modifier
     ) {
         Column {
             Box(
-                Modifier.fillMaxWidth().aspectRatio(1f).background(fill),
+                Modifier.fillMaxWidth().aspectRatio(if (shortWide) 1.20f else 1f).background(fill),
                 contentAlignment = Alignment.Center,
             ) {
                 ToolFeatureVisual(feature.visual, compactCard, feature.title)
             }
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.padding(if (shortWide) 10.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(feature.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    Text(feature.title, style = if (shortWide) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (!shortWide) FortuneIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
                 Text(feature.description, color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
-                    minLines = if (compactCard) 2 else 1, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    minLines = if (compactCard && !shortWide) 2 else 1, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -2682,12 +2689,17 @@ private fun ToolFeatureVisual(
     compact: Boolean,
     contentDescription: String,
 ) {
+    if (visual == ToolVisual.FourTarot) {
+        FourCardTarotToolArtwork(Modifier.fillMaxSize())
+        return
+    }
     if (visual != ToolVisual.Tarot) {
         val image = when (visual) {
             ToolVisual.Dice -> R.drawable.tool_dice_refined
             ToolVisual.Wheel -> R.drawable.tool_wheel_refined
             ToolVisual.Coin -> R.drawable.tool_coin_refined
             ToolVisual.Tarot -> error("Tarot uses the original deck artwork")
+            ToolVisual.FourTarot -> error("Four-card tarot uses the original deck artwork")
         }
         Image(
             painter = painterResource(image),
@@ -2733,14 +2745,14 @@ private fun CoinScreen(onBack: () -> Unit) {
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val haptics = remember(context) { ToolHaptics(context.applicationContext) }
+    val haptics = rememberToolHaptics()
     val rotations = remember { List(10) { Animatable(0f) } }
     val secureRandom = remember { SecureRandom() }
-    var coinCount by remember { mutableStateOf(1) }
-    var results by remember { mutableStateOf(listOf(CoinSide.Flower)) }
+    var coinCount by rememberSaveable { mutableStateOf(1) }
+    var results by rememberSaveable { mutableStateOf(listOf(CoinSide.Flower)) }
     var flipping by remember { mutableStateOf(false) }
-    var resultText by remember { mutableStateOf("等待抛掷") }
-    var history by remember { mutableStateOf<List<String>>(emptyList()) }
+    var resultText by rememberSaveable { mutableStateOf("等待抛掷") }
+    var history by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var lastShakeAt by remember { mutableStateOf(0L) }
 
     fun tossCoins() {
@@ -2813,15 +2825,36 @@ private fun CoinScreen(onBack: () -> Unit) {
         onDispose { sensorManager?.unregisterListener(listener) }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
-    ) {
-        SubScreenHeader(title = "抛硬币", onBack = onBack) {}
+    if (layout.shortWide) {
+        ToolScreenLayout(title = "抛硬币", onBack = onBack, sideContent = {
+            DiceDropdown("硬币个数", "${coinCount}枚", (1..10).map { it to "${it}枚" }, !flipping,
+                onSelect = { count ->
+                    coinCount = count
+                    results = List(count) { CoinSide.Flower }
+                    resultText = "等待抛掷"
+                }, modifier = Modifier.fillMaxWidth())
+            Text(if (flipping) "翻转中" else resultText, color = C.gold,
+                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            LandscapeToolAction(if (flipping) "翻转中" else "抛硬币", Icons.Default.Refresh, ::tossCoins, !flipping)
+            if (history.isNotEmpty()) {
+                Text("最近结果", style = MaterialTheme.typography.labelMedium, color = C.textSub)
+                history.forEach { Badge(it) }
+            }
+        }) {
+            GeminiGlassPanel(modifier = Modifier.fillMaxWidth().height(LocalToolSceneHeight.current), tone = GeminiGlassTone.Neutral) {
+                CoinModelScene(
+                    angles = results.mapIndexed { index, side ->
+                        if (flipping) rotations[index].value else if (side == CoinSide.Character) 180f else 0f
+                    },
+                    rolling = flipping,
+                    description = if (flipping) "硬币翻转中" else results.joinToString("、") { it.label },
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                )
+            }
+        }
+        return
+    }
+    ToolScreenLayout(title = "抛硬币", onBack = onBack) {
         DiceDropdown(
             label = "硬币个数",
             value = "${coinCount}枚",
@@ -2857,24 +2890,15 @@ private fun CoinScreen(onBack: () -> Unit) {
                         else -> 60.dp
                     }
                     val coinSize = minOf(preferredSize, (maxWidth - 8.dp * (columns - 1)) / columns)
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        results.chunked(columns).forEachIndexed { rowIndex, row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            ) {
-                                row.forEachIndexed { columnIndex, side ->
-                                    val index = rowIndex * columns + columnIndex
-                                    CoinVisual(
-                                        side = side,
-                                        rotation = rotations[index].value,
-                                        rolling = flipping,
-                                        modifier = Modifier.size(coinSize),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    val rows = (coinCount + columns - 1) / columns
+                    CoinModelScene(
+                        angles = results.mapIndexed { index, side ->
+                            if (flipping) rotations[index].value else if (side == CoinSide.Character) 180f else 0f
+                        },
+                        rolling = flipping,
+                        description = if (flipping) "硬币翻转中" else results.joinToString("、") { it.label },
+                        modifier = Modifier.fillMaxWidth().height(coinSize * rows + 28.dp + 12.dp * (rows - 1)),
+                    )
                 }
                 Text(
                     if (flipping) "翻转中" else resultText,
@@ -2908,7 +2932,7 @@ private fun CoinScreen(onBack: () -> Unit) {
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                            FortuneIcon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                             Spacer(Modifier.width(8.dp))
                             Text(if (flipping) "翻转中" else "抛硬币", fontWeight = FontWeight.SemiBold)
                         }
@@ -2929,73 +2953,6 @@ private fun CoinScreen(onBack: () -> Unit) {
                     history.forEach { value -> Badge(value) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun CoinVisual(
-    side: CoinSide,
-    rotation: Float,
-    rolling: Boolean,
-    modifier: Modifier = Modifier.size(82.dp),
-) {
-    val density = LocalDensity.current
-    val visibleSide = if (rolling) {
-        if (isCharacterCoinSideVisible(rotation)) CoinSide.Character else CoinSide.Flower
-    } else side
-    val displayRotation = if (rolling) rotation else if (side == CoinSide.Character) 180f else 0f
-    Box(
-        modifier = modifier.graphicsLayer {
-            rotationY = displayRotation
-            rotationX = if (rolling) kotlin.math.sin(Math.toRadians(displayRotation.toDouble())).toFloat() * 7f else 0f
-            cameraDistance = 12f * density.density
-        },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize()
-                .graphicsLayer { rotationY = if (visibleSide == CoinSide.Character) 180f else 0f }
-                .clip(CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val radius = size.minDimension / 2f
-                val rose = visibleSide == CoinSide.Flower
-                val light = if (rose) Color(0xFFFFF2EB) else Color(0xFFF1F7FC)
-                val middle = if (rose) Color(0xFFE0C9BD) else Color(0xFFC7D5DD)
-                val shade = if (rose) Color(0xFF9C8173) else Color(0xFF778C97)
-                drawCircle(
-                    brush = Brush.linearGradient(listOf(shade, light, middle, shade)),
-                    radius = radius,
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(light, middle, shade),
-                        center = Offset(size.width * 0.34f, size.height * 0.28f),
-                        radius = size.minDimension,
-                    ),
-                    radius = radius * 0.89f,
-                )
-                drawCircle(light.copy(alpha = 0.9f), radius * 0.91f,
-                    style = Stroke(width = (radius * 0.018f).coerceAtLeast(1f)))
-                drawCircle(shade.copy(alpha = 0.6f), radius * 0.80f,
-                    style = Stroke(width = (radius * 0.012f).coerceAtLeast(1f)))
-                repeat(48) { index ->
-                    val angle = index * Math.PI / 24
-                    val direction = Offset(kotlin.math.cos(angle).toFloat(), kotlin.math.sin(angle).toFloat())
-                    drawLine(shade.copy(alpha = 0.58f),
-                        center + direction * radius * 0.94f,
-                        center + direction * radius * 0.98f,
-                        strokeWidth = (radius * 0.009f).coerceAtLeast(1f))
-                }
-            }
-            Text(
-                visibleSide.label.removeSuffix("面"),
-                color = if (visibleSide == CoinSide.Flower) Color(0xFF725346) else Color(0xFF405B69),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
         }
     }
 }
@@ -3040,8 +2997,12 @@ private fun WheelScreen(
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val haptics = remember(context) { ToolHaptics(context.applicationContext) }
+    val haptics = rememberToolHaptics()
     val segments = vm.wheelSegments
+    val mainScroll = rememberScrollState()
+    val settingsScroll = rememberScrollState()
+    val historyScroll = rememberScrollState()
+    val hapticVisible by rememberUpdatedState(subPage == WheelSubPage.Main)
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelMedium.copy(
         color = C.textMain,
@@ -3077,6 +3038,10 @@ private fun WheelScreen(
     var winnerIndex by remember { mutableStateOf(-1) }
     var lastShakeAt by remember { mutableStateOf(0L) }
 
+    LaunchedEffect(subPage) {
+        if (subPage != WheelSubPage.Main) haptics.cancel()
+    }
+
     val handleBack: () -> Unit = {
         if (subPage == WheelSubPage.Main) {
             onBack()
@@ -3092,7 +3057,7 @@ private fun WheelScreen(
         if (n < 2) return
         spinJob?.cancel()
         spinning = true
-        spinStartMs = System.currentTimeMillis()
+        spinStartMs = SystemClock.uptimeMillis()
         winnerIndex = -1
         val dir = if (direction >= 0f) 1f else -1f
         haptics.wheelStart()
@@ -3111,7 +3076,7 @@ private fun WheelScreen(
                 val nowSec = withFrameNanos { it / 1_000_000_000.0 }
                 val dt = (nowSec - lastSec).toFloat().coerceIn(0f, 0.05f)
                 lastSec = nowSec
-                val t = (System.currentTimeMillis() - spinStartMs) / 1000f
+                val t = (SystemClock.uptimeMillis() - spinStartMs) / 1000f
                 if (t >= t2) break
                 v = if (t < t1) {
                     v0 + (v1 - v0) * (t / t1)
@@ -3122,14 +3087,14 @@ private fun WheelScreen(
                 angle.snapTo(pos)
                 val tickIndex = kotlin.math.floor(angle.value / segmentAngle).toInt()
                 if (tickIndex != lastTickIndex) {
-                    haptics.wheelTick()
+                    if (hapticVisible) haptics.wheelTick()
                     lastTickIndex = tickIndex
                 }
             }
             spinning = false
             winnerIndex = winnerFromAngle(angle.value, n)
             vm.wheelSegments.getOrNull(winnerIndex)?.let { vm.addWheelHistory(it) }
-            haptics.wheelSettle()
+            if (hapticVisible) haptics.wheelSettle()
         }
         scope.launch {
             glow.snapTo(0f)
@@ -3144,7 +3109,7 @@ private fun WheelScreen(
         val speed = speedDegPerSec.coerceIn(-3600f * 2f, 3600f * 2f)
         if (speed.absoluteValue < 30f) return   // 太慢不滑
         spinning = true
-        spinStartMs = System.currentTimeMillis()
+        spinStartMs = SystemClock.uptimeMillis()
         haptics.wheelStart()
         spinJob = scope.launch {
             val decel = 1800f            // 减速度（度/秒²）
@@ -3158,26 +3123,26 @@ private fun WheelScreen(
                 val nowSec = withFrameNanos { it / 1_000_000_000.0 }
                 val dt = (nowSec - lastSec).toFloat().coerceIn(0f, 0.05f)
                 lastSec = nowSec
-                val t = (System.currentTimeMillis() - spinStartMs) / 1000f
+                val t = (SystemClock.uptimeMillis() - spinStartMs) / 1000f
                 if (t >= duration) break
                 val v = dir * (speed.absoluteValue - decel * t).coerceAtLeast(0f)
                 pos += v * dt
                 angle.snapTo(pos)
                 val tickIndex = kotlin.math.floor(angle.value / segmentAngle).toInt()
                 if (tickIndex != lastTickIndex) {
-                    haptics.wheelTick()
+                    if (hapticVisible) haptics.wheelTick()
                     lastTickIndex = tickIndex
                 }
             }
             spinning = false
-            haptics.wheelGlideStop()
+            if (hapticVisible) haptics.wheelGlideStop()
         }
     }
 
     fun tryAccelerate() {
         if (!spinning) {
             kick(1f)
-        } else if (System.currentTimeMillis() - spinStartMs < 3000L) {
+        } else if (SystemClock.uptimeMillis() - spinStartMs < 3000L) {
             kick(1f)
         }
     }
@@ -3207,16 +3172,25 @@ private fun WheelScreen(
         onDispose { sensorManager?.unregisterListener(listener) }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
+    ToolScreenLayout(
+        title = when (subPage) {
+            WheelSubPage.Main -> "转盘"
+            WheelSubPage.Settings -> "转盘设置"
+            WheelSubPage.History -> "转盘记录"
+        },
+        onBack = handleBack,
+        scrollState = when (subPage) {
+            WheelSubPage.Main -> mainScroll
+            WheelSubPage.Settings -> settingsScroll
+            WheelSubPage.History -> historyScroll
+        },
+        sideContent = if (layout.shortWide && subPage == WheelSubPage.Main) ({
+            Text(segments.getOrNull(winnerIndex)?.let { "本次：$it" } ?: "摇晃手机或拨动转盘开始",
+                color = C.gold, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            LandscapeToolAction("设置", Icons.Default.Settings, { onSubPageChange(WheelSubPage.Settings) })
+            LandscapeToolAction("历史", Icons.AutoMirrored.Filled.List, { onSubPageChange(WheelSubPage.History) })
+        }) else null,
     ) {
-        SubScreenHeader(title = "转盘", onBack = handleBack) {}
-
         when (subPage) {
             WheelSubPage.Settings -> WheelSettingsView(vm)
             WheelSubPage.History -> WheelHistoryView(vm)
@@ -3225,7 +3199,7 @@ private fun WheelScreen(
                     tone = GeminiGlassTone.Neutral,
                     shape = CircleShape,
                     modifier = Modifier
-                        .widthIn(max = 520.dp)
+                        .widthIn(max = if (layout.shortWide) LocalToolSceneHeight.current else 520.dp)
                         .fillMaxWidth()
                         .aspectRatio(1f),
                 ) {
@@ -3336,7 +3310,7 @@ private fun WheelScreen(
                     shape = CircleShape,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .size(72.dp),
+                                .size(if (layout.shortWide) 44.dp else 72.dp),
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Box(
@@ -3349,7 +3323,7 @@ private fun WheelScreen(
                 Canvas(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .size(width = 36.dp, height = 22.dp),
+                        .size(width = if (layout.shortWide) 28.dp else 36.dp, height = if (layout.shortWide) 18.dp else 22.dp),
                 ) {
                     val w = size.width
                     val h = size.height
@@ -3371,6 +3345,7 @@ private fun WheelScreen(
             }
             }
 
+            if (!layout.shortWide) {
             val winnerLabel = segments.getOrNull(winnerIndex)
             if (winnerLabel != null) {
                 Text("本次：$winnerLabel", color = C.gold, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -3396,7 +3371,7 @@ private fun WheelScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                            FortuneIcon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text("设置", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
@@ -3416,11 +3391,12 @@ private fun WheelScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
+                            FortuneIcon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text("历史", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
+            }
             }
         }
         }
@@ -3448,7 +3424,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
         ) {
             quickCounts.forEach { count ->
                 Surface(
-                    onClick = { vm.setWheelSegmentCount(count) },
+                    onClick = hapticAction { vm.setWheelSegmentCount(count) },
                     color = if (segments.size == count) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
@@ -3471,7 +3447,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             }
         }
         TextButton(onClick = { vm.resetWheelSegments() }) {
-            Icon(Icons.Default.Refresh, contentDescription = null, tint = C.textSub)
+            FortuneIcon(Icons.Default.Refresh, contentDescription = null, tint = C.textSub)
             Spacer(Modifier.width(4.dp))
             Text("重置为「是/否」", color = C.textSub)
         }
@@ -3497,7 +3473,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
                         onClick = { pendingDelete = index },
                         enabled = segments.size > 2,
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = C.danger)
+                        FortuneIcon(Icons.Default.Delete, contentDescription = "删除", tint = C.danger)
                     }
                 }
             }
@@ -3508,7 +3484,7 @@ private fun WheelSettingsView(vm: FortuneViewModel) {
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
         ) {
-            Icon(Icons.Default.Add, contentDescription = null)
+            FortuneIcon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(6.dp))
             Text("添加板块")
         }
@@ -3576,7 +3552,7 @@ private fun WheelHistoryView(vm: FortuneViewModel) {
                             Text(entry.createdAt, color = C.textSub, style = MaterialTheme.typography.bodySmall)
                         }
                         IconButton(onClick = { pendingDelete = entry.id }) {
-                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = C.danger)
+                            FortuneIcon(Icons.Default.Delete, contentDescription = "删除", tint = C.danger)
                         }
                     }
                 }
@@ -3594,32 +3570,50 @@ private fun WheelHistoryView(vm: FortuneViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun DiceScreen(onBack: () -> Unit) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rollInteractionSource = remember { MutableInteractionSource() }
-    val haptics = remember(context) { ToolHaptics(context.applicationContext) }
+    val scrollState = rememberScrollState()
+    val haptics = rememberToolHaptics()
     val physicsWorld = remember { DicePhysicsWorld() }
-    var diceCount by remember { mutableStateOf(1) }
-    var diceSides by remember { mutableStateOf(6) }
-    var faces by remember { mutableStateOf(listOf(1)) }
-    var resultText by remember { mutableStateOf("1枚6面骰：等待摇骰") }
+    var diceCount by rememberSaveable { mutableStateOf(1) }
+    var diceSides by rememberSaveable { mutableStateOf(6) }
+    var faces by rememberSaveable { mutableStateOf(listOf(1)) }
+    var resultText by rememberSaveable { mutableStateOf("1枚6面骰：等待摇骰") }
     var rolling by remember { mutableStateOf(false) }
-    var curtainClosed by remember { mutableStateOf(false) }
+    var curtainClosed by rememberSaveable { mutableStateOf(false) }
     var curtainDragProgress by remember { mutableStateOf<Float?>(null) }
-    var lastShakeAt by remember { mutableStateOf(0L) }
-    var history by remember { mutableStateOf<List<String>>(emptyList()) }
+    var history by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var preparationVersion by remember { mutableStateOf(0) }
+    val preparedRolls = remember(diceCount, diceSides, preparationVersion) {
+        DiceThrowStrength.entries.associateWith { CompletableDeferred<Result<Pair<DiceRollResult, DiceTrajectory>>>() }
+    }
 
-    LaunchedEffect(physicsWorld) {
-        while (true) {
-            physicsWorld.step(1f / 60f)
-            val impactStrength = physicsWorld.consumeImpactStrength()
-            if (impactStrength > 0f) {
-                haptics.diceImpact(impactStrength)
+    LaunchedEffect(preparedRolls) {
+        val count = diceCount
+        val sides = diceSides
+        withContext(Dispatchers.Default) {
+            val job = currentCoroutineContext()
+            val roll = rollDice(count, sides)
+            val seed = kotlin.random.Random.nextLong()
+            for (strength in listOf(DiceThrowStrength.Medium, DiceThrowStrength.Strong, DiceThrowStrength.Light)) {
+                job.ensureActive()
+                val started = SystemClock.elapsedRealtimeNanos()
+                val outcome = runCatching {
+                    roll to DiceRigidBodySimulation.generate(sides, roll.rolls, seed, strength) { job.ensureActive() }
+                }
+                job.ensureActive()
+                preparedRolls.getValue(strength).complete(outcome)
+                if (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    outcome.onSuccess { (_, path) ->
+                        android.util.Log.d("DicePhysics", "prepare_ms=${(SystemClock.elapsedRealtimeNanos() - started) / 1_000_000} strength=$strength sides=$sides count=$count attempts=${path.attempts} frames=${path.frames.size}")
+                    }
+                }
             }
-            delay(16)
         }
     }
 
@@ -3638,46 +3632,43 @@ private fun DiceScreen(onBack: () -> Unit) {
         }
     }
 
-    fun startRoll() {
+    fun startRoll(strength: DiceThrowStrength = DiceThrowStrength.Medium) {
         if (rolling) return
-        val roll = rollDice(diceCount, diceSides)
+        val request = preparedRolls.getValue(strength)
+        rolling = true
+        haptics.diceStart()
         scope.launch {
-            rolling = true
-            haptics.diceStart()
-            physicsWorld.startRoll(roll)
-            playShakeSound()
-            delay(1_650)
-            faces = roll.rolls
-            resultText = roll.displayText
-            history = (listOf(roll.displayText) + history).take(6)
-            haptics.diceSettle()
-            rolling = false
-        }
-    }
-
-    DisposableEffect(Unit) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                val x = event.values.getOrNull(0) ?: return
-                val y = event.values.getOrNull(1) ?: return
-                val z = event.values.getOrNull(2) ?: return
-                val force = sqrt(x * x + y * y + z * z)
-                val now = System.currentTimeMillis()
-                if (force > 20f && now - lastShakeAt > 1200L && !rolling) {
-                    lastShakeAt = now
-                    scope.launch { startRoll() }
+            try {
+                scrollState.scrollTo(0)
+                val simulationStarted = SystemClock.elapsedRealtimeNanos()
+                val (roll, trajectory) = request.await().getOrThrow()
+                preparationVersion++
+                if (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    android.util.Log.d("DicePhysics", "start_wait_ms=${(SystemClock.elapsedRealtimeNanos() - simulationStarted) / 1_000_000} strength=$strength")
                 }
+                playShakeSound()
+                physicsWorld.play(trajectory) { haptics.diceImpact(it) }
+                faces = roll.rolls
+                resultText = roll.displayText
+                history = (listOf(roll.displayText) + history).take(6)
+                haptics.diceSettle()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: LinkageError) {
+                preparationVersion++
+                resultText = "等待重新摇骰"
+                Toast.makeText(context, "骰子引擎暂不可用，请重新打开工具", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                preparationVersion++
+                resultText = "等待重新摇骰"
+                Toast.makeText(context, "本次未能落稳，请重新摇骰", Toast.LENGTH_SHORT).show()
+            } finally {
+                rolling = false
             }
-
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
-        if (accelerometer != null) {
-            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
-        }
-        onDispose { sensorManager?.unregisterListener(listener) }
     }
+
+    ObserveDiceShake(enabled = !rolling, onShake = { startRoll(it) })
 
     val curtainProgress by animateFloatAsState(
         targetValue = curtainDragProgress ?: if (curtainClosed) 1f else 0f,
@@ -3690,163 +3681,190 @@ private fun DiceScreen(onBack: () -> Unit) {
     )
     val curtainVisible = curtainDragProgress != null || curtainProgress > 0.001f
     val curtainSwipeThreshold = with(LocalDensity.current) { 84.dp.toPx() }
+    val handleHeightPx = with(LocalDensity.current) { 48.dp.toPx() }
+    val fontScale = LocalDensity.current.fontScale
+    val configuration = LocalConfiguration.current
+    val shortWide = configuration.screenWidthDp >= 500 && configuration.screenWidthDp > configuration.screenHeightDp
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
-    ) {
-        SubScreenHeader(title = "摇骰子", onBack = onBack) {}
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier
-                .widthIn(max = 720.dp)
-                .fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier.padding(if (layout.compactWidth) 12.dp else 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 12.dp else 16.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    DiceDropdown(
-                        label = "骰子个数",
-                        value = "${diceCount}枚",
-                        options = (1..6).map { it to "${it}枚" },
-                        enabled = !rolling,
-                        onSelect = { count ->
-                            diceCount = count
-                            faces = List(count) { 1.coerceAtMost(diceSides) }
-                            resultText = "${count}枚${diceSides}面骰：等待摇骰"
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    DiceDropdown(
-                        label = "骰子面数",
-                        value = "${diceSides}面",
-                        options = listOf(4, 6, 8, 10, 12, 20).map { it to "${it}面" },
-                        enabled = !rolling,
-                        onSelect = { sides ->
-                            diceSides = sides
-                            faces = List(diceCount) { 1 }
-                            resultText = "${diceCount}枚${sides}面骰：等待摇骰"
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
+    @Composable
+    fun CountControl(modifier: Modifier = Modifier, compact: Boolean = false) {
+        DiceDropdown(
+            label = "骰子个数",
+            value = "${diceCount}枚",
+            options = (1..6).map { it to "${it}枚" },
+            enabled = !rolling,
+            onSelect = { count ->
+                physicsWorld.stop()
+                diceCount = count
+                faces = List(count) { 1.coerceAtMost(diceSides) }
+                resultText = "${count}枚${diceSides}面骰：等待摇骰"
+            },
+            modifier = modifier,
+            showLabel = !compact,
+        )
+    }
+
+    @Composable
+    fun SidesControl(modifier: Modifier = Modifier, compact: Boolean = false) {
+        DiceDropdown(
+            label = "骰子面数",
+            value = "${diceSides}面",
+            options = listOf(4, 6, 8, 10, 12, 20).map { it to "${it}面" },
+            enabled = !rolling,
+            onSelect = { sides ->
+                physicsWorld.stop()
+                diceSides = sides
+                faces = List(diceCount) { 1 }
+                resultText = "${diceCount}枚${sides}面骰：等待摇骰"
+            },
+            modifier = modifier,
+            showLabel = !compact,
+        )
+    }
+
+    @Composable
+    fun PlayArea(modifier: Modifier, wide: Boolean = false) {
+        var playHeight by remember { mutableStateOf(1f) }
+        val density = LocalDensity.current
+        BoxWithConstraints(modifier.onSizeChanged { playHeight = it.height.toFloat().coerceAtLeast(1f) }) {
+            val counterWidth = diceLandscapeCounterWidth(maxWidth.value, fontScale).dp
+            val paneSpacing = 12.dp
+            val handleOffset = if (wide) with(density) { -((counterWidth + paneSpacing) / 2).roundToPx() } else 0
+            if (wide) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(paneSpacing)) {
+                    DiceStage(faces, diceSides, physicsWorld, rolling, Modifier.weight(1f).fillMaxHeight())
+                    Box(Modifier.width(counterWidth).fillMaxHeight()) {
+                        DiceResultCounter(faces, diceSides, resultText, rolling, vertical = true)
+                    }
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .pointerInput(curtainClosed, curtainSwipeThreshold) {
+            } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DiceStage(
+                    faces = faces,
+                    sides = diceSides,
+                    physicsWorld = physicsWorld,
+                    rolling = rolling,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+                DiceResultCounter(faces, diceSides, resultText, rolling)
+            }
+            if (curtainVisible) {
+                DiceCurtainOverlay(curtainProgress, Modifier.matchParentSize())
+            }
+            // Only this small moving handle accepts curtain gestures; the table and counter do not.
+            Box(
+                Modifier.align(Alignment.TopCenter)
+                    .offset {
+                        androidx.compose.ui.unit.IntOffset(handleOffset, ((playHeight - handleHeightPx).coerceAtLeast(0f) * curtainProgress).toInt())
+                    }
+                    .size(width = 96.dp, height = 48.dp)
+                    .pointerInput(curtainClosed, curtainSwipeThreshold, playHeight) {
                             var gestureDistance = 0f
+                            val tactile = HapticGestureTrack()
                             detectVerticalDragGestures(
                                 onDragStart = {
+                                    tactile.reset()
                                     gestureDistance = 0f
                                     curtainDragProgress = if (curtainClosed) 1f else 0f
                                 },
-                                onVerticalDrag = { _, dragAmount ->
+                                onVerticalDrag = { change, dragAmount ->
+                                    change.consume()
                                     gestureDistance += dragAmount
                                     val currentProgress = curtainDragProgress ?: if (curtainClosed) 1f else 0f
-                                    curtainDragProgress = (currentProgress + dragAmount / size.height.coerceAtLeast(1))
+                                    curtainDragProgress = (currentProgress + dragAmount / playHeight)
                                         .coerceIn(0f, 1f)
+                                    haptics.gestureProgress(tactile, kotlin.math.abs(gestureDistance) / curtainSwipeThreshold)
                                 },
                                 onDragEnd = {
+                                    val wasClosed = curtainClosed
                                     curtainClosed = when {
                                         gestureDistance > curtainSwipeThreshold -> true
                                         gestureDistance < -curtainSwipeThreshold -> false
                                         else -> (curtainDragProgress ?: 0f) >= 0.5f
                                     }
+                                    haptics.gestureFinished(tactile, curtainClosed != wasClosed)
                                     curtainDragProgress = null
                                 },
-                                onDragCancel = { curtainDragProgress = null },
+                                onDragCancel = { tactile.reset(); curtainDragProgress = null },
                             )
-                        },
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        DiceStage(
-                            faces = faces,
-                            sides = diceSides,
-                            physicsWorld = physicsWorld,
-                            rolling = rolling,
-                        )
-                        DiceResultCounter(
-                            faces = faces,
-                            sides = diceSides,
-                            resultText = resultText,
-                            rolling = rolling,
-                        )
                     }
-                    if (curtainVisible) {
-                        DiceCurtainOverlay(
-                            progress = curtainProgress,
-                            modifier = Modifier.matchParentSize(),
-                        )
-                    }
-                }
-                Surface(
-                    onClick = { startRoll() },
-                    enabled = !rolling,
-                    interactionSource = rollInteractionSource,
-                    color = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(pressScaleModifier(rollInteractionSource)),
-                ) {
-                    GeminiGlassPanel(
-                        tone = GeminiGlassTone.Gold,
-                        shape = CircleShape,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 18.dp, vertical = 14.dp)
-                                .graphicsLayer { alpha = if (rolling) 0.42f else 1f },
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Default.Casino,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                if (rolling) "摇动中" else "摇骰子",
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
+                    .semantics { contentDescription = "骰子卷帘把手" }
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
+                        curtainDragProgress = null
+                        curtainClosed = !curtainClosed
+                        haptics.scene(HapticCue.GestureRelease)
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(Modifier.size(width = 40.dp, height = 4.dp)) {
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(listOf(Color(0xFF756F60), Color(0xFFBAB09A), Color(0xFF8B806A))),
+                        cornerRadius = CornerRadius(2.dp.toPx()),
+                        alpha = .65f,
+                    )
                 }
             }
         }
+    }
 
-        if (history.isNotEmpty()) {
-            GeminiGlassPanel(
-                tone = GeminiGlassTone.Neutral,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier
-                    .widthIn(max = 720.dp)
-                    .fillMaxWidth(),
+    Column(Modifier.fillMaxSize()) {
+        SubScreenHeader(title = "摇骰子", onBack = onBack) {
+            if (shortWide) {
+                CountControl(Modifier.padding(end = 8.dp).width(88.dp), compact = true)
+                SidesControl(Modifier.padding(end = 8.dp).width(88.dp), compact = true)
+            }
+            androidx.compose.material3.TooltipBox(
+                positionProvider = androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider(androidx.compose.material3.TooltipAnchorPosition.Above),
+                tooltip = { PlainTooltip { Text("摇骰子") } },
+                state = androidx.compose.material3.rememberTooltipState(),
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("最近结果", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        history.forEach { value -> Badge(value) }
+                androidx.compose.material3.FilledTonalIconButton(
+                    onClick = { startRoll() },
+                    enabled = !rolling,
+                    interactionSource = rollInteractionSource,
+                    modifier = Modifier.padding(end = 8.dp).size(48.dp).then(pressScaleModifier(rollInteractionSource)),
+                ) {
+                    if (rolling) CircularProgressIndicator(Modifier.size(20.dp).semantics { contentDescription = "摇动中" }, strokeWidth = 2.dp)
+                    else FortuneIcon(Icons.Default.Casino, contentDescription = "摇骰子")
+                }
+            }
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val minimumHeight = if (shortWide) (110f + 30f * fontScale).dp else (200f + 100f * fontScale).dp
+            val panelHeight = maxOf(maxHeight - layout.verticalPadding * 2, minimumHeight)
+            Column(
+                Modifier.fillMaxSize().verticalScroll(scrollState)
+                    .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
+            ) {
+                if (shortWide) {
+                    PlayArea(Modifier.fillMaxWidth().height(panelHeight), wide = true)
+                } else {
+                    GeminiGlassPanel(
+                        modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().height(panelHeight),
+                        shape = MaterialTheme.shapes.extraLarge,
+                    ) {
+                        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CountControl(Modifier.weight(1f))
+                                SidesControl(Modifier.weight(1f))
+                            }
+                            PlayArea(Modifier.weight(1f).fillMaxWidth())
+                        }
+                    }
+                }
+                if (history.isNotEmpty()) {
+                    GeminiGlassPanel(
+                        tone = GeminiGlassTone.Neutral,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("最近结果", color = C.textMain, fontWeight = FontWeight.SemiBold)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                history.forEach { value -> Badge(value) }
+                            }
+                        }
                     }
                 }
             }
@@ -3862,26 +3880,30 @@ private fun DiceDropdown(
     enabled: Boolean,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
 ) {
     val C = LocalFortunePalette.current
     var expanded by remember { mutableStateOf(false) }
+    val haptics = LocalAppHaptics.current
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = C.textSub, style = MaterialTheme.typography.labelMedium)
+        if (showLabel) Text(label, color = C.textSub, style = MaterialTheme.typography.labelMedium)
         Box {
             OutlinedButton(
-                onClick = { expanded = true },
+                onClick = { haptics.menu(true); expanded = true },
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().semantics { if (!showLabel) contentDescription = label },
                 shape = MaterialTheme.shapes.large,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = if (showLabel) 24.dp else 10.dp, vertical = 8.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
             ) {
                 Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenu(expanded = expanded, onDismissRequest = { haptics.menu(false); expanded = false }) {
                 options.forEach { (rawValue, text) ->
                     DropdownMenuItem(
                         text = { Text(text) },
                         onClick = {
+                            if (text != value) haptics.selection()
                             expanded = false
                             onSelect(rawValue)
                         },
@@ -3898,38 +3920,118 @@ private fun DiceResultCounter(
     sides: Int,
     resultText: String,
     rolling: Boolean,
+    compact: Boolean = false,
+    vertical: Boolean = false,
 ) {
     val C = LocalFortunePalette.current
     val hasResult = !rolling && !resultText.contains("等待")
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val totalStyle = (if (vertical) MaterialTheme.typography.headlineLarge else if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium)
+        .copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+    val valuesStyle = (if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium)
+        .copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+    val separator = if (compact) "·" else " · "
+    val totalWidth = with(density) { measurer.measure(AnnotatedString("----"), style = totalStyle).size.width.toDp() }
     Surface(
         color = if (C.isLight) Color(0xFF10211B) else Color(0xFF0B1713),
         contentColor = Color(0xFFE8F7D4),
         shape = RoundedCornerShape(4.dp),
         border = BorderStroke(1.dp, Color(0xFF3C7D5B)),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = if (vertical) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        if (vertical) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val headerStyle = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                val faceStyle = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                val headerWidth = with(density) {
+                    (measurer.measure(AnnotatedString("TOTAL"), headerStyle).size.width +
+                        measurer.measure(AnnotatedString("${faces.size}D$sides"), headerStyle).size.width).toDp()
+                } + 32.dp
+                val headerFits = headerWidth <= maxWidth
+                val cellWidth = with(density) { measurer.measure(AnnotatedString("--"), faceStyle).size.width.toDp() }
+                val columns = ((maxWidth - 20.dp) / (cellWidth + 4.dp)).toInt().coerceIn(1, 3)
+                val valueHeight = with(density) { measurer.measure(AnnotatedString("--"), faceStyle).size.height.toDp() } + 2.dp
+                val headerHeight = with(density) { measurer.measure(AnnotatedString("TOTAL"), headerStyle).size.height.toDp() }
+                val totalHeight = with(density) { measurer.measure(AnnotatedString("120"), totalStyle).size.height.toDp() }
+                val rows = (faces.size + columns - 1) / columns
+                val contentHeight = (if (headerFits) headerHeight else headerHeight * 2 + 2.dp) +
+                    totalHeight + valueHeight * rows + 4.dp * (rows - 1) + 40.dp
+                val tight = contentHeight > maxHeight
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                        .heightIn(min = maxHeight).padding(horizontal = 12.dp, vertical = if (tight) 8.dp else 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    if (headerFits) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("TOTAL", color = Color(0xFF8DC6A2), style = headerStyle, maxLines = 1, softWrap = false)
+                            Text("${faces.size}D$sides", color = Color(0xFF8DC6A2), style = headerStyle, maxLines = 1, softWrap = false)
+                        }
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("TOTAL", color = Color(0xFF8DC6A2), style = headerStyle, maxLines = 1, softWrap = false)
+                            Text("${faces.size}D$sides", color = Color(0xFF8DC6A2), style = headerStyle, maxLines = 1, softWrap = false)
+                        }
+                    }
+                    Spacer(Modifier.height(if (tight) 4.dp else 8.dp))
+                    Text(
+                        if (hasResult) faces.sum().toString() else "--",
+                        color = if (rolling) Color(0xFFE1B85A) else Color(0xFFD9F6B7),
+                        style = totalStyle, maxLines = 1, softWrap = false,
+                    )
+                    Spacer(Modifier.height(if (tight) 4.dp else 8.dp))
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        faces.chunked(columns).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                row.forEach { face ->
+                                    Box(
+                                        Modifier.weight(1f).heightIn(min = valueHeight),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(if (hasResult) face.toString() else "--",
+                                            color = Color(0xFFD9F6B7), style = faceStyle,
+                                            maxLines = 1, softWrap = false)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else Row(
+            modifier = Modifier.padding(horizontal = if (compact) 12.dp else 14.dp, vertical = if (compact) 8.dp else 10.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(modifier = Modifier.width(totalWidth), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     "TOTAL",
                     color = Color(0xFF8DC6A2),
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
                 )
                 Text(
                     if (hasResult) faces.sum().toString() else "----",
                     color = if (rolling) Color(0xFFE1B85A) else Color(0xFFD9F6B7),
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = totalStyle,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            BoxWithConstraints(Modifier.weight(1f)) {
+                val reservedLines = measurer.measure(
+                    AnnotatedString(List(faces.size) { sides.toString() }.joinToString(separator)),
+                    style = valuesStyle,
+                    constraints = androidx.compose.ui.unit.Constraints(maxWidth = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }),
+                ).lineCount
+            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     "${faces.size}D$sides",
                     color = Color(0xFF8DC6A2),
@@ -3938,12 +4040,14 @@ private fun DiceResultCounter(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    if (hasResult) faces.joinToString(" · ") else "等待结果",
+                    if (hasResult) faces.joinToString(separator) else "等待结果",
                     color = Color(0xFFD9F6B7),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = valuesStyle,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.SemiBold,
+                    minLines = reservedLines,
                 )
+            }
             }
         }
     }
@@ -3986,12 +4090,6 @@ private fun DiceCurtainOverlay(
                 ),
                 topLeft = Offset(0f, size.height - railHeight),
                 size = Size(size.width, railHeight),
-            )
-            drawRoundRect(
-                color = Color(0xFFB98A45),
-                topLeft = Offset(size.width * 0.34f, size.height - 13.dp.toPx()),
-                size = Size(size.width * 0.32f, 4.dp.toPx()),
-                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -4038,12 +4136,14 @@ private fun DiceStage(
     sides: Int,
     physicsWorld: DicePhysicsWorld,
     rolling: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     PhysicsDiceStage(
         fallbackFaces = faces,
         sides = sides,
         world = physicsWorld,
         rolling = rolling,
+        modifier = modifier,
     )
 }
 
@@ -4053,6 +4153,7 @@ private fun PhysicsDiceStage(
     sides: Int,
     world: DicePhysicsWorld,
     rolling: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val mesh = remember(sides) { buildPhysicsMesh(sides) }
     val meshFaces = remember(sides) { buildPhysicsMeshFaces(mesh) }
@@ -4061,15 +4162,21 @@ private fun PhysicsDiceStage(
     val glassLight = LocalGlassLightController.current
     val rimTint = MaterialTheme.colorScheme.secondary
     val rimAccent = MaterialTheme.colorScheme.primary
-    val dice = world.renderState
+    val labelPainter = remember { DiceNumberPainter() }
+    val vertices = remember(sides) { mesh.flatMap { listOf(it.a, it.b, it.c) }.distinct() }
+    val faceIndices = remember(sides) { meshFaces.map { face -> face.vertices.map { vertices.indexOf(it) } } }
+    val edgeIndices = remember(sides) { meshEdges.map { vertices.indexOf(it.a) to vertices.indexOf(it.b) } }
+    val edgeNormals = remember(sides) {
+        meshEdges.map { edge -> edge.normals.map { normal -> meshFaces.indexOfFirst { it.normal.dot(normal) > 0.985f } } }
+    }
+    val labelBases = remember(sides) { meshFaces.map(::buildDiceFaceBasis) }
     val fallbackBodies = remember(fallbackFaces, sides, world) {
         world.restingFallback(fallbackFaces, sides)
     }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(300.dp)
             .clip(RoundedCornerShape(20.dp)),
     ) {
         Image(
@@ -4121,30 +4228,42 @@ private fun PhysicsDiceStage(
                 style = Stroke(width = 0.8.dp.toPx()),
             )
 
+        val dice = world.renderState
         val bodies = if (dice.isEmpty()) fallbackBodies else dice
         val silverBase = Color(0xFFD5D9DC)
         val sortedBodies = bodies.sortedByDescending { die ->
             (die.position - camera.position).dot(camera.forward)
+        }.map { die ->
+            val points = vertices.map { die.position + die.rotation.rotate(it) }
+            PhysicsProjectedDie(die, points, points.map { projectDicePoint(it, size, camera) },
+                meshFaces.map { die.rotation.rotate(it.normal) })
         }
 
-        sortedBodies.forEach { die ->
-            val shadow = projectDicePoint(Vec3(die.position.x, 0.01f, die.position.z), size, camera)
+        sortedBodies.forEach { projectedDie ->
+            val die = projectedDie.die
+            val clearance = projectedDie.worldPoints.minOf { it.y }.coerceAtLeast(0f)
+            val shadow = projectDicePoint(Vec3(die.position.x + 0.07f + clearance * 0.14f, 0.003f, die.position.z + 0.05f), size, camera)
+            val spread = (1f + clearance * 0.65f)
+            val radius = size.minDimension * 0.33f * (if (sides == 6) 0.37f else 0.32f) * spread
+            val shadowHeight = radius * if (sides == 4) 0.68f else 0.92f
             drawOval(
-                color = Color.Black.copy(alpha = 0.28f),
-                topLeft = Offset(shadow.x - 34.dp.toPx(), shadow.y - 7.dp.toPx()),
-                size = Size(68.dp.toPx(), 14.dp.toPx()),
+                brush = Brush.radialGradient(
+                    listOf(Color.Black.copy(alpha = 0.38f / spread), Color.Transparent),
+                    center = Offset(shadow.x, shadow.y),
+                    radius = radius,
+                ),
+                topLeft = Offset(shadow.x - radius, shadow.y - shadowHeight),
+                size = Size(radius * 2f, shadowHeight * 2f),
             )
         }
 
-        sortedBodies.forEach { die ->
+        sortedBodies.forEach { projectedDie ->
+            val die = projectedDie.die
             val visibleFaces = ArrayList<PhysicsRenderFace>(meshFaces.size)
-            meshFaces.forEach faceLoop@ { face ->
-                val worldVertices = face.vertices.map { vertex ->
-                    die.position + die.rotation.rotate(vertex)
-                }
-                val outwardNormal = die.rotation.rotate(face.normal)
+            meshFaces.forEachIndexed faceLoop@ { faceIndex, face ->
+                val outwardNormal = projectedDie.normals[faceIndex]
                 if (outwardNormal.dot(camera.viewDirection) <= 0.015f) return@faceLoop
-                val projected = worldVertices.map { vertex -> projectDicePoint(vertex, size, camera) }
+                val projected = faceIndices[faceIndex].map { projectedDie.points[it] }
                 var twiceArea = 0f
                 projected.indices.forEach { index ->
                     val current = projected[index]
@@ -4159,6 +4278,8 @@ private fun PhysicsDiceStage(
                     points = projected,
                     depth = projected.sumOf { point -> point.depth.toDouble() }.toFloat() / projected.size,
                     color = shadeColor(silverBase, shade),
+                    value = die.faceValues[faceIndex],
+                    label = projectDiceFaceLabel(labelBases[faceIndex], die, size, camera),
                 )
             }
             visibleFaces
@@ -4170,17 +4291,20 @@ private fun PhysicsDiceStage(
                         close()
                     }
                     drawPath(path, face.color)
+                    face.label?.let { label ->
+                        clipPath(path) {
+                            drawDiceLabel(face.value.toString(), label, sides, labelPainter)
+                        }
+                    }
                 }
 
-            meshEdges.forEach edgeLoop@ { edge ->
-                val a = die.position + die.rotation.rotate(edge.a)
-                val b = die.position + die.rotation.rotate(edge.b)
-                val visible = edge.normals.any { normal ->
-                    die.rotation.rotate(normal).dot(camera.viewDirection) > 0.015f
+            meshEdges.forEachIndexed edgeLoop@ { edgeIndex, _ ->
+                val visible = edgeNormals[edgeIndex].any { normalIndex ->
+                    normalIndex >= 0 && projectedDie.normals[normalIndex].dot(camera.viewDirection) > 0.015f
                 }
                 if (!visible) return@edgeLoop
-                val pa = projectDicePoint(a, size, camera)
-                val pb = projectDicePoint(b, size, camera)
+                val pa = projectedDie.points[edgeIndices[edgeIndex].first]
+                val pb = projectedDie.points[edgeIndices[edgeIndex].second]
                 drawLine(
                     color = Color(0xFF765019),
                     start = Offset(pa.x, pa.y),
@@ -4197,11 +4321,6 @@ private fun PhysicsDiceStage(
                 )
             }
 
-            if (!rolling) {
-                findDiceLabelProjection(die, mesh, size, camera)?.let { label ->
-                    drawDiceLabel(die.result.toString(), label, sides)
-                }
-            }
         }
     }
 }
@@ -4211,19 +4330,16 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDiceLabel(
     value: String,
     label: DiceLabelProjection,
     sides: Int,
+    painter: DiceNumberPainter,
 ) {
     drawIntoCanvas { canvas ->
-        val number = value.toIntOrNull() ?: 1
-        val hue = ((number - 1) * 137.508f) % 360f
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.82f, 0.58f))
+        val paint = painter.fill.apply {
+            color = painter.colors[(value.toIntOrNull() ?: 1) - 1]
             textSize = when {
                 sides >= 20 -> 15.dp.toPx()
                 sides >= 10 -> 17.dp.toPx()
                 else -> 21.dp.toPx()
             }
-            textAlign = android.graphics.Paint.Align.CENTER
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
         while (paint.measureText(value) > label.maxTextWidth && paint.textSize > 4.dp.toPx()) {
             paint.textSize *= 0.86f
@@ -4232,243 +4348,81 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDiceLabel(
             paint.textSize *= 0.86f
         }
         if (label.maxTextWidth < 5.dp.toPx() || label.maxTextHeight < 5.dp.toPx()) return@drawIntoCanvas
-        val outlinePaint = android.graphics.Paint(paint).apply {
-            color = android.graphics.Color.rgb(31, 34, 36)
-            style = android.graphics.Paint.Style.STROKE
+        val outlinePaint = painter.outline.apply {
+            textSize = paint.textSize
             strokeWidth = 1.15.dp.toPx()
             strokeJoin = android.graphics.Paint.Join.ROUND
         }
-        val baseline = label.point.y - (paint.ascent() + paint.descent()) * 0.5f
+        val baseline = -(paint.ascent() + paint.descent()) * 0.5f
+        painter.transformValues[0] = label.right.x
+        painter.transformValues[1] = label.down.x
+        painter.transformValues[2] = label.point.x
+        painter.transformValues[3] = label.right.y
+        painter.transformValues[4] = label.down.y
+        painter.transformValues[5] = label.point.y
+        painter.transform.setValues(painter.transformValues)
         canvas.nativeCanvas.save()
-        canvas.nativeCanvas.rotate(label.rotationDegrees, label.point.x, label.point.y)
-        canvas.nativeCanvas.drawText(value, label.point.x, baseline, outlinePaint)
-        canvas.nativeCanvas.drawText(value, label.point.x, baseline, paint)
+        canvas.nativeCanvas.concat(painter.transform)
+        canvas.nativeCanvas.drawText(value, 0f, baseline, outlinePaint)
+        canvas.nativeCanvas.drawText(value, 0f, baseline, paint)
         canvas.nativeCanvas.restore()
     }
 }
 
+private class DiceNumberPainter {
+    val transform = android.graphics.Matrix()
+    val transformValues = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
+    val colors = IntArray(20) { number ->
+        android.graphics.Color.HSVToColor(floatArrayOf((number * 137.508f) % 360f, 0.82f, 0.58f))
+    }
+    val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = android.graphics.Paint.Align.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+    }
+    val outline = android.graphics.Paint(fill).apply {
+        color = android.graphics.Color.rgb(31, 34, 36)
+        style = android.graphics.Paint.Style.STROKE
+    }
+}
+
+private fun projectDiceFaceLabel(
+    basis: DiceFaceBasis,
+    die: PhysicsDieRender,
+    size: Size,
+    camera: DiceCameraProjection,
+): DiceLabelProjection {
+    val center = die.position + die.rotation.rotate(basis.center)
+    val right = die.rotation.rotate(basis.right)
+    val down = die.rotation.rotate(basis.up) * -1f
+    val scale = size.minDimension * 0.33f
+    return DiceLabelProjection(
+        projectDicePoint(center, size, camera),
+        Offset(right.dot(camera.right), -right.dot(camera.up)),
+        Offset(down.dot(camera.right), -down.dot(camera.up)),
+        basis.clearance * scale * 1.42f,
+        basis.clearance * scale * 1.28f,
+    )
+}
+
 private data class DiceLabelProjection(
     val point: DiceScreenPoint,
-    val rotationDegrees: Float,
+    val right: Offset,
+    val down: Offset,
     val maxTextWidth: Float,
     val maxTextHeight: Float,
 )
-
-private data class DiceFaceTriangleProjection(
-    val center: Vec3,
-    val normal: Vec3,
-    val projected: List<DiceScreenPoint>,
-    val area: Float,
-)
-
-private data class DiceFaceProjectionGroup(
-    val normal: Vec3,
-    val triangles: MutableList<DiceFaceTriangleProjection>,
-)
-
-/** Places the result on the nearest real mesh face instead of above the die. */
-private fun findDiceLabelProjection(
-    die: PhysicsDieRender,
-    mesh: List<PhysicsTriangle3d>,
-    canvasSize: Size,
-    camera: DiceCameraProjection,
-): DiceLabelProjection? {
-    val groups = mutableListOf<DiceFaceProjectionGroup>()
-    mesh.forEach triangleLoop@ { triangle ->
-        val a = die.position + die.rotation.rotate(triangle.a)
-        val b = die.position + die.rotation.rotate(triangle.b)
-        val c = die.position + die.rotation.rotate(triangle.c)
-        val pa = projectDicePoint(a, canvasSize, camera)
-        val pb = projectDicePoint(b, canvasSize, camera)
-        val pc = projectDicePoint(c, canvasSize, camera)
-        val area = kotlin.math.abs((pb.x - pa.x) * (pc.y - pa.y) - (pb.y - pa.y) * (pc.x - pa.x))
-        if (area < 1.5f) return@triangleLoop
-        val rawNormal = (b - a).cross(c - a).normalized()
-        val center = (a + b + c) * (1f / 3f)
-        val normal = if (rawNormal.dot(center - die.position) < 0f) rawNormal * -1f else rawNormal
-        val sample = DiceFaceTriangleProjection(center, normal, listOf(pa, pb, pc), area)
-        val group = groups.firstOrNull { it.normal.dot(normal) > 0.985f }
-        if (group == null) {
-            groups += DiceFaceProjectionGroup(normal, mutableListOf(sample))
-        } else {
-            group.triangles += sample
-        }
-    }
-    if (groups.isEmpty()) return null
-
-    val visibleGroups = groups.filter { group ->
-        val center = group.triangles.map { it.center }.reduce { total, point -> total + point } *
-            (1f / group.triangles.size)
-        group.normal.dot(camera.viewDirection) > 0.015f
-    }
-    val best = visibleGroups.maxByOrNull { group ->
-        val center = group.triangles.map { it.center }.reduce { total, point -> total + point } * (1f / group.triangles.size)
-        val area = group.triangles.sumOf { it.area.toDouble() }.toFloat()
-        val facing = group.normal.dot(camera.viewDirection).coerceAtLeast(0f)
-        val upward = group.normal.y.coerceIn(-1f, 1f)
-        upward * 100_000f + area * (0.72f + facing) + center.y * 240f
-    } ?: return null
-    val center = best.triangles.map { it.center }.reduce { total, point -> total + point } * (1f / best.triangles.size)
-    val edges = best.triangles.flatMap { triangle ->
-        listOf(
-            triangle.projected[0] to triangle.projected[1],
-            triangle.projected[1] to triangle.projected[2],
-            triangle.projected[2] to triangle.projected[0],
-        )
-    }
-    val longestEdge = edges.maxByOrNull { (a, b) ->
-        val dx = b.x - a.x
-        val dy = b.y - a.y
-        dx * dx + dy * dy
-    } ?: return null
-    val minEdge = edges.minOf { (a, b) ->
-        val dx = b.x - a.x
-        val dy = b.y - a.y
-        sqrt(dx * dx + dy * dy)
-    }
-    val labelPoint = projectDicePoint(center + best.normal * 0.014f, canvasSize, camera)
-    val minClearance = edges.minOf { (a, b) ->
-        val dx = b.x - a.x
-        val dy = b.y - a.y
-        val denominator = sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
-        kotlin.math.abs(dx * (labelPoint.y - a.y) - dy * (labelPoint.x - a.x)) / denominator
-    }
-    val dx = longestEdge.second.x - longestEdge.first.x
-    val dy = longestEdge.second.y - longestEdge.first.y
-    var angle = kotlin.math.atan2(dy, dx) * 180f / Math.PI.toFloat()
-    if (angle > 90f) angle -= 180f
-    if (angle < -90f) angle += 180f
-    return DiceLabelProjection(
-        point = labelPoint,
-        rotationDegrees = angle,
-        maxTextWidth = if (best.triangles.size == 1) {
-            (minClearance * 1.42f).coerceAtLeast(4f)
-        } else {
-            (minEdge * 0.52f).coerceAtLeast(4f)
-        },
-        maxTextHeight = if (best.triangles.size == 1) {
-            (minClearance * 1.28f).coerceAtLeast(4f)
-        } else {
-            (minEdge * 0.48f).coerceAtLeast(4f)
-        },
-    )
-}
-
-private data class Vec3(var x: Float, var y: Float, var z: Float) {
-    operator fun plus(other: Vec3) = Vec3(x + other.x, y + other.y, z + other.z)
-    operator fun minus(other: Vec3) = Vec3(x - other.x, y - other.y, z - other.z)
-    operator fun times(value: Float) = Vec3(x * value, y * value, z * value)
-    fun dot(other: Vec3) = x * other.x + y * other.y + z * other.z
-    fun cross(other: Vec3) = Vec3(
-        y * other.z - z * other.y,
-        z * other.x - x * other.z,
-        x * other.y - y * other.x,
-    )
-    fun length() = sqrt(x * x + y * y + z * z)
-    fun normalized(): Vec3 {
-        val length = length()
-        return if (length < 0.0001f) Vec3(0f, 1f, 0f) else this * (1f / length)
-    }
-}
-
-private data class Quat(var w: Float, var x: Float, var y: Float, var z: Float) {
-    operator fun times(other: Quat) = Quat(
-        w * other.w - x * other.x - y * other.y - z * other.z,
-        w * other.x + x * other.w + y * other.z - z * other.y,
-        w * other.y - x * other.z + y * other.w + z * other.x,
-        w * other.z + x * other.y - y * other.x + z * other.w,
-    )
-
-    fun normalized(): Quat {
-        val length = sqrt(w * w + x * x + y * y + z * z).coerceAtLeast(0.0001f)
-        return Quat(w / length, x / length, y / length, z / length)
-    }
-
-    fun rotate(vector: Vec3): Vec3 {
-        val rotated = this * Quat(0f, vector.x, vector.y, vector.z) * conjugate()
-        return Vec3(rotated.x, rotated.y, rotated.z)
-    }
-
-    fun integrate(angularVelocity: Vec3, dt: Float): Quat {
-        val derivative = Quat(0f, angularVelocity.x, angularVelocity.y, angularVelocity.z) * this
-        return Quat(
-            w + derivative.w * 0.5f * dt,
-            x + derivative.x * 0.5f * dt,
-            y + derivative.y * 0.5f * dt,
-            z + derivative.z * 0.5f * dt,
-        ).normalized()
-    }
-
-    private fun conjugate() = Quat(w, -x, -y, -z)
-
-    companion object {
-        val identity = Quat(1f, 0f, 0f, 0f)
-
-        fun fromTo(from: Vec3, to: Vec3): Quat {
-            val source = from.normalized()
-            val target = to.normalized()
-            val dot = source.dot(target).coerceIn(-1f, 1f)
-            if (dot > 0.9995f) return identity
-            if (dot < -0.9995f) {
-                val reference = if (kotlin.math.abs(source.x) < 0.9f) Vec3(1f, 0f, 0f) else Vec3(0f, 1f, 0f)
-                val axis = source.cross(reference).normalized()
-                return Quat(0f, axis.x, axis.y, axis.z)
-            }
-            val cross = source.cross(target)
-            return Quat(
-                w = 1f + dot,
-                x = cross.x,
-                y = cross.y,
-                z = cross.z,
-            ).normalized()
-        }
-
-        fun slerp(from: Quat, to: Quat, progress: Float): Quat {
-            val t = progress.coerceIn(0f, 1f)
-            var target = to
-            var dot = from.w * target.w + from.x * target.x + from.y * target.y + from.z * target.z
-            if (dot < 0f) {
-                target = Quat(-target.w, -target.x, -target.y, -target.z)
-                dot = -dot
-            }
-            if (dot > 0.9995f) {
-                return Quat(
-                    from.w + (target.w - from.w) * t,
-                    from.x + (target.x - from.x) * t,
-                    from.y + (target.y - from.y) * t,
-                    from.z + (target.z - from.z) * t,
-                ).normalized()
-            }
-            val theta = kotlin.math.acos(dot.coerceIn(-1f, 1f))
-            val sinTheta = sin(theta).coerceAtLeast(0.0001f)
-            val fromWeight = sin((1f - t) * theta) / sinTheta
-            val targetWeight = sin(t * theta) / sinTheta
-            return Quat(
-                from.w * fromWeight + target.w * targetWeight,
-                from.x * fromWeight + target.x * targetWeight,
-                from.y * fromWeight + target.y * targetWeight,
-                from.z * fromWeight + target.z * targetWeight,
-            ).normalized()
-        }
-    }
-}
 
 private data class PhysicsDieRender(
     val position: Vec3,
     val rotation: Quat,
     val result: Int,
+    val faceValues: List<Int>,
 )
 
-private data class PhysicsTriangle3d(val a: Vec3, val b: Vec3, val c: Vec3)
-
-private data class PhysicsMeshFace(
-    val vertices: List<Vec3>,
-    val normal: Vec3,
-)
-
-private data class PhysicsMeshEdge(
-    val a: Vec3,
-    val b: Vec3,
+private data class PhysicsProjectedDie(
+    val die: PhysicsDieRender,
+    val worldPoints: List<Vec3>,
+    val points: List<DiceScreenPoint>,
     val normals: List<Vec3>,
 )
 
@@ -4484,423 +4438,60 @@ private data class PhysicsRenderFace(
     val points: List<DiceScreenPoint>,
     val depth: Float,
     val color: Color,
+    val value: Int,
+    val label: DiceLabelProjection?,
 )
 
 private class DicePhysicsWorld {
-    private data class Body(
-        val position: Vec3,
-        var velocity: Vec3,
-        var rotation: Quat,
-        var angularVelocity: Vec3,
-        val result: Int,
-        val sides: Int,
-        val settleRotation: Quat,
-        val restHeight: Float,
-        val footprintRadius: Float,
-        var settleX: Float,
-        var settleZ: Float,
-        val radius: Float,
-    )
-
-    private val bodies = ArrayList<Body>(6)
-    private var elapsed = 0f
-    private var active = false
-    private var settleTargetsReady = false
-    private var pendingImpactStrength = 0f
-
     var renderState by mutableStateOf<List<PhysicsDieRender>>(emptyList())
         private set
 
-    fun restingFallback(faces: List<Int>, sides: Int): List<PhysicsDieRender> {
-        if (faces.isEmpty()) return emptyList()
+    suspend fun play(trajectory: DiceTrajectory, onImpact: (Float) -> Unit) {
+        val start = withFrameNanos { it }
+        var lastEvent = -1
+        do {
+            val now = withFrameNanos { it }
+            val framePosition = ((now - start) / 1_000_000_000f / DiceRigidBodySimulation.STEP_SECONDS)
+                .coerceAtMost(trajectory.frames.lastIndex.toFloat())
+            val index = framePosition.toInt()
+            val next = (index + 1).coerceAtMost(trajectory.frames.lastIndex)
+            val blend = framePosition - index
+            val first = trajectory.frames[index]
+            val second = trajectory.frames[next]
+            renderState = first.poses.mapIndexed { die, pose ->
+                val following = second.poses[die]
+                PhysicsDieRender(
+                    pose.position + (following.position - pose.position) * blend,
+                    Quat.slerp(pose.rotation, following.rotation, blend),
+                    trajectory.results[die],
+                    trajectory.faceValues[die],
+                )
+            }
+            var impact = 0f
+            for (event in lastEvent + 1..index) impact = maxOf(impact, trajectory.frames[event].impact)
+            lastEvent = index
+            if (impact > 0f) onImpact(impact)
+        } while (index < trajectory.frames.lastIndex)
+    }
+
+    fun stop() { renderState = emptyList() }
+
+    fun restingFallback(results: List<Int>, sides: Int): List<PhysicsDieRender> {
         val mesh = buildPhysicsMesh(sides)
-        val restingDice = faces.mapIndexed { index, result ->
-            val rotation = stableRestingRotation(mesh, index)
-            Triple(result, rotation, restingFootprintRadius(mesh, rotation))
-        }
-        val columns = minOf(3, faces.size)
-        val rows = (faces.size + columns - 1) / columns
-        val spacing = restingDice.maxOf { (_, _, footprint) -> footprint } * 2f + 0.12f
-        return restingDice.mapIndexed { index, (result, rotation, _) ->
-            val row = index / columns
-            val column = index % columns
-            val itemsInRow = minOf(columns, faces.size - row * columns)
+        val faces = buildPhysicsMeshFaces(mesh)
+        val align = Quat.fromTo(faces.first().normal, Vec3(0f, -1f, 0f))
+        val columns = minOf(3, results.size)
+        val rows = (results.size + columns - 1) / columns
+        return results.mapIndexed { index, result ->
+            val yaw = index * 1.17f
+            val rotation = Quat(cos(yaw * 0.5f), 0f, sin(yaw * 0.5f), 0f) * align
+            val height = -mesh.flatMap { listOf(it.a, it.b, it.c) }.minOf { rotation.rotate(it).y }
+            val items = minOf(columns, results.size - index / columns * columns)
             PhysicsDieRender(
-                position = Vec3(
-                    (column - (itemsInRow - 1) / 2f) * spacing,
-                    restingHeight(mesh, rotation),
-                    (row - (rows - 1) / 2f) * spacing,
-                ),
-                rotation = rotation,
-                result = result,
-            )
-        }
-    }
-
-    fun startRoll(roll: DiceRollResult) {
-        bodies.clear()
-        elapsed = 0f
-        active = true
-        settleTargetsReady = false
-        pendingImpactStrength = 0f
-        val mesh = buildPhysicsMesh(roll.sides)
-        val meshVertices = mesh.flatMap { triangle -> listOf(triangle.a, triangle.b, triangle.c) }
-        val collisionRadius = meshVertices.maxOf { vertex -> vertex.length() }
-        val columns = minOf(3, roll.rolls.size)
-        val rows = (roll.rolls.size + columns - 1) / columns
-        val initialSpacing = collisionRadius * 2f + 0.12f
-        roll.rolls.forEachIndexed { index, result ->
-            val row = index / columns
-            val column = index % columns
-            val itemsInRow = minOf(columns, roll.rolls.size - row * columns)
-            val xOffset = (column - (itemsInRow - 1) / 2f) * initialSpacing
-            val zOffset = (row - (rows - 1) / 2f) * initialSpacing
-            val initialRotation = Quat(
-                Random.nextFloat(),
-                Random.nextFloat(),
-                Random.nextFloat(),
-                Random.nextFloat(),
-            ).normalized()
-            val settleRotation = stableRestingRotation(mesh, index)
-            bodies += Body(
-                position = Vec3(xOffset, collisionRadius + 0.16f, zOffset),
-                velocity = Vec3(
-                    (Random.nextFloat() - 0.5f) * 4.8f,
-                    3.6f + Random.nextFloat() * 2.2f,
-                    (Random.nextFloat() - 0.5f) * 3.8f,
-                ),
-                rotation = initialRotation,
-                angularVelocity = Vec3(
-                    (Random.nextFloat() - 0.5f) * 22f,
-                    (Random.nextFloat() - 0.5f) * 22f,
-                    (Random.nextFloat() - 0.5f) * 22f,
-                ),
-                result = result,
-                sides = roll.sides,
-                settleRotation = settleRotation,
-                restHeight = restingHeight(mesh, settleRotation),
-                footprintRadius = restingFootprintRadius(mesh, settleRotation),
-                settleX = xOffset,
-                settleZ = zOffset,
-                radius = collisionRadius,
-            )
-        }
-        publish()
-    }
-
-    fun step(deltaSeconds: Float) {
-        if (!active || bodies.isEmpty()) return
-        val dt = deltaSeconds.coerceIn(0.008f, 0.025f)
-        elapsed += dt
-        bodies.forEach { body ->
-            body.velocity.y -= 9.6f * dt
-            body.position.x += body.velocity.x * dt
-            body.position.y += body.velocity.y * dt
-            body.position.z += body.velocity.z * dt
-            body.rotation = body.rotation.integrate(body.angularVelocity, dt)
-            body.angularVelocity = body.angularVelocity * 0.989f
-            resolveBounds(body)
-        }
-        repeat(3) {
-            resolveBodyCollisions()
-        }
-        if (elapsed > 1.45f) {
-            bodies.forEach { body ->
-                body.velocity = body.velocity * 0.82f
-                body.angularVelocity = body.angularVelocity * 0.78f
-            }
-        }
-        if (elapsed > 1.30f && !settleTargetsReady) {
-            prepareSettleTargets()
-            settleTargetsReady = true
-        }
-        if (elapsed > 1.34f) {
-            val settleProgress = ((elapsed - 1.34f) / 0.28f).coerceIn(0f, 1f)
-            bodies.forEach { body ->
-                body.rotation = Quat.slerp(body.rotation, body.settleRotation, settleProgress)
-                body.position.x += (body.settleX - body.position.x) * settleProgress
-                body.position.y += (body.restHeight - body.position.y) * settleProgress
-                body.position.z += (body.settleZ - body.position.z) * settleProgress
-            }
-        }
-        if (elapsed > 1.62f) {
-            if (!settleTargetsAreValid()) {
-                prepareSettleTargets(randomize = false)
-            }
-            bodies.forEach { body ->
-                body.position.x = body.settleX
-                body.position.y = body.restHeight
-                body.position.z = body.settleZ
-                body.rotation = body.settleRotation
-                body.velocity = Vec3(0f, 0f, 0f)
-                body.angularVelocity = Vec3(0f, 0f, 0f)
-            }
-            active = false
-        }
-        publish()
-    }
-
-    fun stop() {
-        active = false
-        settleTargetsReady = false
-        bodies.clear()
-        pendingImpactStrength = 0f
-        renderState = emptyList()
-    }
-
-    fun consumeImpactStrength(): Float {
-        val strength = pendingImpactStrength
-        pendingImpactStrength = 0f
-        return strength
-    }
-
-    private fun registerImpact(strength: Float) {
-        if (strength > 0.65f) {
-            pendingImpactStrength = max(pendingImpactStrength, strength)
-        }
-    }
-
-    private fun stableRestingRotation(mesh: List<PhysicsTriangle3d>, index: Int): Quat {
-        val yaw = (index * 1.17f + Random.nextFloat() * 0.8f) * Math.PI.toFloat()
-        val yawRotation = Quat(cos(yaw * 0.5f), 0f, sin(yaw * 0.5f), 0f)
-        mesh.sortedByDescending { triangle ->
-            val normal = (triangle.b - triangle.a).cross(triangle.c - triangle.a).normalized()
-            kotlin.math.abs(normal.y)
-        }.forEach { face ->
-            val faceCenter = (face.a + face.b + face.c) * (1f / 3f)
-            val rawNormal = (face.b - face.a).cross(face.c - face.a).normalized()
-            val outwardNormal = if (rawNormal.dot(faceCenter) < 0f) rawNormal * -1f else rawNormal
-            val align = Quat.fromTo(outwardNormal, Vec3(0f, -1f, 0f))
-            val candidate = (yawRotation * align).normalized()
-            if (hasFlatSupport(mesh, candidate)) return candidate
-        }
-        return Quat.identity
-    }
-
-    private fun restingHeight(mesh: List<PhysicsTriangle3d>, rotation: Quat): Float {
-        val minimumY = mesh
-            .flatMap { triangle -> listOf(triangle.a, triangle.b, triangle.c) }
-            .minOf { vertex -> rotation.rotate(vertex).y }
-        return (-minimumY).coerceAtLeast(0.02f)
-    }
-
-    private fun restingFootprintRadius(mesh: List<PhysicsTriangle3d>, rotation: Quat): Float {
-        return mesh
-            .flatMap { triangle -> listOf(triangle.a, triangle.b, triangle.c) }
-            .maxOf { vertex ->
-                val rotated = rotation.rotate(vertex)
-                sqrt(rotated.x * rotated.x + rotated.z * rotated.z)
-            }
-    }
-
-    private fun hasFlatSupport(mesh: List<PhysicsTriangle3d>, rotation: Quat): Boolean {
-        val rotatedTriangles = mesh.map { triangle ->
-            Triple(
-                rotation.rotate(triangle.a),
-                rotation.rotate(triangle.b),
-                rotation.rotate(triangle.c),
-            )
-        }
-        val minimumY = rotatedTriangles
-            .flatMap { listOf(it.first.y, it.second.y, it.third.y) }
-            .minOrNull() ?: return false
-        return rotatedTriangles.any { triangle ->
-            val a = triangle.first
-            val b = triangle.second
-            val c = triangle.third
-            val normal = (b - a).cross(c - a).normalized()
-            kotlin.math.abs(a.y - minimumY) < 0.0015f &&
-                kotlin.math.abs(b.y - minimumY) < 0.0015f &&
-                kotlin.math.abs(c.y - minimumY) < 0.0015f &&
-                kotlin.math.abs(normal.y) > 0.999f
-        }
-    }
-
-    /** Builds randomized table positions with a hard non-overlap guarantee. */
-    private fun prepareSettleTargets(randomize: Boolean = true) {
-        if (bodies.isEmpty()) return
-        val xLimit = 1.47f
-        val zLimit = 1.02f
-        val columns = minOf(3, bodies.size)
-        val rows = (bodies.size + columns - 1) / columns
-        val maximumFootprint = bodies.maxOf { body -> body.footprintRadius }
-        val spacing = maximumFootprint * 2f + 0.18f
-        val rawTargets = bodies.indices.map { index ->
-            val row = index / columns
-            val column = index % columns
-            val itemsInRow = minOf(columns, bodies.size - row * columns)
-            Vec3(
-                (column - (itemsInRow - 1) / 2f) * spacing,
-                0f,
-                (row - (rows - 1) / 2f) * spacing,
-            )
-        }
-        val layoutAngle = if (randomize) (Random.nextFloat() * 2f - 1f) * 0.08f else 0f
-        val angleCos = cos(layoutAngle)
-        val angleSin = sin(layoutAngle)
-        val rotatedTargets = rawTargets.map { target ->
-            Vec3(
-                target.x * angleCos - target.z * angleSin,
-                0f,
-                target.x * angleSin + target.z * angleCos,
-            )
-        }
-        val maxTargetX = rotatedTargets.maxOf { target -> kotlin.math.abs(target.x) }
-        val maxTargetZ = rotatedTargets.maxOf { target -> kotlin.math.abs(target.z) }
-        val offsetRangeX = (xLimit - maximumFootprint - maxTargetX).coerceAtLeast(0f).coerceAtMost(0.10f)
-        val offsetRangeZ = (zLimit - maximumFootprint - maxTargetZ).coerceAtLeast(0f).coerceAtMost(0.10f)
-        val offsetX = if (randomize) (Random.nextFloat() * 2f - 1f) * offsetRangeX else 0f
-        val offsetZ = if (randomize) (Random.nextFloat() * 2f - 1f) * offsetRangeZ else 0f
-        val targets = rotatedTargets.map { target ->
-            Vec3(
-                target.x + offsetX,
-                0f,
-                target.z + offsetZ,
-            )
-        }.shuffled().toMutableList()
-
-        if (randomize && bodies.size == 1) {
-            val radius = bodies.first().footprintRadius
-            targets[0] = Vec3(
-                -xLimit + radius + Random.nextFloat() * (2f * (xLimit - radius)),
-                0f,
-                -zLimit + radius + Random.nextFloat() * (2f * (zLimit - radius)),
-            )
-        } else if (randomize) {
-            repeat(320) { attempt ->
-                val index = Random.nextInt(targets.size)
-                val body = bodies[index]
-                val current = targets[index]
-                val step = if (attempt < 160) 0.22f else 0.11f
-                val candidateX = current.x + (Random.nextFloat() * 2f - 1f) * step
-                val candidateZ = current.z + (Random.nextFloat() * 2f - 1f) * step
-                if (candidateX !in (-xLimit + body.footprintRadius)..(xLimit - body.footprintRadius) ||
-                    candidateZ !in (-zLimit + body.footprintRadius)..(zLimit - body.footprintRadius)
-                ) {
-                    return@repeat
-                }
-                val canMove = targets.indices.all { otherIndex ->
-                    if (otherIndex == index) return@all true
-                    val other = targets[otherIndex]
-                    val dx = other.x - candidateX
-                    val dz = other.z - candidateZ
-                    val minimumDistance = body.footprintRadius + bodies[otherIndex].footprintRadius + 0.08f
-                    dx * dx + dz * dz >= minimumDistance * minimumDistance
-                }
-                if (canMove) {
-                    targets[index] = Vec3(candidateX, 0f, candidateZ)
-                }
-            }
-        }
-        bodies.forEachIndexed { index, body ->
-            val target = targets[index]
-            body.settleX = target.x.coerceIn(-xLimit + body.footprintRadius, xLimit - body.footprintRadius)
-            body.settleZ = target.z.coerceIn(-zLimit + body.footprintRadius, zLimit - body.footprintRadius)
-        }
-    }
-
-    private fun settleTargetsAreValid(): Boolean {
-        for (firstIndex in 0 until bodies.size) {
-            for (secondIndex in firstIndex + 1 until bodies.size) {
-                val first = bodies[firstIndex]
-                val second = bodies[secondIndex]
-                val dx = second.settleX - first.settleX
-                val dz = second.settleZ - first.settleZ
-                val minimumDistance = first.footprintRadius + second.footprintRadius + 0.06f
-                if (dx * dx + dz * dz < minimumDistance * minimumDistance) return false
-            }
-        }
-        return bodies.all { body -> hasFlatSupport(buildPhysicsMesh(body.sides), body.settleRotation) }
-    }
-
-    private fun resolveBounds(body: Body) {
-        val floor = body.radius * 0.86f
-        if (body.position.y < floor) {
-            body.position.y = floor
-            if (body.velocity.y < 0f) {
-                registerImpact(-body.velocity.y)
-                body.velocity.y = -body.velocity.y * 0.52f
-            }
-            body.velocity.x *= 0.91f
-            body.velocity.z *= 0.91f
-        }
-        val limits = listOf(
-            body.position.x to 1.47f,
-            body.position.z to 1.02f,
-        )
-        if (body.position.x < -limits[0].second) {
-            body.position.x = -limits[0].second
-            registerImpact(-body.velocity.x)
-            body.velocity.x = kotlin.math.abs(body.velocity.x) * 0.55f
-        } else if (body.position.x > limits[0].second) {
-            body.position.x = limits[0].second
-            registerImpact(body.velocity.x)
-            body.velocity.x = -kotlin.math.abs(body.velocity.x) * 0.55f
-        }
-        if (body.position.z < -limits[1].second) {
-            body.position.z = -limits[1].second
-            registerImpact(-body.velocity.z)
-            body.velocity.z = kotlin.math.abs(body.velocity.z) * 0.55f
-        } else if (body.position.z > limits[1].second) {
-            body.position.z = limits[1].second
-            registerImpact(body.velocity.z)
-            body.velocity.z = -kotlin.math.abs(body.velocity.z) * 0.55f
-        }
-    }
-
-    private fun resolveBodyCollisions() {
-        for (firstIndex in 0 until bodies.size) {
-            for (secondIndex in firstIndex + 1 until bodies.size) {
-                val first = bodies[firstIndex]
-                val second = bodies[secondIndex]
-                val planarCollision = elapsed > 0.72f
-                val spatialDelta = second.position - first.position
-                val delta = if (planarCollision) Vec3(spatialDelta.x, 0f, spatialDelta.z) else spatialDelta
-                val rawDistance = delta.length()
-                val distance = rawDistance.coerceAtLeast(0.0001f)
-                val minimumDistance = if (planarCollision) {
-                    first.footprintRadius + second.footprintRadius + 0.04f
-                } else {
-                    first.radius + second.radius
-                }
-                if (distance >= minimumDistance) continue
-                val rawNormal = if (rawDistance < 0.0001f) {
-                    Vec3(if ((firstIndex + secondIndex) % 2 == 0) 1f else -1f, 0f, 0f)
-                } else {
-                    delta * (1f / distance)
-                }
-                val normal = if (planarCollision) {
-                    Vec3(rawNormal.x, 0f, rawNormal.z).normalized()
-                } else {
-                    Vec3(rawNormal.x, rawNormal.y.coerceIn(-0.24f, 0.24f), rawNormal.z).normalized()
-                }
-                if (normal.length() < 0.0001f) {
-                    continue
-                }
-                val correction = (minimumDistance - distance) * 0.51f
-                first.position.x -= normal.x * correction
-                first.position.y -= normal.y * correction
-                first.position.z -= normal.z * correction
-                second.position.x += normal.x * correction
-                second.position.y += normal.y * correction
-                second.position.z += normal.z * correction
-                val relativeVelocity = (second.velocity - first.velocity).dot(normal)
-                if (relativeVelocity < 0f) {
-                    registerImpact(-relativeVelocity)
-                    val impulse = -relativeVelocity * 0.62f
-                    first.velocity = first.velocity - normal * impulse
-                    second.velocity = second.velocity + normal * impulse
-                }
-            }
-        }
-    }
-
-    private fun publish() {
-        renderState = bodies.map { body ->
-            PhysicsDieRender(
-                position = body.position.copy(),
-                rotation = body.rotation.copy(),
-                result = body.result,
+                Vec3((index % columns - (items - 1) * 0.5f) * 0.86f, height, (index / columns - (rows - 1) * 0.5f) * 0.82f),
+                rotation,
+                result,
+                DiceRigidBodySimulation.faceValues(faces, DiceRigidBodySimulation.resultFace(faces, rotation, sides), result, sides),
             )
         }
     }
@@ -4942,275 +4533,6 @@ private fun projectDicePoint(
         y = canvasSize.height * 0.58f - point.dot(camera.up) * scale,
         depth = depth,
     )
-}
-
-private fun buildPhysicsMesh(sides: Int): List<PhysicsTriangle3d> {
-    val radius = if (sides == 6) 0.31f * 0.90f else 0.31f * 1.10f
-    return when (sides) {
-        4 -> {
-            val vertices = listOf(
-                Vec3(1f, 1f, 1f),
-                Vec3(-1f, -1f, 1f),
-                Vec3(-1f, 1f, -1f),
-                Vec3(1f, -1f, -1f),
-            ).map { vertex -> vertex.normalized() * radius }
-            listOf(
-                PhysicsTriangle3d(vertices[0], vertices[1], vertices[2]),
-                PhysicsTriangle3d(vertices[0], vertices[3], vertices[1]),
-                PhysicsTriangle3d(vertices[0], vertices[2], vertices[3]),
-                PhysicsTriangle3d(vertices[1], vertices[3], vertices[2]),
-            )
-        }
-        6 -> cubePhysicsMesh(radius)
-        8 -> octahedronPhysicsMesh(radius)
-        10 -> pentagonalTrapezohedronPhysicsMesh(radius)
-        12 -> dodecahedronPhysicsMesh(radius)
-        20 -> icosahedronPhysicsMesh(radius)
-        else -> lathePhysicsMesh(radius, 6)
-    }
-}
-
-private fun buildPhysicsMeshFaces(mesh: List<PhysicsTriangle3d>): List<PhysicsMeshFace> {
-    data class FaceAccumulator(
-        val normal: Vec3,
-        val planeDistance: Float,
-        val vertices: MutableList<Vec3>,
-    )
-
-    fun samePoint(first: Vec3, second: Vec3): Boolean {
-        return kotlin.math.abs(first.x - second.x) < 0.0001f &&
-            kotlin.math.abs(first.y - second.y) < 0.0001f &&
-            kotlin.math.abs(first.z - second.z) < 0.0001f
-    }
-
-    val faces = mutableListOf<FaceAccumulator>()
-    mesh.forEach { triangle ->
-        val center = (triangle.a + triangle.b + triangle.c) * (1f / 3f)
-        val rawNormal = (triangle.b - triangle.a).cross(triangle.c - triangle.a).normalized()
-        val normal = if (rawNormal.dot(center) < 0f) rawNormal * -1f else rawNormal
-        val planeDistance = normal.dot(center)
-        val face = faces.firstOrNull { candidate ->
-            candidate.normal.dot(normal) > 0.9995f &&
-                kotlin.math.abs(candidate.planeDistance - planeDistance) < 0.001f
-        } ?: FaceAccumulator(normal, planeDistance, mutableListOf()).also { faces += it }
-        listOf(triangle.a, triangle.b, triangle.c).forEach { vertex ->
-            if (face.vertices.none { existing -> samePoint(existing, vertex) }) {
-                face.vertices += vertex
-            }
-        }
-    }
-    return faces.map { face ->
-        val center = face.vertices.reduce { total, vertex -> total + vertex } * (1f / face.vertices.size)
-        val reference = (face.vertices.first() - center).normalized()
-        val tangent = face.normal.cross(reference).normalized()
-        PhysicsMeshFace(
-            vertices = face.vertices.sortedBy { vertex ->
-                val delta = vertex - center
-                atan2(delta.dot(tangent), delta.dot(reference))
-            },
-            normal = face.normal,
-        )
-    }
-}
-
-private fun buildPhysicsMeshEdges(mesh: List<PhysicsTriangle3d>): List<PhysicsMeshEdge> {
-    data class EdgeAccumulator(
-        val a: Vec3,
-        val b: Vec3,
-        val normals: MutableList<Vec3>,
-    )
-
-    fun samePoint(first: Vec3, second: Vec3): Boolean {
-        return kotlin.math.abs(first.x - second.x) < 0.0001f &&
-            kotlin.math.abs(first.y - second.y) < 0.0001f &&
-            kotlin.math.abs(first.z - second.z) < 0.0001f
-    }
-
-    val edges = mutableListOf<EdgeAccumulator>()
-    mesh.forEach { triangle ->
-        val center = (triangle.a + triangle.b + triangle.c) * (1f / 3f)
-        val rawNormal = (triangle.b - triangle.a).cross(triangle.c - triangle.a).normalized()
-        val normal = if (rawNormal.dot(center) < 0f) rawNormal * -1f else rawNormal
-        listOf(
-            triangle.a to triangle.b,
-            triangle.b to triangle.c,
-            triangle.c to triangle.a,
-        ).forEach { (a, b) ->
-            val existing = edges.firstOrNull { edge ->
-                (samePoint(edge.a, a) && samePoint(edge.b, b)) ||
-                    (samePoint(edge.a, b) && samePoint(edge.b, a))
-            }
-            if (existing == null) {
-                edges += EdgeAccumulator(a, b, mutableListOf(normal))
-            } else {
-                existing.normals += normal
-            }
-        }
-    }
-    return edges
-        .filter { edge ->
-            edge.normals.size == 1 || edge.normals.any { first ->
-                edge.normals.any { second -> first.dot(second) < 0.985f }
-            }
-        }
-        .map { edge -> PhysicsMeshEdge(edge.a, edge.b, edge.normals.toList()) }
-}
-
-private fun cubePhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
-    val vertices = listOf(
-        Vec3(-radius, -radius, -radius), Vec3(radius, -radius, -radius),
-        Vec3(radius, radius, -radius), Vec3(-radius, radius, -radius),
-        Vec3(-radius, -radius, radius), Vec3(radius, -radius, radius),
-        Vec3(radius, radius, radius), Vec3(-radius, radius, radius),
-    )
-    val quads = listOf(
-        intArrayOf(0, 1, 2, 3), intArrayOf(4, 7, 6, 5),
-        intArrayOf(0, 4, 5, 1), intArrayOf(1, 5, 6, 2),
-        intArrayOf(2, 6, 7, 3), intArrayOf(4, 0, 3, 7),
-    )
-    return quads.flatMap { quad ->
-        listOf(
-            PhysicsTriangle3d(vertices[quad[0]], vertices[quad[1]], vertices[quad[2]]),
-            PhysicsTriangle3d(vertices[quad[0]], vertices[quad[2]], vertices[quad[3]]),
-        )
-    }
-}
-
-private fun octahedronPhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
-    val top = Vec3(0f, radius, 0f)
-    val bottom = Vec3(0f, -radius, 0f)
-    val ring = listOf(
-        Vec3(radius, 0f, 0f), Vec3(0f, 0f, radius),
-        Vec3(-radius, 0f, 0f), Vec3(0f, 0f, -radius),
-    )
-    return ring.indices.flatMap { index ->
-        val next = ring[(index + 1) % ring.size]
-        listOf(
-            PhysicsTriangle3d(top, ring[index], next),
-            PhysicsTriangle3d(bottom, next, ring[index]),
-        )
-    }
-}
-
-private fun pentagonalTrapezohedronPhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
-    val segments = 5
-    val top = Vec3(0f, radius, 0f)
-    val bottom = Vec3(0f, -radius, 0f)
-    val halfStep = Math.PI.toFloat() / segments
-    val halfStepCosine = cos(halfStep)
-    val ringHeight = radius * (1f - halfStepCosine) / (1f + halfStepCosine)
-    val ringRadius = radius * 0.92f
-    val ring = List(segments * 2) { index ->
-        val angle = Math.PI.toFloat() * index / segments
-        Vec3(
-            cos(angle) * ringRadius,
-            if (index % 2 == 0) -ringHeight else ringHeight,
-            sin(angle) * ringRadius,
-        )
-    }
-    val faces = mutableListOf<PhysicsTriangle3d>()
-    repeat(segments) { index ->
-        val lowerRingIndex = index * 2
-        val upperLeft = ring[(lowerRingIndex - 1 + ring.size) % ring.size]
-        val upperCenter = ring[lowerRingIndex]
-        val upperRight = ring[(lowerRingIndex + 1) % ring.size]
-        faces += PhysicsTriangle3d(top, upperLeft, upperCenter)
-        faces += PhysicsTriangle3d(top, upperCenter, upperRight)
-
-        val upperRingIndex = lowerRingIndex + 1
-        val lowerLeft = ring[(upperRingIndex - 1 + ring.size) % ring.size]
-        val lowerCenter = ring[upperRingIndex]
-        val lowerRight = ring[(upperRingIndex + 1) % ring.size]
-        faces += PhysicsTriangle3d(bottom, lowerLeft, lowerCenter)
-        faces += PhysicsTriangle3d(bottom, lowerCenter, lowerRight)
-    }
-    return faces
-}
-
-private fun dodecahedronPhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
-    val phi = (1f + sqrt(5f)) / 2f
-    val inversePhi = 1f / phi
-    val vertices = listOf(
-        Vec3(-1f, -1f, -1f), Vec3(-1f, -1f, 1f),
-        Vec3(-1f, 1f, -1f), Vec3(-1f, 1f, 1f),
-        Vec3(1f, -1f, -1f), Vec3(1f, -1f, 1f),
-        Vec3(1f, 1f, -1f), Vec3(1f, 1f, 1f),
-        Vec3(0f, -inversePhi, -phi), Vec3(0f, -inversePhi, phi),
-        Vec3(0f, inversePhi, -phi), Vec3(0f, inversePhi, phi),
-        Vec3(-inversePhi, -phi, 0f), Vec3(-inversePhi, phi, 0f),
-        Vec3(inversePhi, -phi, 0f), Vec3(inversePhi, phi, 0f),
-        Vec3(-phi, 0f, -inversePhi), Vec3(-phi, 0f, inversePhi),
-        Vec3(phi, 0f, -inversePhi), Vec3(phi, 0f, inversePhi),
-    ).map { vertex -> vertex.normalized() * radius }
-    val pentagons = listOf(
-        intArrayOf(0, 1, 12, 16, 17),
-        intArrayOf(0, 2, 8, 10, 16),
-        intArrayOf(0, 4, 8, 12, 14),
-        intArrayOf(1, 3, 9, 11, 17),
-        intArrayOf(1, 5, 9, 12, 14),
-        intArrayOf(2, 3, 13, 16, 17),
-        intArrayOf(2, 6, 10, 13, 15),
-        intArrayOf(3, 7, 11, 13, 15),
-        intArrayOf(4, 5, 14, 18, 19),
-        intArrayOf(4, 6, 8, 10, 18),
-        intArrayOf(5, 7, 9, 11, 19),
-        intArrayOf(6, 7, 15, 18, 19),
-    )
-    return pentagons.flatMap { face ->
-        val center = face
-            .map { index -> vertices[index] }
-            .reduce { total, vertex -> total + vertex } * (1f / face.size)
-        val outward = center.normalized()
-        val reference = (vertices[face.first()] - center).normalized()
-        val tangent = outward.cross(reference).normalized()
-        val ordered = face.sortedBy { index ->
-            val delta = vertices[index] - center
-            atan2(delta.dot(tangent), delta.dot(reference))
-        }
-        (1 until ordered.lastIndex).map { index ->
-            PhysicsTriangle3d(
-                vertices[ordered[0]],
-                vertices[ordered[index]],
-                vertices[ordered[index + 1]],
-            )
-        }
-    }
-}
-
-private fun lathePhysicsMesh(radius: Float, segments: Int): List<PhysicsTriangle3d> {
-    val top = Vec3(0f, radius, 0f)
-    val bottom = Vec3(0f, -radius, 0f)
-    val upper = List(segments) { index ->
-        val angle = 2f * Math.PI.toFloat() * index / segments
-        Vec3(kotlin.math.cos(angle) * radius * 0.9f, radius * 0.35f, kotlin.math.sin(angle) * radius * 0.9f)
-    }
-    val lower = upper.map { Vec3(it.x, -it.y, it.z) }
-    return upper.indices.flatMap { index ->
-        val next = (index + 1) % segments
-        listOf(
-            PhysicsTriangle3d(top, upper[index], upper[next]),
-            PhysicsTriangle3d(upper[index], lower[index], upper[next]),
-            PhysicsTriangle3d(upper[next], lower[index], lower[next]),
-            PhysicsTriangle3d(bottom, lower[next], lower[index]),
-        )
-    }
-}
-
-private fun icosahedronPhysicsMesh(radius: Float): List<PhysicsTriangle3d> {
-    val phi = (1f + sqrt(5f)) / 2f
-    val raw = listOf(
-        Vec3(-1f, phi, 0f), Vec3(1f, phi, 0f), Vec3(-1f, -phi, 0f), Vec3(1f, -phi, 0f),
-        Vec3(0f, -1f, phi), Vec3(0f, 1f, phi), Vec3(0f, -1f, -phi), Vec3(0f, 1f, -phi),
-        Vec3(phi, 0f, -1f), Vec3(phi, 0f, 1f), Vec3(-phi, 0f, -1f), Vec3(-phi, 0f, 1f),
-    )
-    val vertices = raw.map { it.normalized() * radius }
-    val faces = listOf(
-        intArrayOf(0, 11, 5), intArrayOf(0, 5, 1), intArrayOf(0, 1, 7), intArrayOf(0, 7, 10), intArrayOf(0, 10, 11),
-        intArrayOf(1, 5, 9), intArrayOf(5, 11, 4), intArrayOf(11, 10, 2), intArrayOf(10, 7, 6), intArrayOf(7, 1, 8),
-        intArrayOf(3, 9, 4), intArrayOf(3, 4, 2), intArrayOf(3, 2, 6), intArrayOf(3, 6, 8), intArrayOf(3, 8, 9),
-        intArrayOf(4, 9, 5), intArrayOf(2, 4, 11), intArrayOf(6, 2, 10), intArrayOf(8, 6, 7), intArrayOf(9, 8, 1),
-    )
-    return faces.map { face -> PhysicsTriangle3d(vertices[face[0]], vertices[face[1]], vertices[face[2]]) }
 }
 
 private fun diceColorForSides(sides: Int, accent: Color): Color = when (sides) {
@@ -5431,6 +4753,8 @@ private fun ScheduleScreen(
     onDetailRequestHandled: () -> Unit,
 ) {
     val selectedDate = vm.selectedScheduleDate
+    val calendarScrollState = rememberScrollState()
+    val subPageStates = rememberSaveableStateHolder()
     val page = runCatching { SchedulePage.valueOf(navigation.pageName) }.getOrDefault(SchedulePage.Calendar)
     val editorReturnPage = runCatching { SchedulePage.valueOf(navigation.editorReturnPageName) }
         .getOrDefault(SchedulePage.Calendar)
@@ -5440,6 +4764,12 @@ private fun ScheduleScreen(
     val activeItem = remember(vm.scheduleItems, navigation.activeItemId) {
         navigation.activeItemId?.let { id -> vm.scheduleItems.firstOrNull { it.id == id } }
     }
+    HapticPageFeedback(if (detailDate != null) "almanac" else page.name, when {
+        detailDate != null -> 1
+        page == SchedulePage.Calendar -> 0
+        page == SchedulePage.Memorial -> 1
+        else -> 2
+    })
 
     LaunchedEffect(requestedDetailDate) {
         val requestedDate = requestedDetailDate
@@ -5495,52 +4825,45 @@ private fun ScheduleScreen(
             return
         }
         SchedulePage.Memorial -> {
-            ScheduleMemorialScreen(
-                items = vm.scheduleItems,
-                onBack = { navigation.pageName = SchedulePage.Calendar.name },
-                onItemClick = { item ->
-                    navigation.activeItemId = item.id
-                    navigation.pageName = SchedulePage.Detail.name
-                },
-            )
+            subPageStates.SaveableStateProvider("memorial") {
+                ScheduleMemorialScreen(
+                    items = vm.scheduleItems,
+                    onBack = { navigation.pageName = SchedulePage.Calendar.name },
+                    onItemClick = { item ->
+                        navigation.activeItemId = item.id
+                        navigation.pageName = SchedulePage.Detail.name
+                    },
+                )
+            }
             return
         }
         SchedulePage.Detail -> {
             if (activeItem == null) {
                 LaunchedEffect(navigation.activeItemId) { navigation.pageName = SchedulePage.Memorial.name }
             } else {
-                ScheduleDetailScreen(
-                    item = activeItem,
-                    onBack = { navigation.pageName = SchedulePage.Memorial.name },
-                    onEdit = {
-                        navigation.editorReturnPageName = SchedulePage.Detail.name
-                        navigation.pageName = SchedulePage.Editor.name
-                    },
-                    onToggleDone = { vm.toggleScheduleItem(activeItem.id) },
-                    onDelete = {
-                        vm.deleteScheduleItem(activeItem.id)
-                        navigation.activeItemId = null
-                        navigation.pageName = SchedulePage.Memorial.name
-                    },
-                )
+                subPageStates.SaveableStateProvider("detail-${activeItem.id}") {
+                    ScheduleDetailScreen(
+                        item = activeItem,
+                        onBack = { navigation.pageName = SchedulePage.Memorial.name },
+                        onEdit = {
+                            navigation.editorReturnPageName = SchedulePage.Detail.name
+                            navigation.pageName = SchedulePage.Editor.name
+                        },
+                        onToggleDone = { vm.toggleScheduleItem(activeItem.id) },
+                        onDelete = {
+                            vm.deleteScheduleItem(activeItem.id)
+                            navigation.activeItemId = null
+                            navigation.pageName = SchedulePage.Memorial.name
+                        },
+                    )
+                }
             }
             return
         }
         SchedulePage.Calendar -> Unit
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = LocalFortuneLayout.current.horizontalPadding,
-                vertical = LocalFortuneLayout.current.verticalPadding,
-            ),
-        verticalArrangement = Arrangement.spacedBy(LocalFortuneLayout.current.sectionSpacing),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        PageHeading("日历", "把值得记住的日子，留在这里")
+    val calendar: @Composable (Dp) -> Unit = { availableHeight ->
         CalendarPanel(
             scheduleItems = vm.scheduleItems,
             selectedDate = selectedDate,
@@ -5554,7 +4877,28 @@ private fun ScheduleScreen(
                 navigation.editorReturnPageName = SchedulePage.Calendar.name
                 navigation.pageName = SchedulePage.Editor.name
             },
+            availableHeight = availableHeight,
+            onOpenMemorial = { navigation.pageName = SchedulePage.Memorial.name },
         )
+    }
+    if (LocalFortuneLayout.current.shortWide) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(
+            horizontal = LocalFortuneLayout.current.horizontalPadding,
+            vertical = LocalFortuneLayout.current.verticalPadding)) {
+            calendar(maxHeight)
+        }
+    } else Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(calendarScrollState)
+            .padding(
+                horizontal = LocalFortuneLayout.current.horizontalPadding,
+                vertical = LocalFortuneLayout.current.verticalPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(LocalFortuneLayout.current.sectionSpacing),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        calendar(Dp.Unspecified)
 
         ScheduleMemorialEntryCard(itemCount = vm.scheduleItems.size) {
             navigation.pageName = SchedulePage.Memorial.name
@@ -5569,9 +4913,12 @@ private fun CalendarPanel(
     onSelectedDateChange: (LocalDate) -> Unit,
     onOpenDateDetail: (LocalDate) -> Unit,
     onAddSchedule: () -> Unit,
+    availableHeight: Dp,
+    onOpenMemorial: () -> Unit,
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
+    val haptics = LocalAppHaptics.current
     val today = remember { LocalDate.now() }
     val animationScope = rememberCoroutineScope()
     val initialVisibleMonth = remember { YearMonth.from(selectedDate) }
@@ -5631,9 +4978,14 @@ private fun CalendarPanel(
         }
     }
     val showToday = visibleMonth != YearMonth.from(today) || selectedDate != today
-    val calendarGridHeight = remember(visibleMonth, layout.calendarCellHeight) {
-        (20 + calendarRowCount(visibleMonth) * (layout.calendarCellHeight.value.toInt() + 4)).dp
-    }
+    val weekdayHeight = with(LocalDensity.current) { MaterialTheme.typography.labelMedium.lineHeight.toDp() }
+    val gridGap = if (layout.shortWide) 2.dp else 4.dp
+    val rows = calendarRowCount(visibleMonth)
+    val cellHeight = if (layout.shortWide) {
+        landscapeCalendarCellHeight(availableHeight.value, weekdayHeight.value, rows, LocalDensity.current.fontScale).dp
+    } else layout.calendarCellHeight
+    val calendarGridHeight = weekdayHeight + (cellHeight + gridGap) * rows
+    val gridNeedsScroll = layout.shortWide && calendarGridHeight > availableHeight + 1.dp
 
     suspend fun moveToPage(
         targetPage: Int,
@@ -5643,6 +4995,7 @@ private fun CalendarPanel(
         val safeTarget = targetPage.coerceIn(0, 12000)
         val pageDistance = kotlin.math.abs(safeTarget - pagerState.currentPage)
         if (pageDistance == 0) return
+        haptics.scene(HapticCue.PageSnap)
         if (animateAdjacent && pageDistance == 1) {
             pagerState.animateScrollToPage(safeTarget)
             return
@@ -5666,86 +5019,91 @@ private fun CalendarPanel(
         animationScope.launch { moveToPage(targetPage, animateAdjacent = true) }
     }
 
-    Box(Modifier.widthIn(max = 920.dp).fillMaxWidth()) {
+    val monthControls: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { haptics.menu(true); picker = CalendarPicker.Year }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text("${visibleMonth.year}年", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            TextButton(onClick = { haptics.menu(true); picker = CalendarPicker.Month }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text("${visibleMonth.monthValue}月", color = C.textMain, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            if (showToday) TextButton(onClick = {
+                onSelectedDateChange(today)
+                animationScope.launch { moveToPage(centerPage, animateAdjacent = true) }
+            }) { Text("今日") }
+            TextButton(onClick = onAddSchedule) {
+                FortuneIcon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("新增日程", maxLines = 1)
+            }
+        }
+    }
+    val monthContent: @Composable () -> Unit = {
         Column(
-            Modifier.padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(if (layout.compactHeight) 10.dp else 14.dp),
+            Modifier.fillMaxWidth().padding(vertical = if (layout.shortWide) 0.dp else 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        "今天",
-                        color = C.textSub,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.align(Alignment.CenterStart),
+            if (!layout.shortWide) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "日历",
+                    color = C.textMain,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = onAddSchedule,
+                    modifier = Modifier.offset(x = 8.dp),
+                    contentPadding = if (layout.compactWidth) {
+                        androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    } else {
+                        ButtonDefaults.TextButtonContentPadding
+                    },
+                ) {
+                    FortuneIcon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = C.gold,
+                        modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
                     )
-                    TextButton(
-                        onClick = onAddSchedule,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .offset(x = 8.dp),
-                        contentPadding = if (layout.compactWidth) {
-                            androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                        } else {
-                            ButtonDefaults.TextButtonContentPadding
-                        },
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            tint = C.gold,
-                            modifier = Modifier.size(if (layout.compactWidth) 18.dp else 24.dp),
-                        )
-                        Spacer(Modifier.width(if (layout.compactWidth) 2.dp else 4.dp))
-                        Text(
-                            "新增日程",
-                            color = C.gold,
-                            style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                if (layout.compactWidth) {
+                    Spacer(Modifier.width(if (layout.compactWidth) 2.dp else 4.dp))
                     Text(
-                        "${today.year}年${today.monthValue}月${today.dayOfMonth}日 周${todayInfo?.weekday.orEmpty()}",
-                        color = C.textMain,
-                        style = MaterialTheme.typography.bodyMedium,
+                        "新增日程",
+                        color = C.gold,
+                        style = if (layout.compactWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    todayInfo?.let { info ->
-                        Text(
-                            "${info.ganZhiYear}年 · 农历${info.lunarMonth}${info.lunarDay}",
-                            color = C.textSub,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                } else {
-                    Text(
-                        todayHeader,
-                        color = C.textMain,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 1,
                     )
                 }
             }
+            Text(
+                todayHeader,
+                color = C.textSub,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Box(modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { picker = CalendarPicker.Year }) {
+                    TextButton(onClick = { haptics.menu(true); picker = CalendarPicker.Year }) {
                         Text(
                             "${visibleMonth.year}年",
                             color = C.textMain,
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
-                    TextButton(onClick = { picker = CalendarPicker.Month }) {
+                    TextButton(onClick = { haptics.menu(true); picker = CalendarPicker.Month }) {
                         Text(
                             "${visibleMonth.monthValue}月",
                             color = C.textMain,
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -5758,6 +5116,7 @@ private fun CalendarPanel(
                         }
                     }, modifier = Modifier.align(Alignment.CenterEnd)) { Text("今日") }
                 }
+            }
             }
             LaunchedEffect(pagerState.currentPage) {
                 val month = YearMonth.from(today).plusMonths((pagerState.currentPage - centerPage).toLong())
@@ -5785,13 +5144,15 @@ private fun CalendarPanel(
                             0f
                         }
                     }
-                    .pointerInput(pagerState, calendarSwipeThreshold) {
+                    .pointerInput(pagerState, calendarSwipeThreshold, gridNeedsScroll) {
                         awaitEachGesture {
                             val down = awaitFirstDown(
                                 requireUnconsumed = false,
                                 pass = PointerEventPass.Initial,
                             )
                             var dragAxis: CalendarDragAxis? = null
+                            val tactile = HapticGestureTrack()
+                            val tactileAllowed = down.position.x > 32.dp.toPx() && down.position.x < size.width - 32.dp.toPx()
                             var dragX = 0f
                             var dragY = 0f
                             while (true) {
@@ -5809,13 +5170,17 @@ private fun CalendarPanel(
                                         }
                                     }
                                 }
-                                if (dragAxis != null) {
+                                if (dragAxis != null && !(gridNeedsScroll && dragAxis == CalendarDragAxis.Vertical)) {
                                     change.consume()
+                                    if (change.pressed && tactileAllowed) haptics.gestureProgress(tactile,
+                                        (if (dragAxis == CalendarDragAxis.Vertical) kotlin.math.abs(dragY) else kotlin.math.abs(dragX)) /
+                                            calendarSwipeThreshold)
                                 }
                                 if (!change.pressed) break
                             }
                             when {
                                 dragAxis == CalendarDragAxis.Vertical &&
+                                    !gridNeedsScroll &&
                                     kotlin.math.abs(dragY) > calendarSwipeThreshold -> {
                                     val delta = if (dragY < 0f) 12 else -12
                                     val targetPage = (pagerState.currentPage + delta).coerceIn(0, 12000)
@@ -5862,17 +5227,33 @@ private fun CalendarPanel(
                         today = today,
                         scheduledDates = scheduledDates,
                         onSelectedDateChange = {
+                            if (it != selectedDate) haptics.selection()
                             visibleMonth = YearMonth.from(it)
                             onSelectedDateChange(it)
                         },
                         onOpenDateDetail = onOpenDateDetail,
                         modifier = Modifier.fillMaxWidth(),
+                        cellHeight = cellHeight,
+                        gridGap = gridGap,
                     )
                 }
             }
-            selectedInfo?.let { info ->
-                DateDetail(info = info, scheduleItems = selectedScheduleItems)
+        }
+    }
+    if (layout.shortWide) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(.64f).fillMaxHeight().verticalScroll(rememberScrollState())) { monthContent() }
+            Column(Modifier.weight(.36f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                monthControls()
+                selectedInfo?.let { DateDetail(it, selectedScheduleItems) }
+                ScheduleMemorialEntryCard(scheduleItems.size, onOpenMemorial)
             }
+        }
+    } else Box(Modifier.widthIn(max = 920.dp).fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            monthContent()
+            selectedInfo?.let { DateDetail(it, selectedScheduleItems) }
         }
     }
 
@@ -5914,6 +5295,8 @@ private fun CalendarMonthGrid(
     onSelectedDateChange: (LocalDate) -> Unit,
     onOpenDateDetail: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    cellHeight: Dp,
+    gridGap: Dp,
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
@@ -5938,7 +5321,7 @@ private fun CalendarMonthGrid(
         addAll(displayDays)
         repeat(trailingEmptyCells) { add(null) }
     }
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(gridGap)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             weekLabels.forEach { label ->
                 Text(
@@ -5954,7 +5337,7 @@ private fun CalendarMonthGrid(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 week.forEach { info ->
                     if (info == null) {
-                        Spacer(Modifier.weight(1f).height(layout.calendarCellHeight))
+                        Spacer(Modifier.weight(1f).height(cellHeight))
                     } else {
                         CalendarDayCell(
                             info = info,
@@ -5968,6 +5351,7 @@ private fun CalendarMonthGrid(
                                 onOpenDateDetail(info.date)
                             },
                             modifier = Modifier.weight(1f),
+                            cellHeight = cellHeight,
                         )
                     }
                 }
@@ -5987,6 +5371,7 @@ private fun CalendarDayCell(
     onClick: () -> Unit,
     onDoubleClick: () -> Unit,
     modifier: Modifier = Modifier,
+    cellHeight: Dp,
 ) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
@@ -6008,9 +5393,24 @@ private fun CalendarDayCell(
     }
     Box(
         modifier = modifier
-            .height(layout.calendarCellHeight)
+            .height(cellHeight)
             .background(bgColor, MaterialTheme.shapes.medium)
             .border(1.dp, borderColor, MaterialTheme.shapes.medium)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${date.year}年${date.monthValue}月${date.dayOfMonth}日，${info.cellLabel}"
+                selected = isSelected
+                role = androidx.compose.ui.semantics.Role.Button
+                this.onClick(label = "选择日期") {
+                    currentOnClick()
+                    true
+                }
+                customActions = listOf(
+                    CustomAccessibilityAction("查看当日详情") {
+                        currentOnDoubleClick()
+                        true
+                    },
+                )
+            }
             .pointerInput(date) {
                 var previousTapUptime = Long.MIN_VALUE
                 val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
@@ -6033,7 +5433,7 @@ private fun CalendarDayCell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = if (layout.compactHeight) 4.dp else 6.dp, horizontal = 2.dp),
+                .padding(vertical = if (layout.shortWide) 0.dp else if (layout.compactHeight) 4.dp else 6.dp, horizontal = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -6044,7 +5444,7 @@ private fun CalendarDayCell(
                     isSelected -> MaterialTheme.colorScheme.onPrimary
                     else -> C.textMain
                 },
-                style = MaterialTheme.typography.titleMedium,
+                style = if (layout.shortWide) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
                 fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -6422,6 +5822,7 @@ private fun CalendarValuePicker(
     onSelect: (Int) -> Unit,
 ) {
     val C = LocalFortunePalette.current
+    val pickerHaptics = LocalAppHaptics.current
     val selectedIndex = values.indexOf(selected).coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
     AlertDialog(
@@ -6431,7 +5832,7 @@ private fun CalendarValuePicker(
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(360.dp)) {
                 items(values, key = { it }) { value ->
                     Surface(
-                        onClick = { onSelect(value) },
+                        onClick = { if (value != selected) pickerHaptics.selection(); onSelect(value) },
                         color = if (value == selected) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
@@ -6626,7 +6027,7 @@ private fun ScheduleItemCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             IconButton(onClick = onToggle) {
-                Icon(
+                FortuneIcon(
                     if (item.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = if (item.done) "标记未完成" else "标记完成",
                     tint = if (item.done) C.mint else C.textSub,
@@ -6640,7 +6041,7 @@ private fun ScheduleItemCard(
                 Text(item.createdAt, color = C.textSub, style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = { confirm = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "删除日程", tint = C.textSub)
+                FortuneIcon(Icons.Default.Delete, contentDescription = "删除日程", tint = C.textSub)
             }
         }
     }
@@ -6655,20 +6056,20 @@ private fun ScheduleItemCard(
 }
 
 @Composable
-private fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
+internal fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     val C = LocalFortunePalette.current
     val layout = LocalFortuneLayout.current
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        SubScreenHeader(title = "历史记录", onBack = onBack) {
+        SubScreenHeader(title = "占卜记录", onBack = onBack) {
             TextButton(onClick = { confirmClear = true }, enabled = vm.history.isNotEmpty()) {
-                Icon(Icons.Default.Delete, contentDescription = null)
+                FortuneIcon(Icons.Default.Delete, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
                 Text("清空")
             }
         }
         if (vm.history.isEmpty()) {
-            EmptyState("还没有占卜记录", "起一卦或抽一次答案之书后，结果会出现在这里")
+            EmptyState("还没有占卜记录", "完成一次占卜后，结果会出现在这里")
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -6692,556 +6093,94 @@ private fun HistoryScreen(vm: FortuneViewModel, onBack: () -> Unit) {
     }
 }
 
+
+private val LocalToolSceneHeight = staticCompositionLocalOf { 180.dp }
+
 @Composable
-private fun MineScreen(vm: FortuneViewModel) {
-    var section by rememberSaveable { mutableStateOf(MineSection.Profile) }
-    BackHandler(enabled = section != MineSection.Profile) { section = MineSection.Profile }
-    when (section) {
-        MineSection.Profile -> MineProfile(
-            vm,
-            onOpenSettings = { section = MineSection.Settings },
-            onOpenHistory = { section = MineSection.History },
-        )
-        MineSection.History -> HistoryScreen(vm, onBack = { section = MineSection.Profile })
-        MineSection.Settings -> SettingsScreen(vm, onBack = { section = MineSection.Profile })
+private fun LandscapeToolAction(label: String, icon: ImageVector, onClick: () -> Unit, enabled: Boolean = true) {
+    val source = remember { MutableInteractionSource() }
+    Surface(onClick = onClick, enabled = enabled, interactionSource = source, color = Color.Transparent,
+        modifier = Modifier.fillMaxWidth().then(pressScaleModifier(source)), shape = MaterialTheme.shapes.large) {
+        GeminiGlassPanel(tone = GeminiGlassTone.Neutral, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically) {
+                FortuneIcon(icon, null, modifier = Modifier.size(20.dp))
+                Text(label, style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }
 
-private enum class MineSection { Profile, History, Settings }
-
 @Composable
-private fun MineProfile(vm: FortuneViewModel, onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
-    val C = LocalFortunePalette.current
+private fun ToolScreenLayout(
+    title: String,
+    onBack: () -> Unit,
+    scrollState: ScrollState = rememberScrollState(),
+    sideContent: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val layout = LocalFortuneLayout.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    var editingProfile by rememberSaveable { mutableStateOf(false) }
-    var draftNickname by rememberSaveable { mutableStateOf("") }
-    var draftBirthDate by rememberSaveable { mutableStateOf("") }
-    var draftFortuneKeywords by rememberSaveable { mutableStateOf("") }
-    val draftBirthDateValid = draftBirthDate.isBlank() ||
-        DailyFortuneEngine.parseBirthDate(draftBirthDate, LocalDate.now()) != null
-
-    fun startEditingProfile() {
-        draftNickname = vm.nickname
-        draftBirthDate = vm.birthDate
-        draftFortuneKeywords = vm.fortuneKeywords
-        editingProfile = true
-    }
-
-    fun cancelEditingProfile() {
-        keyboardController?.hide()
-        editingProfile = false
-    }
-
-    fun finishEditingProfile() {
-        if (!draftBirthDateValid) return
-        keyboardController?.hide()
-        vm.updateProfile(
-            nicknameValue = draftNickname,
-            birthDateValue = draftBirthDate,
-            fortuneKeywordsValue = draftFortuneKeywords,
-        )
-        editingProfile = false
-    }
-
-    BackHandler(enabled = editingProfile) { cancelEditingProfile() }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = layout.horizontalPadding,
-                vertical = layout.verticalPadding,
-            ),
-        verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
-    ) {
-        PageHeading("我的", "记录生活，也了解自己")
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(layout.cardPadding),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                GeminiGlassPanel(
-                    tone = GeminiGlassTone.Rose,
-                    shape = CircleShape,
-                    modifier = Modifier.size(if (layout.compactWidth) 54.dp else 64.dp),
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(vm.nickname.firstOrNull()?.toString() ?: "知", color = MaterialTheme.colorScheme.tertiary,
-                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Medium)
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        vm.nickname.ifBlank { "知否用户" },
-                        style = if (layout.compactWidth) {
-                            MaterialTheme.typography.titleMedium
-                        } else {
-                            MaterialTheme.typography.titleLarge
-                        },
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        "个人空间",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                if (editingProfile) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = ::cancelEditingProfile) {
-                            Text("取消", style = MaterialTheme.typography.labelMedium)
-                        }
-                        TextButton(onClick = ::finishEditingProfile, enabled = draftBirthDateValid) {
-                            Text("完成", fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                } else {
-                    IconButton(onClick = ::startEditingProfile) {
-                        Icon(Icons.Default.Edit, contentDescription = "修改个人资料")
+    Column(Modifier.fillMaxSize().imePadding()) {
+        SubScreenHeader(title = title, onBack = onBack) {}
+        if (layout.shortWide && sideContent != null) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(
+                horizontal = layout.horizontalPadding, vertical = layout.verticalPadding)) {
+                CompositionLocalProvider(LocalToolSceneHeight provides maxHeight.coerceAtLeast(96.dp)) {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Column(Modifier.weight(.64f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center, content = content)
+                        Column(Modifier.weight(.36f).fillMaxHeight().verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(8.dp), content = sideContent)
                     }
                 }
             }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ProfileMetric("占卜记录", vm.history.size.toString(), Modifier.weight(1f), onClick = onOpenHistory)
-            ProfileMetric("日程事项", vm.scheduleItems.size.toString(), Modifier.weight(1f))
-        }
-        SettingsEntryRow(icon = Icons.AutoMirrored.Filled.List, title = "占卜记录", subtitle = "查看历史占卜与解读", onClick = onOpenHistory)
-        SettingsEntryRow(icon = Icons.Default.Settings, title = "设置", subtitle = "主题、AI 解读、语音与隐私", onClick = onOpenSettings)
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(layout.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("个人资料", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                }
-                if (editingProfile) {
-                    GeminiGlassTextField(
-                        value = draftNickname,
-                        onValueChange = { draftNickname = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("昵称") },
-                        singleLine = true,
-                    )
-                    GeminiGlassTextField(
-                        value = draftBirthDate,
-                        onValueChange = { draftBirthDate = it.take(10) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("生日（公历）") },
-                        placeholder = { Text("YYYY-MM-DD，可留空") },
-                        singleLine = true,
-                        isError = !draftBirthDateValid,
-                        supportingText = if (!draftBirthDateValid) {
-                            { Text("请输入有效且不晚于今天的日期；留空不影响使用") }
-                        } else {
-                            null
-                        },
-                    )
-                    GeminiGlassTextField(
-                        value = draftFortuneKeywords,
-                        onValueChange = { draftFortuneKeywords = it.take(120) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("运势关注词") },
-                        placeholder = { Text("例如：工作、健康、关系，可留空") },
-                    )
-                } else {
-                    Text("昵称", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                    Text(vm.nickname.ifBlank { "未设置" }, color = C.textMain)
-                    Text("生日（公历）", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                    Text(vm.birthDate.ifBlank { "未设置" }, color = C.textMain)
-                    Text("运势关注词", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                    Text(vm.fortuneKeywords.ifBlank { "未设置" }, color = C.textMain)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileMetric(label: String, value: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    val C = LocalFortunePalette.current
-    val layout = LocalFortuneLayout.current
-    Surface(
-        onClick = onClick ?: {},
-        color = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = MaterialTheme.shapes.large,
-        modifier = modifier,
-        enabled = onClick != null,
-    ) {
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Teal,
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = if (layout.compactWidth) 88.dp else 100.dp),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(if (layout.compactWidth) 12.dp else 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    value,
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = if (layout.compactWidth) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    label,
-                    color = C.textSub,
-                    style = if (layout.compactWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-    }
-}
-
-// 二级页面顶部：返回按钮 + 标题 + 可选右侧操作。
-@Composable
-internal fun SubScreenHeader(title: String, onBack: () -> Unit, actions: @Composable () -> Unit) {
-    val layout = LocalFortuneLayout.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = if (layout.compactWidth) 4.dp else 8.dp,
-                vertical = if (layout.compactHeight) 4.dp else 6.dp,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        Text(
-            title,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        actions()
-    }
-}
-
-// 一级页里的入口行：左图标 + 标题/副标题 + 右箭头（替代顶部 tab，更清晰的导航入口）。
-@Composable
-private fun SettingsEntryRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    val C = LocalFortunePalette.current
-    val layout = LocalFortuneLayout.current
-    Surface(
-        onClick = onClick,
-        color = Color.Transparent,
-        shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier.padding(
-                    horizontal = layout.cardPadding,
-                    vertical = if (layout.compactHeight) 11.dp else 14.dp,
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(if (layout.compactWidth) 10.dp else 14.dp),
-            ) {
-                GeminiGlassPanel(
-                    tone = GeminiGlassTone.Rose,
-                    shape = CircleShape,
-                    modifier = Modifier.size(if (layout.compactWidth) 38.dp else 42.dp),
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(21.dp),
-                        )
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        title,
-                        color = C.textMain,
-                        style = if (layout.compactWidth) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(subtitle, color = C.textSub, style = MaterialTheme.typography.bodySmall)
-                }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = C.textSub)
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-private fun SettingsScreen(vm: FortuneViewModel, onBack: () -> Unit) {
-    val C = LocalFortunePalette.current
-    val layout = LocalFortuneLayout.current
-    val context = LocalContext.current
-    val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }
-            vm.updateCustomBackgroundUri(uri.toString())
-        }
-    }
-    Column(Modifier.fillMaxSize()) {
-        SubScreenHeader(title = "设置", onBack = onBack) {}
+        } else {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
                 .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
-            verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("外观", color = C.textMain, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
-                Text("明暗模式", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    val labels = listOf("深色" to ThemeMode.Dark, "浅色" to ThemeMode.Light, "跟随系统" to ThemeMode.System)
-                    labels.forEachIndexed { i, (label, mode) ->
-                        SegmentedButton(
-                            selected = vm.themeMode == mode,
-                            onClick = { vm.updateThemeMode(mode) },
-                            shape = SegmentedButtonDefaults.itemShape(i, labels.size),
-                        ) { Text(label) }
-                    }
-                }
-                Text("背景", color = C.textSub, style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    BackgroundChoice(
-                        label = AppBackgroundStyle.Solid.label,
-                        selected = vm.backgroundStyle == AppBackgroundStyle.Solid,
-                        onClick = { vm.updateBackgroundStyle(AppBackgroundStyle.Solid) },
-                    )
-                    AppBackgroundStyle.entries
-                        .filter { it.drawableRes != null }
-                        .forEach { style ->
-                            BackgroundChoice(
-                                label = style.label,
-                                imageRes = style.drawableRes,
-                                selected = vm.backgroundStyle == style,
-                                onClick = { vm.updateBackgroundStyle(style) },
-                            )
-                        }
-                    BackgroundChoice(
-                        label = AppBackgroundStyle.Custom.label,
-                        custom = true,
-                        customImageUri = vm.customBackgroundUri,
-                        selected = vm.backgroundStyle == AppBackgroundStyle.Custom,
-                        onClick = {
-                            if (vm.customBackgroundUri.isBlank()) {
-                                backgroundPicker.launch(arrayOf("image/*"))
-                            } else {
-                                vm.updateBackgroundStyle(AppBackgroundStyle.Custom)
-                            }
-                        },
-                    )
-                }
-                if (vm.backgroundStyle == AppBackgroundStyle.Custom && vm.customBackgroundUri.isNotBlank()) {
-                    TextButton(onClick = { backgroundPicker.launch(arrayOf("image/*")) }) {
-                        Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("更换背景图片")
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("动态玻璃高光", color = C.textMain, style = MaterialTheme.typography.bodyLarge)
-                        Text("随设备倾斜缓慢流动", color = C.textSub, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(
-                        checked = vm.glassMotionEnabled,
-                        onCheckedChange = vm::updateGlassMotionEnabled,
-                    )
-                }
-            }
+            verticalArrangement = Arrangement.spacedBy(layout.sectionSpacing),
+            content = content,
+        )
         }
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("AI 解读与对话", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                    TextButton(
-                        onClick = vm::testAiConnection,
-                        enabled = vm.aiConnectionStatus != AiConnectionStatus.Checking,
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("连接测试", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    val connected = vm.aiConnectionStatus == AiConnectionStatus.Connected
-                    Icon(
-                        if (connected) Icons.Default.CheckCircle else Icons.Default.Info,
-                        contentDescription = null,
-                        tint = if (connected) C.mint else C.textSub,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        vm.aiConnectionMessage,
-                        color = if (connected) C.mint else C.textSub,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                GeminiGlassTextField(
-                    value = vm.aiApiKey,
-                    onValueChange = { vm.updateAiApiKey(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("API Key") },
-                    placeholder = { Text("仅保存在本机") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                )
-                GeminiGlassTextField(
-                    value = vm.aiModel,
-                    onValueChange = { vm.updateAiModel(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("模型") },
-                    singleLine = true,
-                )
-                GeminiGlassTextField(
-                    value = vm.aiEndpoint,
-                    onValueChange = { vm.updateAiEndpoint(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("OpenAI-compatible endpoint") },
-                    singleLine = true,
-                )
-                Text(
-                    "密钥与接口配置仅保存在本机。开启 AI 后，问题和相关占卜内容会发送到你配置的服务。",
-                    color = C.textSub,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Teal,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("AI 语音转写", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                        Text("试验性 OpenAI-compatible 接口", color = C.textSub, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(
-                        checked = vm.cloudSpeechEnabled,
-                        onCheckedChange = { vm.updateCloudSpeechEnabled(it) },
-                    )
-                }
-                AnimatedVisibility(vm.cloudSpeechEnabled) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        GeminiGlassTextField(
-                            value = vm.cloudSpeechApiKey,
-                            onValueChange = { vm.updateCloudSpeechApiKey(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("语音接口 API Key") },
-                            placeholder = { Text("仅保存在本机") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            singleLine = true,
-                        )
-                        GeminiGlassTextField(
-                            value = vm.cloudSpeechModel,
-                            onValueChange = { vm.updateCloudSpeechModel(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("语音模型") },
-                            singleLine = true,
-                        )
-                        GeminiGlassTextField(
-                            value = vm.cloudSpeechEndpoint,
-                            onValueChange = { vm.updateCloudSpeechEndpoint(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("音频转写 endpoint") },
-                            singleLine = true,
-                        )
-                        Text(
-                            "开启后，录音会发送到所配置的第三方服务。关闭时始终使用应用内离线模型。配置只保存在本机。",
-                            color = C.textSub,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
-            }
-        }
-        GeminiGlassPanel(
-            tone = GeminiGlassTone.Neutral,
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("数据与隐私", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                Text("占卜记录、日程和个人资料保存在本机。离线功能无需联网；AI 服务仅在使用时发送相关内容。", color = C.textSub)
-            }
-        }
-    }
     }
 }
 
+// Insets are applied by the app scaffold, not again by each page's toolbar.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BackgroundChoice(
+internal fun SubScreenHeader(title: String, onBack: () -> Unit, actions: @Composable () -> Unit) {
+    val actionLineHeight = with(LocalDensity.current) { MaterialTheme.typography.labelLarge.lineHeight.toDp() }
+    TopAppBar(
+        modifier = Modifier.fillMaxWidth(),
+        expandedHeight = if (LocalFortuneLayout.current.shortWide) landscapeToolbarHeight(actionLineHeight.value).dp else TopAppBarDefaults.TopAppBarExpandedHeight,
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                FortuneIcon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            }
+        },
+        title = {
+            Text(
+                title,
+                style = if (LocalFortuneLayout.current.shortWide) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        actions = { actions() },
+    )
+}
+
+
+@Composable
+internal fun BackgroundChoice(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -7302,7 +6241,7 @@ private fun BackgroundChoice(
                     customImageUri = customImageUri,
                     modifier = Modifier.fillMaxSize(),
                 )
-                custom -> Icon(
+                custom -> FortuneIcon(
                     Icons.Default.Wallpaper,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -7320,7 +6259,7 @@ private fun BackgroundChoice(
                         .size(20.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
+                        FortuneIcon(
                             Icons.Default.CheckCircle,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp),
@@ -7343,40 +6282,61 @@ private fun BackgroundChoice(
 }
 
 @Composable
-private fun CoinCastingProgressCard(lines: List<CoinLineResult>, question: String) {
+internal fun CoinCastingProgressCard(
+    lines: List<CoinLineResult>, question: String, currentThrow: CoinLineResult?, startedAt: Long,
+    availableHeight: Dp = Dp.Unspecified,
+) {
     val C = LocalFortunePalette.current
+    val elapsed = rememberOracleElapsed(startedAt, OracleMotionKind.Coins)
+    if (LocalFortuneLayout.current.shortWide) {
+        GeminiGlassPanel(tone = GeminiGlassTone.Gold, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(.45f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("铜钱起卦", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("${lines.size}/6", color = C.gold, style = MaterialTheme.typography.labelLarge)
+                    }
+                    if (question.isNotBlank()) Text("问：$question", style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    CopperCoinTossStage(currentThrow, lines.firstOrNull { it.position == (currentThrow?.position ?: 1) - 1 }, elapsed)
+                    Text("日纹阳面 3 · 月纹阴面 2", color = C.textSub, style = MaterialTheme.typography.labelSmall)
+                }
+                Column(Modifier.weight(.55f)) {
+                    for (position in 6 downTo 1) CoinLineRow(position, lines.firstOrNull { it.position == position }, compact = true, dense = true)
+                }
+            }
+        }
+        return
+    }
     GeminiGlassPanel(
         tone = GeminiGlassTone.Gold,
         shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("铜钱起卦", color = C.textMain, fontWeight = FontWeight.SemiBold)
-                    Text("初爻起，由下向上投掷", color = C.textSub, style = MaterialTheme.typography.bodySmall)
+                    Text(if (question.isBlank()) "初爻起，由下向上投掷" else "问：$question",
+                        color = C.textSub, style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text("${lines.size}/6", color = C.gold, style = MaterialTheme.typography.titleMedium)
             }
-            Text(
-                "所问：$question",
-                color = C.textMain,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            CopperCoinTossStage(currentThrow, lines.firstOrNull { it.position == (currentThrow?.position ?: 1) - 1 }, elapsed)
             for (position in 6 downTo 1) {
                 CoinLineRow(
                     position = position,
                     line = lines.firstOrNull { it.position == position },
+                    compact = true,
                 )
             }
             Text(
-                "每枚铜钱独立投掷：阳面记 3，阴面记 2。",
+                "日纹阳面记 3，月纹阴面记 2；每枚独立投掷。",
                 color = C.textSub,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -7480,7 +6440,7 @@ private fun ClassicSelectionDetail(reading: FortuneReading) {
         )
         if (contexts.isNotEmpty()) {
             TextButton(onClick = { commentaryExpanded = !commentaryExpanded }) {
-                Icon(
+                FortuneIcon(
                     if (commentaryExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
@@ -7488,7 +6448,7 @@ private fun ClassicSelectionDetail(reading: FortuneReading) {
                 Spacer(Modifier.width(6.dp))
                 Text(if (commentaryExpanded) "收起《彖》《象》" else "查看《彖》《象》原文")
             }
-            AnimatedVisibility(commentaryExpanded) {
+            FortuneAnimatedVisibility(commentaryExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     contexts.forEach { context ->
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -7511,7 +6471,7 @@ private fun ClassicSelectionDetail(reading: FortuneReading) {
 }
 
 @Composable
-private fun CoinLineRow(position: Int, line: CoinLineResult?) {
+private fun CoinLineRow(position: Int, line: CoinLineResult?, compact: Boolean = false, dense: Boolean = false) {
     val C = LocalFortunePalette.current
     val density = LocalDensity.current.density
     val revealProgress by animateFloatAsState(
@@ -7523,19 +6483,19 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
         label = "coin-line-reveal-$position",
     )
     Row(
-        modifier = Modifier.fillMaxWidth().height(48.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (dense) 24.dp else if (compact) 36.dp else 48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             coinLinePositionLabel(position),
             color = if (line == null) C.textSub else C.textMain,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.width(36.dp),
+            modifier = Modifier.width(if (dense) 28.dp else 36.dp),
         )
         CoinLineStroke(
             line = line,
             modifier = Modifier
-                .width(68.dp)
+                .width(if (dense) 44.dp else 68.dp)
                 .height(24.dp)
                 .graphicsLayer {
                     if (line != null) {
@@ -7547,10 +6507,14 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
         Spacer(Modifier.width(8.dp))
         if (line == null) {
             Text(
-                "等待第${position}次投掷",
+                if (dense) "等待投掷" else "等待第${position}次投掷",
                 color = C.textSub,
                 style = MaterialTheme.typography.bodySmall,
             )
+        } else if (dense) {
+            Text("${line.combinationLabel} · ${line.value} ${line.typeLabel}${if (line.isMoving) " · 动" else ""}",
+                color = if (line.isMoving) C.rose else C.textMain, style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.weight(1f))
         } else {
             Column(
                 modifier = Modifier.graphicsLayer {
@@ -7560,10 +6524,12 @@ private fun CoinLineRow(position: Int, line: CoinLineResult?) {
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    line.coinValues.forEach { value ->
-                        CoinFaceChip(isYang = value == 3, revealProgress = revealProgress)
+                    if (!compact) {
+                        line.coinValues.forEach { value ->
+                            CoinFaceChip(isYang = value == 3, revealProgress = revealProgress)
+                        }
+                        Spacer(Modifier.width(3.dp))
                     }
-                    Spacer(Modifier.width(3.dp))
                     Text(line.combinationLabel, color = C.textMain, style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
@@ -7644,12 +6610,39 @@ private fun CoinLineStroke(line: CoinLineResult?, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun TarotDrawingProgressCard(
+internal fun TarotDrawingProgressCard(
     draws: List<TarotDraw>,
     revealedCount: Int,
     question: String,
+    startedAt: Long,
+    availableHeight: Dp = Dp.Unspecified,
 ) {
     val C = LocalFortunePalette.current
+    val elapsed = rememberOracleElapsed(startedAt, OracleMotionKind.Tarot)
+    if (LocalFortuneLayout.current.shortWide) {
+        val height = if (availableHeight.value.isFinite()) availableHeight else (LocalConfiguration.current.screenHeightDp - 108).dp
+        val cardHeight = ((height - 24.dp) / 2).coerceIn(54.dp, 130.dp)
+        GeminiGlassPanel(tone = GeminiGlassTone.Rose, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(.30f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TarotShuffleStack(elapsed, Modifier)
+                    Text("韦特十字牌阵", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("$revealedCount / 10", style = MaterialTheme.typography.labelLarge, color = C.gold)
+                    if (question.isNotBlank()) Text("问：$question", style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Column(Modifier.weight(.70f), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    draws.chunked(5).forEach { row ->
+                        Row(Modifier.widthIn(max = cardHeight * .575f * 5 + 24.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { draw -> TarotAnimatedCard(draw, elapsed, Modifier.weight(1f).aspectRatio(.575f)) }
+                            repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
     GeminiGlassPanel(
         tone = GeminiGlassTone.Rose,
         shape = MaterialTheme.shapes.large,
@@ -7664,6 +6657,7 @@ private fun TarotDrawingProgressCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                TarotShuffleStack(elapsed, Modifier.padding(end = 12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("正在抽取十字牌阵", color = C.textMain, fontWeight = FontWeight.SemiBold)
                     if (question.isNotBlank()) {
@@ -7689,9 +6683,9 @@ private fun TarotDrawingProgressCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     rowDraws.forEach { draw ->
-                        TarotFlipCard(
+                        TarotAnimatedCard(
                             draw = draw,
-                            revealed = draw.positionIndex <= revealedCount,
+                            elapsed = elapsed,
                             modifier = Modifier
                                 .weight(1f)
                                 .aspectRatio(0.575f),
@@ -7709,54 +6703,6 @@ private fun TarotDrawingProgressCard(
     }
 }
 
-@Composable
-private fun TarotFlipCard(
-    draw: TarotDraw,
-    revealed: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val C = LocalFortunePalette.current
-    val density = LocalDensity.current.density
-    val rotation by animateFloatAsState(
-        targetValue = if (revealed) 180f else 0f,
-        animationSpec = tween(
-            durationMillis = TAROT_CARD_FLIP_DURATION_MS,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "tarot-card-flip",
-    )
-    val showFront = rotation > 90f
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                rotationY = rotation
-                cameraDistance = 12f * density
-                shadowElevation = 2.dp.toPx()
-                shape = RoundedCornerShape(5.dp)
-                clip = true
-            }
-            .background(C.panelAlt)
-            .border(1.dp, C.gold.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
-    ) {
-        Image(
-            painter = painterResource(
-                if (showFront) draw.card.imageRes else R.drawable.tarot_card_back,
-            ),
-            contentDescription = if (showFront) {
-                "${draw.position.name}：${draw.card.nameZh}${draw.orientationLabel}"
-            } else {
-                "未翻开的塔罗牌"
-            },
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    rotationY = if (showFront) 180f else 0f
-                    rotationZ = if (showFront && draw.reversed) 180f else 0f
-                },
-        )
-    }
-}
 
 @Composable
 private fun TarotSpreadDetail(reading: FortuneReading) {
@@ -7783,14 +6729,11 @@ private fun TarotSpreadDetail(reading: FortuneReading) {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            Image(
-                                painter = painterResource(draw.card.imageRes),
-                                contentDescription = "${draw.position.name}：${draw.card.nameZh}${draw.orientationLabel}",
-                                contentScale = ContentScale.Fit,
+                            TarotResultArtwork(
+                                draw = draw,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .aspectRatio(0.575f)
-                                    .graphicsLayer { rotationZ = if (draw.reversed) 180f else 0f }
                                     .clip(RoundedCornerShape(5.dp))
                                     .border(1.dp, C.gold.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
                             )
@@ -7819,14 +6762,14 @@ private fun TarotSpreadDetail(reading: FortuneReading) {
                 }
             }
         TextButton(onClick = { expanded = !expanded }) {
-            Icon(
+            FortuneIcon(
                 if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
             )
             Spacer(Modifier.width(4.dp))
             Text(if (expanded) "收起逐牌解释" else "查看十张牌位与逐牌解释")
         }
-        AnimatedVisibility(visible = expanded) {
+        FortuneAnimatedVisibility(visible = expanded) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 reading.tarotDraws.sortedBy(TarotDraw::positionIndex).forEach { draw ->
                     Surface(
@@ -7913,12 +6856,14 @@ private fun ReadingCard(reading: FortuneReading, compact: Boolean = false) {
             if (reading.classicReferences.isNotEmpty()) {
                 ClassicSelectionDetail(reading)
             }
-            if (reading.tarotDraws.isNotEmpty()) {
+            if (reading.kind == FourCardTarot.KIND) {
+                FourCardReadingSummary(reading)
+            } else if (reading.tarotDraws.isNotEmpty()) {
                 TarotSpreadDetail(reading)
             }
             if (reading.kind == "铜钱卦") {
                 Text("本地基础解读", color = C.textSub, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            } else if (reading.kind == "韦特塔罗") {
+            } else if (reading.kind == "韦特塔罗" || reading.kind == FourCardTarot.KIND) {
                 Text("本地牌阵解读", color = C.textSub, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             }
             Text(
@@ -8073,21 +7018,15 @@ private fun InsightStrip(
     onTap: (DailyInsightCategory) -> Unit,
 ) {
     val layout = LocalFortuneLayout.current
-    val accents = listOf(
-        MaterialTheme.colorScheme.secondary,
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.primary,
-    )
-    if (layout.compactWidth || LocalDensity.current.fontScale > 1.2f) {
+    if (layout.shortWide || layout.compactWidth || LocalDensity.current.fontScale > 1.2f) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            insights.forEachIndexed { index, insight ->
+            insights.forEach { insight ->
                 InsightTile(
                     insight = insight,
                     aiConnected = aiConnected,
-                    accent = accents[index % accents.size],
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onTap(insight.category) },
                 )
@@ -8098,11 +7037,10 @@ private fun InsightStrip(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            insights.forEachIndexed { index, insight ->
+            insights.forEach { insight ->
                 InsightTile(
                     insight = insight,
                     aiConnected = aiConnected,
-                    accent = accents[index % accents.size],
                     modifier = Modifier.weight(1f),
                     onClick = { onTap(insight.category) },
                 )
@@ -8112,43 +7050,45 @@ private fun InsightStrip(
 }
 
 @Composable
-private fun InsightTile(
+internal fun InsightTile(
     insight: DailyInsight,
     aiConnected: Boolean,
-    accent: Color,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember(insight.category) { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
-    val compact = LocalFortuneLayout.current.compactWidth || LocalDensity.current.fontScale > 1.2f
-    val (icon, fill) = when (insight.category) {
-        DailyInsightCategory.Career -> Icons.Outlined.WorkOutline to colors.secondaryContainer
-        DailyInsightCategory.Relationship -> Icons.Outlined.FavoriteBorder to colors.tertiaryContainer
-        DailyInsightCategory.Finance -> Icons.Outlined.AccountBalanceWallet to colors.primaryContainer
+    val palette = colors.dailyInsightColors(insight.category)
+    val accent = palette.accent
+    val compact = LocalFortuneLayout.current.shortWide || LocalFortuneLayout.current.compactWidth || LocalDensity.current.fontScale > 1.2f
+    val icon = when (insight.category) {
+        DailyInsightCategory.Career -> Icons.Outlined.WorkOutline
+        DailyInsightCategory.Relationship -> Icons.Outlined.FavoriteBorder
+        DailyInsightCategory.Finance -> Icons.Outlined.AccountBalanceWallet
     }
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
         modifier = modifier
-            .heightIn(min = if (compact) 76.dp else 120.dp)
+            .heightIn(min = if (LocalFortuneLayout.current.shortWide) 60.dp else if (compact) 76.dp else 120.dp)
             .then(pressScaleModifier(interactionSource)),
-        color = fill,
+        color = palette.container,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = MaterialTheme.shapes.large,
     ) {
         if (compact) {
             Row(
-                Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                Modifier.padding(horizontal = if (LocalFortuneLayout.current.shortWide) 12.dp else 16.dp,
+                    vertical = if (LocalFortuneLayout.current.shortWide) 8.dp else 16.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Icon(icon, null, tint = accent, modifier = Modifier.size(24.dp))
+                FortuneIcon(icon, null, tint = accent, modifier = Modifier.size(24.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(insight.category.label, color = accent, style = MaterialTheme.typography.labelMedium)
                     Text(insight.headline, style = MaterialTheme.typography.titleSmall,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                if (aiConnected) Icon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(18.dp))
+                if (aiConnected) FortuneIcon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(18.dp))
             }
         } else {
             Column(
@@ -8157,10 +7097,10 @@ private fun InsightTile(
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
+                    FortuneIcon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
                     Text(insight.category.label, color = accent, style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.weight(1f))
-                    if (aiConnected) Icon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(14.dp))
+                    if (aiConnected) FortuneIcon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(14.dp))
                 }
                 Text(insight.headline, style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -8170,7 +7110,8 @@ private fun InsightTile(
 }
 
 @Composable
-private fun DailyAiInsightDialog(
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun DailyAiInsightDialog(
     insight: DailyInsight,
     aiContent: String?,
     loading: Boolean,
@@ -8180,11 +7121,8 @@ private fun DailyAiInsightDialog(
 ) {
     val C = LocalFortunePalette.current
     val configuration = LocalConfiguration.current
-    val tone = when (insight.category) {
-        DailyInsightCategory.Career -> GeminiGlassTone.Gold
-        DailyInsightCategory.Relationship -> GeminiGlassTone.Rose
-        DailyInsightCategory.Finance -> GeminiGlassTone.Teal
-    }
+    val colors = MaterialTheme.colorScheme
+    val palette = colors.dailyInsightColors(insight.category)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -8210,22 +7148,14 @@ private fun DailyAiInsightDialog(
                     .padding(horizontal = 22.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                GeminiGlassPanel(
-                    tone = tone,
+                Surface(
+                    color = palette.container,
+                    contentColor = palette.content,
                     shape = MaterialTheme.shapes.extraLarge,
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = 560.dp),
                 ) {
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-                                    alpha = if (C.isLight) 0.26f else 0.34f,
-                                ),
-                            ),
-                    )
                     Column(
                         modifier = Modifier
                             .heightIn(max = (configuration.screenHeightDp * 0.82f).dp)
@@ -8235,6 +7165,7 @@ private fun DailyAiInsightDialog(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Column(
                                 modifier = Modifier.weight(1f),
@@ -8242,25 +7173,38 @@ private fun DailyAiInsightDialog(
                             ) {
                                 Text(
                                     "${insight.category.label} · 今日解读",
-                                    color = C.textMain,
+                                    color = palette.content,
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
                                     insight.headline,
-                                    color = when (tone) {
-                                        GeminiGlassTone.Gold -> MaterialTheme.colorScheme.primary
-                                        GeminiGlassTone.Teal -> MaterialTheme.colorScheme.secondary
-                                        GeminiGlassTone.Rose -> MaterialTheme.colorScheme.tertiary
-                                        GeminiGlassTone.Neutral -> C.textSub
-                                    },
+                                    color = palette.accent,
                                     style = MaterialTheme.typography.labelLarge,
                                 )
                             }
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = "关闭", tint = C.textSub)
+                            val completeInteraction = remember { MutableInteractionSource() }
+                            androidx.compose.material3.TooltipBox(
+                                positionProvider = androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider(
+                                    androidx.compose.material3.TooltipAnchorPosition.Above),
+                                tooltip = { PlainTooltip { Text("完成") } },
+                                state = androidx.compose.material3.rememberTooltipState(),
+                            ) {
+                                FilledIconButton(
+                                    onClick = onDismiss,
+                                    interactionSource = completeInteraction,
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = palette.accent,
+                                        contentColor = palette.container,
+                                    ),
+                                    modifier = Modifier.size(48.dp).then(pressScaleModifier(completeInteraction)),
+                                ) {
+                                    FortuneIcon(Icons.Default.Check, contentDescription = "完成", modifier = Modifier.size(24.dp))
+                                }
                             }
                         }
+
+                        HorizontalDivider(color = palette.accent.copy(alpha = 0.16f))
 
                         Column(
                             modifier = Modifier
@@ -8270,7 +7214,7 @@ private fun DailyAiInsightDialog(
                         ) {
                             Text(
                                 insight.summary,
-                                color = C.textSub,
+                                color = palette.content,
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             when {
@@ -8281,40 +7225,24 @@ private fun DailyAiInsightDialog(
                                 ) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
+                                        color = palette.accent,
                                         strokeWidth = 2.dp,
                                     )
-                                    Text("正在生成今日解读", color = C.textMain)
+                                    Text("正在生成今日解读", color = palette.content)
                                 }
                                 !aiContent.isNullOrBlank() -> MarkdownText(
                                     aiContent,
-                                    color = C.textMain,
+                                    color = palette.content,
                                     style = MaterialTheme.typography.bodyMedium,
                                     onLight = C.isLight,
                                 )
-                                error.isNotBlank() -> Text(
-                                    error,
-                                    color = C.rose,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
+                                error.isNotBlank() -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(error, color = C.rose, style = MaterialTheme.typography.bodyMedium)
+                                    TextButton(onClick = onRetry) {
+                                        Text("重试", color = palette.accent)
+                                    }
+                                }
                             }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-                        ) {
-                            if (!loading && aiContent.isNullOrBlank() && error.isNotBlank()) {
-                                InsightDialogGlassAction(
-                                    label = "重试",
-                                    tone = tone,
-                                    onClick = onRetry,
-                                )
-                            }
-                            InsightDialogGlassAction(
-                                label = "完成",
-                                tone = GeminiGlassTone.Neutral,
-                                onClick = onDismiss,
-                            )
                         }
                     }
                 }
@@ -8324,37 +7252,11 @@ private fun DailyAiInsightDialog(
 }
 
 @Composable
-private fun InsightDialogGlassAction(
-    label: String,
-    tone: GeminiGlassTone,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        color = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = CircleShape,
-    ) {
-        GeminiGlassPanel(
-            tone = tone,
-            shape = CircleShape,
-        ) {
-            Text(
-                label,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
-}
-
-@Composable
 private fun EmptyState(text: String, hint: String = "") {
     val C = LocalFortunePalette.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = C.line, modifier = Modifier.size(34.dp))
+            FortuneIcon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = C.line, modifier = Modifier.size(34.dp))
             Text(text, color = C.textSub, style = MaterialTheme.typography.bodyMedium)
             if (hint.isNotBlank()) {
                 Text(hint, color = C.textSub.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
@@ -8418,11 +7320,17 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var coinCasting by mutableStateOf(false)
         private set
+    var coinCastingStartedAt by mutableStateOf(0L)
+        private set
+    var coinCastingThrow by mutableStateOf<CoinLineResult?>(null)
+        private set
     var coinCastingLines by mutableStateOf<List<CoinLineResult>>(emptyList())
         private set
     var coinCastingQuestion by mutableStateOf("")
         private set
     var tarotDrawing by mutableStateOf(false)
+        private set
+    var tarotDrawingStartedAt by mutableStateOf(0L)
         private set
     var tarotDrawingCards by mutableStateOf<List<TarotDraw>>(emptyList())
         private set
@@ -8452,6 +7360,8 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var glassMotionEnabled by mutableStateOf(repo.glassMotionEnabled)
         private set
+    var hapticsEnabled by mutableStateOf(repo.hapticsEnabled)
+        private set
     private val initialFortuneDate = LocalDate.now()
     var todayFortune by mutableStateOf(
         DailyFortuneEngine.create(
@@ -8462,6 +7372,8 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
             almanacOverride = repo.loadDailyAlmanac(initialFortuneDate),
         ).also { repo.saveDailyAlmanac(it.almanac) }
     )
+        private set
+    internal var aiProviderId by mutableStateOf(repo.aiProviderId)
         private set
     var aiApiKey by mutableStateOf(repo.aiApiKey)
         private set
@@ -8482,6 +7394,8 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     var dailyAiInsightError by mutableStateOf("")
         private set
     private var aiValidationJob: Job? = null
+    internal var cloudSpeechProviderId by mutableStateOf(repo.cloudSpeechProviderId)
+        private set
     var cloudSpeechEnabled by mutableStateOf(repo.cloudSpeechEnabled)
         private set
     var cloudSpeechApiKey by mutableStateOf(repo.cloudSpeechApiKey)
@@ -8490,9 +7404,15 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         private set
     var cloudSpeechEndpoint by mutableStateOf(repo.cloudSpeechEndpoint)
         private set
+    var speechConnectionStatus by mutableStateOf(AiConnectionStatus.Unconfigured)
+        private set
+    var speechConnectionMessage by mutableStateOf("请选择平台、模型并填写语音 API Key")
+        private set
+    private var speechTestJob: Job? = null
 
     init {
         restoreAiConnectionState()
+        restoreCloudSpeechConnectionState()
     }
 
     val recentOracleReadings: List<FortuneReading>
@@ -8516,24 +7436,32 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         }
 
     fun castCoins() {
-        if (coinCasting) return
+        if (coinCasting || tarotDrawing) return
         val castingQuestion = question.trim()
         question = ""
         coinCasting = true
         coinCastingQuestion = castingQuestion
         coinCastingLines = emptyList()
+        coinCastingStartedAt = SystemClock.uptimeMillis()
         viewModelScope.launch {
             val lines = mutableListOf<CoinLineResult>()
-            repeat(6) { index ->
-                delay(if (index == 0) COIN_FIRST_TOSS_DELAY_MS else COIN_NEXT_TOSS_DELAY_MS)
-                lines += oracle.tossCoinLine(position = index + 1)
-                coinCastingLines = lines.toList()
+            try {
+                repeat(6) { index ->
+                    awaitOracleMoment(coinCastingStartedAt, OracleMotion.coinRoundStart(index))
+                    val line = oracle.tossCoinLine(position = index + 1)
+                    coinCastingThrow = line
+                    awaitOracleMoment(coinCastingStartedAt, OracleMotion.coinRoundSettled(index))
+                    lines += line
+                    coinCastingLines = lines.toList()
+                }
+                awaitOracleMoment(coinCastingStartedAt, OracleMotion.duration(OracleMotionKind.Coins))
+                save(oracle.coin(castingQuestion, lines))
+            } finally {
+                coinCasting = false
+                coinCastingLines = emptyList()
+                coinCastingThrow = null
+                coinCastingQuestion = ""
             }
-            delay(COIN_TOSS_REVEAL_DURATION_MS.toLong() + COIN_FINAL_SETTLE_DELAY_MS)
-            save(oracle.coin(castingQuestion, lines))
-            coinCasting = false
-            coinCastingLines = emptyList()
-            coinCastingQuestion = ""
         }
     }
 
@@ -8543,27 +7471,29 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun drawTarot() {
-        if (tarotDrawing) return
+        if (coinCasting || tarotDrawing) return
         val drawingQuestion = question.trim()
         val draws = TarotDeck.drawCelticCross()
         question = ""
         tarotDrawing = true
         tarotDrawingQuestion = drawingQuestion
-        tarotDrawingCards = emptyList()
+        tarotDrawingCards = draws
         tarotRevealedCount = 0
+        tarotDrawingStartedAt = SystemClock.uptimeMillis()
         viewModelScope.launch {
-            draws.forEachIndexed { index, draw ->
-                delay(if (index == 0) TAROT_FIRST_CARD_DELAY_MS else TAROT_NEXT_CARD_DELAY_MS)
-                tarotDrawingCards = tarotDrawingCards + draw
-                delay(TAROT_CARD_REVEAL_DELAY_MS)
-                tarotRevealedCount = index + 1
+            try {
+                draws.indices.forEach { index ->
+                    awaitOracleMoment(tarotDrawingStartedAt, OracleMotion.cardTurn(index) + OracleMotion.cardFlipMs / 2)
+                    tarotRevealedCount = index + 1
+                }
+                awaitOracleMoment(tarotDrawingStartedAt, OracleMotion.duration(OracleMotionKind.Tarot))
+                save(oracle.tarot(drawingQuestion, draws))
+            } finally {
+                tarotDrawing = false
+                tarotDrawingCards = emptyList()
+                tarotRevealedCount = 0
+                tarotDrawingQuestion = ""
             }
-            delay(TAROT_CARD_FLIP_DURATION_MS.toLong() + TAROT_FINAL_SETTLE_DELAY_MS)
-            save(oracle.tarot(drawingQuestion, draws))
-            tarotDrawing = false
-            tarotDrawingCards = emptyList()
-            tarotRevealedCount = 0
-            tarotDrawingQuestion = ""
         }
     }
 
@@ -8625,6 +7555,11 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         repo.glassMotionEnabled = value
     }
 
+    fun updateHapticsEnabled(value: Boolean) {
+        hapticsEnabled = value
+        repo.hapticsEnabled = value
+    }
+
     fun updateBirthDate(value: String) {
         birthDate = value.take(10)
         repo.birthDate = birthDate
@@ -8637,26 +7572,20 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         refreshToday()
     }
 
-    fun updateAiApiKey(value: String) {
-        aiApiKey = value.trim()
-        repo.aiApiKey = aiApiKey
-        onAiConfigurationChanged()
-    }
-
-    fun updateAiModel(value: String) {
-        aiModel = value.trim()
-        repo.aiModel = aiModel
-        onAiConfigurationChanged()
-    }
-
-    fun updateAiEndpoint(value: String) {
-        aiEndpoint = value.trim()
-        repo.aiEndpoint = aiEndpoint
-        onAiConfigurationChanged()
-    }
-
-    fun testAiConnection() {
-        validateAiConnection(force = true)
+    internal fun applyAiConfiguration(configuration: AiConfiguration, test: Boolean = false) {
+        val next = configuration.normalized()
+        if (next.validationError() != null) return
+        val changed = next.endpoint != aiEndpoint || next.model != aiModel || next.apiKey != aiApiKey
+        repo.saveAiConfiguration(next)
+        aiProviderId = next.providerId
+        aiEndpoint = next.endpoint
+        aiModel = next.model
+        aiApiKey = next.apiKey
+        if (changed) onAiConfigurationChanged()
+        if (test) {
+            aiValidationJob?.cancel()
+            validateAiConnection(force = true)
+        }
     }
 
     fun ensureAiReady(): Boolean {
@@ -8833,19 +7762,65 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         repo.cloudSpeechEnabled = value
     }
 
-    fun updateCloudSpeechApiKey(value: String) {
-        cloudSpeechApiKey = value.trim()
-        repo.cloudSpeechApiKey = cloudSpeechApiKey
+    internal fun applyCloudSpeechConfiguration(configuration: CloudSpeechConfig) {
+        val next = configuration.normalized()
+        if (next.validationError() != null) return
+        val changed = next.endpoint != cloudSpeechEndpoint || next.model != cloudSpeechModel || next.apiKey != cloudSpeechApiKey
+        if (changed) speechTestJob?.cancel()
+        repo.saveCloudSpeechConfiguration(next, changed)
+        cloudSpeechProviderId = next.providerId
+        cloudSpeechEndpoint = next.endpoint
+        cloudSpeechModel = next.model
+        cloudSpeechApiKey = next.apiKey
+        if (changed) restoreCloudSpeechConnectionState()
     }
 
-    fun updateCloudSpeechModel(value: String) {
-        cloudSpeechModel = value.trim()
-        repo.cloudSpeechModel = cloudSpeechModel
+    private fun restoreCloudSpeechConnectionState() {
+        val restored = restoredSpeechConnectionState(
+            currentCloudSpeechConfig(), repo.validatedSpeechFingerprint,
+            repo.attemptedSpeechFingerprint, repo.lastSpeechTestOutcome,
+        )
+        speechConnectionStatus = restored.status
+        speechConnectionMessage = restored.message
     }
 
-    fun updateCloudSpeechEndpoint(value: String) {
-        cloudSpeechEndpoint = value.trim()
-        repo.cloudSpeechEndpoint = cloudSpeechEndpoint
+    private fun currentCloudSpeechConfig() = CloudSpeechConfig(
+        cloudSpeechEndpoint, cloudSpeechApiKey, cloudSpeechModel, cloudSpeechProviderId,
+    )
+
+    fun testCloudSpeechConnection() {
+        if (speechConnectionStatus == AiConnectionStatus.Checking) return
+        val config = currentCloudSpeechConfig()
+        if (config.apiKey.isBlank() || config.validationError() != null) {
+            speechConnectionStatus = AiConnectionStatus.Unconfigured
+            speechConnectionMessage = config.validationError() ?: "请先填写语音 API Key"
+            return
+        }
+        val fingerprint = aiConfigurationFingerprint(config.endpoint, config.model, config.apiKey)
+        if (!hasValidatedInternet(getApplication())) {
+            repo.saveSpeechTestOutcome(fingerprint, AiConnectionStatus.NoNetwork)
+            speechConnectionStatus = AiConnectionStatus.NoNetwork
+            speechConnectionMessage = "当前没有可用网络，尚未验证语音配置"
+            return
+        }
+        speechConnectionStatus = AiConnectionStatus.Checking
+        speechConnectionMessage = "正在使用静音片段测试语音接口"
+        speechTestJob = viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { ConfiguredSpeechTranscriber.testConnection(config) }
+            if (fingerprint != aiConfigurationFingerprint(cloudSpeechEndpoint, cloudSpeechModel, cloudSpeechApiKey)) return@launch
+            result.fold(
+                onSuccess = {
+                    repo.saveSpeechTestOutcome(fingerprint, AiConnectionStatus.Connected)
+                    speechConnectionStatus = AiConnectionStatus.Connected
+                    speechConnectionMessage = "语音接口连接成功（静音测试，不代表识别准确率）"
+                },
+                onFailure = { error ->
+                    repo.saveSpeechTestOutcome(fingerprint, AiConnectionStatus.Failed)
+                    speechConnectionStatus = AiConnectionStatus.Failed
+                    speechConnectionMessage = "语音连接测试失败：${error.message ?: "请检查平台、模型和密钥"}"
+                },
+            )
+        }
     }
 
     fun sendChatMessage() {
@@ -9005,6 +7980,26 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         wheelHistory = repo.saveWheelHistory(emptyList())
     }
 
+    internal var fourCardAiBusyIds by mutableStateOf<Set<Long>>(emptySet())
+        private set
+
+    internal fun recordFourCardTarot(session: FourCardSession) {
+        if (history.any { it.id == session.id }) return
+        val reading = FourCardTarot.reading(session)
+        history = repo.save(reading)
+        latestReading = reading
+    }
+
+    internal fun explainFourCardTarot(id: Long) {
+        val reading = history.firstOrNull { it.id == id && it.kind == FourCardTarot.KIND } ?: return
+        if (id in fourCardAiBusyIds || reading.aiInterpretation.isNotBlank() ||
+            !isAiConfigurationComplete(aiEndpoint, aiApiKey, aiModel)) return
+        fourCardAiBusyIds = fourCardAiBusyIds + id
+        val pending = reading.copy(aiStatus = "AI 解读生成中")
+        history = repo.replaceReading(pending)
+        generateAiInterpretation(pending).invokeOnCompletion { fourCardAiBusyIds = fourCardAiBusyIds - id }
+    }
+
     private fun save(reading: FortuneReading) {
         val saved = if (aiApiKey.isBlank()) {
             reading.copy(aiStatus = "未配置 AI Key，已生成本地占卜结果")
@@ -9016,9 +8011,9 @@ class FortuneViewModel(application: Application) : AndroidViewModel(application)
         if (aiApiKey.isNotBlank()) generateAiInterpretation(saved)
     }
 
-    private fun generateAiInterpretation(reading: FortuneReading) {
-        val tarotContext = if (reading.kind == "韦特塔罗") currentTarotAiContext() else null
-        viewModelScope.launch {
+    private fun generateAiInterpretation(reading: FortuneReading): Job {
+        val tarotContext = if (reading.kind == "韦特塔罗" || reading.kind == FourCardTarot.KIND) currentTarotAiContext() else null
+        return viewModelScope.launch {
             val result = AiInterpreter.interpret(
                 endpoint = aiEndpoint,
                 apiKey = aiApiKey,
@@ -9197,6 +8192,10 @@ class FortuneRepository(context: Context) {
         get() = prefs.getBoolean("glass_motion_enabled", true)
         set(value) = prefs.edit().putBoolean("glass_motion_enabled", value).apply()
 
+    var hapticsEnabled: Boolean
+        get() = prefs.getBoolean("haptics_enabled", true)
+        set(value) = prefs.edit().putBoolean("haptics_enabled", value).apply()
+
     var birthDate: String
         get() {
             if (prefs.contains("birth_date")) return prefs.getString("birth_date", "") ?: ""
@@ -9223,6 +8222,18 @@ class FortuneRepository(context: Context) {
     var aiApiKey: String
         get() = prefs.getString("ai_api_key", "") ?: ""
         set(value) = prefs.edit().putString("ai_api_key", value).apply()
+
+    internal val aiProviderId: String
+        get() = prefs.getString("ai_provider_id", AiProviderCatalog.CUSTOM) ?: AiProviderCatalog.CUSTOM
+
+    internal fun saveAiConfiguration(configuration: AiConfiguration) {
+        prefs.edit()
+            .putString("ai_provider_id", configuration.providerId)
+            .putString("ai_api_key", configuration.apiKey)
+            .putString("ai_model", configuration.model)
+            .putString("ai_endpoint", configuration.endpoint)
+            .apply()
+    }
 
     var aiModel: String
         get() = prefs.getString("ai_model", "gpt-4o-mini") ?: "gpt-4o-mini"
@@ -9299,7 +8310,7 @@ class FortuneRepository(context: Context) {
         return runCatching {
             val item = JSONObject(raw)
             val cachedDate = LocalDate.parse(item.getString("date"))
-            if (cachedDate != date) return@runCatching null
+            if (cachedDate != date || item.optInt("schema") != 2) return@runCatching null
             fun stringList(key: String): List<String> {
                 val array = item.optJSONArray(key) ?: return emptyList()
                 return (0 until array.length()).map(array::getString)
@@ -9319,6 +8330,7 @@ class FortuneRepository(context: Context) {
                 avoid = stringList("avoid"),
                 clash = item.getString("clash"),
                 shaDirection = item.getString("shaDirection"),
+                monthGanZhi = item.getString("monthGanZhi"),
             )
         }.getOrNull()
     }
@@ -9327,10 +8339,12 @@ class FortuneRepository(context: Context) {
         val suitable = JSONArray().apply { info.suitable.forEach(::put) }
         val avoid = JSONArray().apply { info.avoid.forEach(::put) }
         val item = JSONObject()
+            .put("schema", 2)
             .put("date", info.date.toString())
             .put("dateLabel", info.dateLabel)
             .put("lunarLabel", info.lunarLabel)
             .put("dayGanZhi", info.dayGanZhi)
+            .put("monthGanZhi", info.monthGanZhi)
             .put("solarTerm", info.solarTerm)
             .put("joyDirection", info.joyDirection)
             .put("fortuneDirection", info.fortuneDirection)
@@ -9351,6 +8365,39 @@ class FortuneRepository(context: Context) {
     var cloudSpeechApiKey: String
         get() = prefs.getString("cloud_speech_api_key", "") ?: ""
         set(value) = prefs.edit().putString("cloud_speech_api_key", value).apply()
+
+    internal val cloudSpeechProviderId: String
+        get() = prefs.getString("cloud_speech_provider_id", SpeechProviderCatalog.CUSTOM) ?: SpeechProviderCatalog.CUSTOM
+
+    internal val validatedSpeechFingerprint: String
+        get() = prefs.getString("validated_speech_fingerprint", "").orEmpty()
+    internal val attemptedSpeechFingerprint: String
+        get() = prefs.getString("attempted_speech_fingerprint", "").orEmpty()
+    internal val lastSpeechTestOutcome: String
+        get() = prefs.getString("last_speech_test_outcome", "").orEmpty()
+
+    internal fun saveCloudSpeechConfiguration(configuration: CloudSpeechConfig, changed: Boolean) {
+        prefs.edit().apply {
+            putString("cloud_speech_provider_id", configuration.providerId)
+            putString("cloud_speech_api_key", configuration.apiKey)
+            putString("cloud_speech_model", configuration.model)
+            putString("cloud_speech_endpoint", configuration.endpoint)
+            if (changed) {
+                remove("validated_speech_fingerprint")
+                remove("attempted_speech_fingerprint")
+                remove("last_speech_test_outcome")
+            }
+        }.apply()
+    }
+
+    internal fun saveSpeechTestOutcome(fingerprint: String, outcome: AiConnectionStatus) {
+        prefs.edit().apply {
+            putString("attempted_speech_fingerprint", fingerprint)
+            putString("last_speech_test_outcome", outcome.name)
+            if (outcome == AiConnectionStatus.Connected) putString("validated_speech_fingerprint", fingerprint)
+            else if (outcome != AiConnectionStatus.NoNetwork) remove("validated_speech_fingerprint")
+        }.apply()
+    }
 
     var cloudSpeechModel: String
         get() = prefs.getString("cloud_speech_model", "whisper-1") ?: "whisper-1"
@@ -9563,7 +8610,7 @@ class FortuneRepository(context: Context) {
     }
 }
 
-private fun FortuneReading.toJson(): JSONObject {
+internal fun FortuneReading.toJson(): JSONObject {
     val coinLinesJson = JSONArray()
     coinLines.forEach { line -> coinLinesJson.put(line.toJson()) }
     val tarotDrawsJson = JSONArray()
@@ -9593,7 +8640,7 @@ private fun FortuneReading.toJson(): JSONObject {
         .put("transformedClassic", transformedClassic?.toJson() ?: JSONObject.NULL)
 }
 
-private fun JSONObject.toReading(): FortuneReading = FortuneReading(
+internal fun JSONObject.toReading(): FortuneReading = FortuneReading(
     id = optLong("id"),
     kind = optString("kind"),
     title = optString("title"),
@@ -9771,10 +8818,7 @@ private fun JSONObject.toChatMessage(): ChatMessage = ChatMessage(
 )
 
 internal fun shouldDisableDeepSeekThinking(endpoint: String, model: String): Boolean {
-    val normalizedEndpoint = endpoint.trim().lowercase()
-    val normalizedModel = model.trim().lowercase()
-    return normalizedModel.contains("deepseek") ||
-        normalizedEndpoint.contains("api.deepseek.com")
+    return aiEndpointHost(endpoint) == "api.deepseek.com" && model.isNotBlank()
 }
 
 internal fun isAiConfigurationComplete(endpoint: String, apiKey: String, model: String): Boolean {
@@ -9799,70 +8843,25 @@ internal fun hasValidatedInternet(context: Context): Boolean {
         capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
-private fun JSONObject.applyUserFacingAiCompatibility(endpoint: String, model: String): JSONObject = apply {
-    if (shouldDisableDeepSeekThinking(endpoint, model)) {
-        put("thinking", JSONObject().put("type", "disabled"))
-    }
-}
-
-private fun JSONObject.requireAssistantContent(finishReason: String = ""): String {
-    val content = optString("content", "").trim()
-    if (content.isNotBlank()) return content
-
-    val reasoningContent = optString("reasoning_content", "").trim()
-    if (reasoningContent.isNotBlank()) {
-        val suffix = finishReason.takeIf(String::isNotBlank)?.let { "（结束原因：$it）" }.orEmpty()
-        error("模型只返回了思考过程，未生成最终回答$suffix")
-    }
-    error("接口没有返回有效内容")
-}
-
-private fun apiFailureMessage(code: Int, responseBody: String): String {
-    val providerMessage = runCatching {
-        JSONObject(responseBody).optJSONObject("error")?.optString("message").orEmpty().trim()
-    }.getOrDefault("")
-    return if (providerMessage.isBlank()) "HTTP $code" else "HTTP $code：${providerMessage.take(180)}"
-}
-
 private object AiConnectionClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
-    private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun test(endpoint: String, apiKey: String, model: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val resolvedModel = model.trim()
-                val body = JSONObject()
-                    .put("model", resolvedModel)
-                    .put("temperature", 0)
-                    .put("max_tokens", 8)
-                    .put(
-                        "messages",
-                        JSONArray().put(
-                            JSONObject()
-                                .put("role", "user")
-                                .put("content", "Reply with OK only.")
-                        ),
-                    )
-                    .applyUserFacingAiCompatibility(endpoint, resolvedModel)
-                val request = Request.Builder()
-                    .url(endpoint.trim())
-                    .addHeader("Authorization", "Bearer $apiKey")
-                    .addHeader("Content-Type", "application/json")
-                    .post(body.toString().toRequestBody(jsonType))
-                    .build()
-                client.newCall(request).execute().use { response ->
-                    val responseBody = response.body?.string().orEmpty()
-                    if (!response.isSuccessful) error(apiFailureMessage(response.code, responseBody))
-                    val choice = JSONObject(responseBody).getJSONArray("choices").getJSONObject(0)
-                    choice.getJSONObject("message")
-                        .requireAssistantContent(choice.optString("finish_reason", ""))
-                    Unit
-                }
+                val request = AiApiTransport.buildRequest(
+                    endpoint, apiKey, model,
+                    JSONArray().put(JSONObject().put("role", "user").put("content", "Reply with OK only.")),
+                    AiApiTransport.connectionTestTokenLimit(endpoint), 0.0,
+                )
+                AiApiTransport.execute(client, request, apiKey)
+                Unit
             }
         }
 }
@@ -9888,6 +8887,9 @@ internal fun buildDailyAiInsightPrompt(
         以下是同一天、同一用户的固定背景。请只使用这些资料，不推测未提供的信息。
         日期：${info.dateLabel}
         农历：${info.lunarLabel}；日干支：${info.dayGanZhi}；节气：${info.solarTerm.ifBlank { "无" }}
+        节月干支：${info.monthGanZhi.ifBlank { "未提供" }}；节令比照：${DailyTraditionEngine.seasonalContext(info).explanation}
+        后台节奏参考（仅供判断背景，不得向用户复述分值构成、权重或内部校准）：
+        节奏刻度：${snapshot.reading.score}；${snapshot.rhythmBasis}。这是应用自定义权重，不是古籍算法或吉凶概率。
         黄历宜：$suitable
         黄历忌：$avoid
         方位：喜神${info.joyDirection}，福神${info.fortuneDirection}，财神${info.wealthDirection}
@@ -9903,10 +8905,10 @@ private object DailyAiInsightClient {
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(75, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
-    private val jsonType = "application/json; charset=utf-8".toMediaType()
-    private const val SYSTEM_PROMPT =
-        "你是知否运势的传统文化日课助手。以学术和文化解释方式使用《周易》《道德经》等思想，区分传统文本与现代建议；不制造恐惧，不把黄历宜忌说成必然因果。不得补充或联想丧葬、疾病、灾祸、诅咒等不适合日常建议的内容。输出简体中文。"
+    private val SYSTEM_PROMPT = OraclePrompts.CORE + "\n\n" + OraclePrompts.DAILY + "\n\n输出简体中文。"
 
     suspend fun explain(
         endpoint: String,
@@ -9936,26 +8938,10 @@ private object DailyAiInsightClient {
                             ),
                         )
                 )
-            val body = JSONObject()
-                .put("model", resolvedModel)
-                .put("temperature", 0.35)
-                .put("messages", messages)
-                .put("max_tokens", DAILY_INSIGHT_MAX_OUTPUT_TOKENS)
-                .applyUserFacingAiCompatibility(endpoint, resolvedModel)
-            val request = Request.Builder()
-                .url(endpoint.trim())
-                .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("Content-Type", "application/json")
-                .post(body.toString().toRequestBody(jsonType))
-                .build()
-            client.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string().orEmpty()
-                if (!response.isSuccessful) error(apiFailureMessage(response.code, responseBody))
-                val choice = JSONObject(responseBody).getJSONArray("choices").getJSONObject(0)
-                choice.getJSONObject("message")
-                    .requireAssistantContent(choice.optString("finish_reason", ""))
-                    .take(4_000)
-            }
+            val request = AiApiTransport.buildRequest(
+                endpoint, apiKey, resolvedModel, messages, DAILY_INSIGHT_MAX_OUTPUT_TOKENS, 0.35,
+            )
+            AiApiTransport.execute(client, request, apiKey).content.take(4_000)
         }
     }
 }
@@ -9965,8 +8951,9 @@ private object AiChatClient {
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
-    private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun reply(
         endpoint: String,
@@ -9988,40 +8975,13 @@ private object AiChatClient {
                 )
             }
             val resolvedModel = model.ifBlank { "gpt-4o-mini" }
-            val body = JSONObject()
-                .put("model", resolvedModel)
-                .put("temperature", 0.55)
-                .put("messages", requestMessages)
-                .put("max_tokens", 1_000)
-                .applyUserFacingAiCompatibility(endpoint, resolvedModel)
-            val request = Request.Builder()
-                .url(endpoint.ifBlank { "https://api.openai.com/v1/chat/completions" })
-                .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("Content-Type", "application/json")
-                .post(body.toString().toRequestBody(jsonType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw IllegalStateException("HTTP ${response.code}")
-                }
-                val responseBody = response.body?.string().orEmpty()
-                val choice = JSONObject(responseBody)
-                    .getJSONArray("choices")
-                    .getJSONObject(0)
-                choice
-                    .getJSONObject("message")
-                    .requireAssistantContent(choice.optString("finish_reason", ""))
-            }
+            val request = AiApiTransport.buildRequest(endpoint, apiKey, resolvedModel, requestMessages, 1_000, 0.55)
+            AiApiTransport.execute(client, request, apiKey).content
         }
     }
 
-    private const val CHAT_SYSTEM_PROMPT = """
-        你是“知否研习”，一位从事中国哲学、宗教学与传统文化研究的研究生导师，熟悉《周易》《道德经》《心经》、道教史、佛教思想史与相关学术研究，也理解传统道士的文化实践视角。
-        与用户自然对话，优先澄清问题，再给出有依据、可理解的分析。严格区分经典原文、学术解释、宗教信仰与民俗经验；不伪造经文、出处、历史人物观点或学术共识。引用经典时尽量注明篇章，无法确认原文时明确说明是意译。
-        尊重不同宗教与无宗教立场，不制造恐惧，不宣称能确定预测未来，不诱导迷信消费。涉及医疗、法律、金融或心理危机时，只提供一般文化讨论并建议寻求合格专业人士。
-        默认使用简体中文，用户使用英文时可以用英文或中英双语回答。回答应专业、克制、清楚，不堆砌玄虚术语。
-    """
+    private val CHAT_SYSTEM_PROMPT = OraclePrompts.CORE + "\n\n" + OraclePrompts.DIALOGUE +
+        "\n\n默认使用简体中文；用户明确选择其他语言时遵循用户选择。"
 }
 
 internal object AiInterpreter {
@@ -10034,8 +8994,9 @@ internal object AiInterpreter {
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
-    private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private data class CompletionResponse(
         val content: String,
@@ -10056,11 +9017,7 @@ internal object AiInterpreter {
                         .put("role", "system")
                         .put(
                             "content",
-                            when (reading.kind) {
-                                "铜钱卦" -> "你是知否运势的《周易》铜钱卦解读助手。先在内部静默校验投掷值、爻位、本卦、动爻、变卦和经典取用结果，不得自行改卦或更换取用规则，也不要向用户展示校验步骤或重复六爻数据。用户提供了明确问题时，问题本身是回答主轴，经典文本是分析依据；回答的大部分篇幅必须用于解释该问题的现实条件、矛盾、风险、选择和行动，不能停留在泛泛讲解经典。用户未提供文字问题时，不得猜测其心中默念的内容，只做一般卦义、自省方向和行动提示。只有输入中“经典原文”与“《彖》《象》上下文”里的文字可以加引号作为逐字引文；其他解释必须明确写成现代释义，不得伪造经文、出处、王弼、孔颖达、朱熹或现代译者观点。用中文回答，保持克制、具体、可执行，不宣称确定未来，不做医疗、法律、金融结论。"
-                                "韦特塔罗" -> "你是知否运势的Rider-Waite-Smith韦特塔罗解读助手。必须忠实使用应用已经抽出的十张牌、固定牌位和正逆位，不得重抽、换牌、改变正逆位或虚构牌面。以A. E. Waite《塔罗图解钥匙》的牌位结构与经典牌义为基础，同时像成熟塔罗师一样综合牌与牌之间的呼应、矛盾和发展线索。用户有明确问题时直接围绕该问题解释；没有文字问题时不得猜测其心中默念内容，只给一般牌阵主题和自省方向。个人资料与当日黄历只能作为次要语境，相关时才使用，不能取代牌阵或被写成命定因果。用简体中文，克制、清楚、具体，不制造恐惧，不宣称确定预测未来，不替代医疗、法律、金融或心理专业判断。"
-                                else -> "你是知否运势的占卜解读助手。用中文回答，保持克制、具体、可执行。不要宣称确定未来，不做医疗、法律、金融结论。"
-                            },
+                            if (reading.kind == FourCardTarot.KIND) FourCardTarotPrompt.system else OraclePrompts.forReading(reading.kind),
                         )
                     )
                 .put(JSONObject()
@@ -10117,33 +9074,9 @@ internal object AiInterpreter {
         messages: JSONArray,
         maxTokens: Int,
     ): CompletionResponse {
-        val body = JSONObject()
-            .put("model", model)
-            .put("temperature", 0.45)
-            .put("messages", messages)
-            .put("max_tokens", maxTokens)
-            .applyUserFacingAiCompatibility(endpoint, model)
-        val request = Request.Builder()
-            .url(endpoint.ifBlank { "https://api.openai.com/v1/chat/completions" })
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(body.toString().toRequestBody(jsonType))
-            .build()
-
-        return client.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("HTTP ${response.code}")
-            val choice = JSONObject(responseBody)
-                .getJSONArray("choices")
-                .getJSONObject(0)
-            val content = choice
-                .getJSONObject("message")
-                .requireAssistantContent(choice.optString("finish_reason", ""))
-            CompletionResponse(
-                content = content,
-                finishReason = choice.optString("finish_reason", ""),
-            )
-        }
+        val request = AiApiTransport.buildRequest(endpoint, apiKey, model, messages, maxTokens, 0.45)
+        val response = AiApiTransport.execute(client, request, apiKey)
+        return CompletionResponse(response.content, response.finishReason)
     }
 
     internal fun needsContinuation(finishReason: String, content: String): Boolean {
@@ -10161,209 +9094,7 @@ internal object AiInterpreter {
     internal fun buildAiPrompt(
         reading: FortuneReading,
         tarotContext: TarotAiContext? = null,
-    ): String {
-        if (reading.kind == "铜钱卦" && reading.coinLines.size == 6) {
-            val lineDetails = reading.coinLines
-                .sortedBy { it.position }
-                .joinToString("\n") { line ->
-                    val coins = line.coinValues.joinToString("、") { value ->
-                        if (value == 3) "阳面(3)" else "阴面(2)"
-                    }
-                    val transformed = if (line.isMoving) {
-                        if (line.transformedIsYang) "变为阳爻" else "变为阴爻"
-                    } else {
-                        "不变"
-                    }
-                    "${coinLinePositionLabel(line.position)}：$coins；${line.combinationLabel}；合计${line.value}，${line.typeLabel}${if (line.isMoving) "（动）" else "（静）"}，$transformed"
-                }
-            val movingLines = reading.coinLines
-                .filter { it.isMoving }
-                .joinToString("、") { coinLinePositionLabel(it.position) }
-                .ifBlank { "无（六爻皆静）" }
-            val classicReferences = reading.classicReferences.joinToString("\n") { reference ->
-                val lineLabel = if (reference.linePosition in 1..6) {
-                    "，${coinLinePositionLabel(reference.linePosition)}"
-                } else {
-                    ""
-                }
-                buildString {
-                    append("- ${if (reference.isPrimary) "主要依据" else "参看"}：第${reference.hexagramNumber}卦${reference.hexagramName}${reference.hexagramGlyph}，${reference.textType}$lineLabel：${reference.text}")
-                    if (reference.commentary.isNotBlank()) {
-                        append("\n  对应《象》注：${reference.commentary}")
-                    }
-                }
-            }.ifBlank { "- 旧记录未保存经典取用文本；不得自行补写原文" }
-            val classicContexts = listOfNotNull(reading.primaryClassic, reading.transformedClassic)
-                .distinctBy { it.number }
-                .joinToString("\n\n") { context ->
-                    """第${context.number}卦 ${context.name}${context.glyph}
-卦辞：${context.judgment}
-${context.tuan}
-${context.image}"""
-                }
-                .ifBlank { "旧记录未保存《彖》《象》上下文" }
-            val questionGuidance = if (reading.question.isBlank()) {
-                """用户没有提供文字问题，可能选择在心中默念。
-                不得猜测、复述或虚构用户心中的问题。请给出可适用于当前阶段的一般卦义、自省方向和低风险行动建议。""".trimIndent()
-            } else {
-                """用户明确提出的问题是本次解读的核心：${reading.question}
-                开头直接回应这个问题。把卦辞、爻辞和变化结构逐项映射到问题中的现实对象、条件、阻力、时机与可选行动；避免只讲抽象卦义后附一句通用建议。""".trimIndent()
-            }
-            val outputStructure = if (reading.question.isBlank()) {
-                """1. 整体提示：用2至4句说明当前结构与可能的变化方向
-                2. 经典依据：只列本次真正取用的核心经文并作简短现代释义
-                3. 自省方向：给出3个用户可自行对应内心所问的问题
-                4. 行动建议：给出3条低风险、可验证、可撤回的做法
-                5. 解读边界：用1句话说明这是传统文化解释而非确定预测""".trimIndent()
-            } else {
-                """1. 针对所问：开门见山回答用户的问题，用条件式语言说明倾向、关键条件和主要风险
-                2. 经典依据：精简引用本次主要依据与必要的参看依据，并说明它们如何对应用户的问题
-                3. 现实分析：具体分析问题中的对象、约束、时机、取舍和可能变化，不泛泛堆砌吉凶术语
-                4. 行动建议：给出3条紧扣该问题、现实中可验证且可撤回的做法
-                5. 解读边界：用1句话说明这是传统文化解释而非确定预测""".trimIndent()
-            }
-            return """
-                请依据下面完整、已核验的三枚铜钱起卦记录与应用指定的经典取用结果做详细解读。
-
-                解读任务：
-                $questionGuidance
-
-                固定规则：阳面记3，阴面记2；第一次投掷为最下方初爻，依次向上；6老阴、7少阳、8少阴、9老阳；6和9翻转。
-
-                六次投掷（实际顺序：初爻至上爻）：
-                $lineDetails
-
-                本卦：${reading.primaryHexagram}
-                动爻：$movingLines
-                变卦：${reading.transformedHexagram.ifBlank { "无；本卦不变" }}
-
-                采用的变占框架：${reading.classicMethod.ifBlank { "旧记录未保存" }}
-                本次取用规则：${reading.classicRule.ifBlank { "旧记录未保存" }}
-
-                经典原文（这是本次唯一允许逐字引用的取用文本）：
-                $classicReferences
-
-                《彖》《象》上下文（用于义理校核，不得张冠李戴）：
-                $classicContexts
-
-                后台校验要求：
-                - 写作前在内部核对六爻、本卦、动爻、变卦与经典取用是否一致。
-                - 校验过程不属于用户需要阅读的内容，禁止输出“起卦复核”“卦象复核”“数据复核”等段落，也不要逐条重复六次投掷。
-                - 若确实发现矛盾，只输出“本次卦象数据无法通过校验，请重新起卦”，不要继续解读。
-
-                输出结构：
-                $outputStructure
-
-                篇幅与完整性要求：全文控制在700至1100个汉字；各部分都要完整写完，若篇幅紧张应删减重复释义，不得省略现实分析、行动建议或解读边界。最后另起一行输出$COMPLETION_MARKER，该标记只用于应用确认内容完整。
-
-                若所给经典上下文不足以支持某个判断，请直接说明证据不足，不得用记忆补造引文。不要声称采用了未提供的某一现代译本。
-            """.trimIndent()
-        }
-        if (reading.kind == "韦特塔罗" && reading.tarotDraws.size == 10) {
-            val spread = reading.tarotDraws
-                .sortedBy(TarotDraw::positionIndex)
-                .joinToString("\n") { draw ->
-                    "${draw.positionIndex}. ${draw.position.name}（${draw.position.prompt}）：${draw.card.nameZh} / ${draw.card.nameEn}，${draw.orientationLabel}；分类：${draw.card.classificationLabel}；关键词：${draw.keywords.joinToString("、")}；经典牌义的现代概括：${draw.meaning}；牌面象征：${draw.card.imageDescription}"
-                }
-            val questionGuidance = if (reading.question.isBlank()) {
-                "用户没有提供文字问题，可能选择在心中默念。不要猜测默念内容；以牌阵整体主题、自省方向与低风险行动建议作答。"
-            } else {
-                "用户明确问题：${reading.question}\n开头直接回应这个问题，并把牌位与现实中的条件、阻力、关系、选择和时间顺序具体对应起来。"
-            }
-            val profileParts = buildList {
-                tarotContext?.nickname?.trim()?.takeIf(String::isNotBlank)?.let { add("昵称：$it") }
-                tarotContext?.birthDate?.trim()?.takeIf(String::isNotBlank)?.let { add("生日：$it") }
-                tarotContext?.keywords?.trim()?.takeIf(String::isNotBlank)?.let { add("用户关注词：$it") }
-            }
-            val profileContext = profileParts
-                .takeIf(List<String>::isNotEmpty)
-                ?.joinToString("；")
-                ?: "用户未提供可用于本次解读的个人资料"
-            val safeSuitable = safeTarotAlmanacItems(tarotContext?.suitable.orEmpty())
-            val safeAvoid = safeTarotAlmanacItems(tarotContext?.avoid.orEmpty())
-            val dateContext = tarotContext?.let { context ->
-                buildList {
-                    context.dateLabel.takeIf(String::isNotBlank)?.let { add(it) }
-                    context.lunarLabel.takeIf(String::isNotBlank)?.let { add(it) }
-                    context.dayGanZhi.takeIf(String::isNotBlank)?.let { add("日干支$it") }
-                    context.solarTerm.takeIf(String::isNotBlank)?.let { add("节气$it") }
-                    safeSuitable.takeIf(List<String>::isNotEmpty)?.let { add("宜${it.joinToString("、")}") }
-                    safeAvoid.takeIf(List<String>::isNotEmpty)?.let { add("慎${it.joinToString("、")}") }
-                    context.directions.takeIf(String::isNotBlank)?.let { add(it) }
-                    context.clash.takeIf(String::isNotBlank)?.let { add(it) }
-                }.joinToString("；").ifBlank { "无额外日期语境" }
-            } ?: "无额外日期语境"
-            val outputStructure = if (reading.question.isBlank()) {
-                """1. 整体主题：用3至5句串联核心现状、阻力与综合趋向
-                2. 牌阵脉络：综合过去、基础、近期发展、自我与环境，不逐条机械复述十张牌
-                3. 关键互动：指出2至4组最重要的牌位呼应或矛盾
-                4. 自省与行动：给出3个自省问题和3条低风险、可验证、可撤回的行动
-                5. 解读边界：用1句话说明塔罗用于整理视角而非确定预测""".trimIndent()
-            } else {
-                """1. 针对所问：直接给出条件式判断、主要阻力与可能发展
-                2. 牌阵脉络：综合过去、基础、近期发展、自我与环境，说明为何形成这一判断
-                3. 关键互动：指出2至4组最重要的牌位呼应或矛盾
-                4. 行动建议：给出3条紧扣问题、现实中可验证且可撤回的做法
-                5. 解读边界：用1句话说明塔罗用于整理视角而非确定预测""".trimIndent()
-            }
-            return """
-                请解读下面这次已经完成的Rider-Waite-Smith十字牌阵。
-
-                $questionGuidance
-
-                固定方法：十张牌，不另设预选指示牌；牌位次序沿用A. E. Waite《塔罗图解钥匙》第三部分的十字展开结构。正逆位已由应用在洗牌时确定。
-
-                十张牌（这是唯一有效的抽牌结果）：
-                $spread
-
-                可选个人语境：$profileContext
-                当日离线黄历语境：$dateContext
-
-                使用语境的规则：
-                - 用户的问题和牌阵始终是主轴；个人资料只在确实相关时自然带入，黄历最多作为弱参考。
-                - 不得根据生日推造星盘、命盘、生肖结论，也不得把昵称或关注词神秘化。
-                - 不得输出抽牌校验、后台复核或逐张重复数据；先在内部确认十个牌位无重复且正逆位一致。
-                - 逆位表示受阻、内化、失衡、延迟或需要调整的表达，不可一律解释为坏事。
-
-                输出结构：
-                $outputStructure
-
-                全文控制在800至1200个汉字。优先完整回应问题和牌阵脉络，避免玄虚套话与重复牌义。最后另起一行输出$COMPLETION_MARKER，该标记只用于应用确认内容完整。
-            """.trimIndent()
-        }
-        return """
-            请对下面的占卜结果做解释：
-            类型：${reading.kind}
-            问题：${reading.question.ifBlank { "未填写具体问题" }}
-            标题：${reading.title}
-            本地解释：${reading.body}
-            本地建议：${reading.advice}
-
-            输出结构：
-            1. 局面判断：2-3 句
-            2. 关键提醒：3 条短句
-            3. 行动建议：3 条具体做法
-            4. 今日宜忌：宜/忌各 2 条
-
-            篇幅与完整性要求：全文控制在400至700个汉字，各部分必须完整写完，避免重复解释。最后另起一行输出$COMPLETION_MARKER，该标记只用于应用确认内容完整。
-        """.trimIndent()
-    }
-
-    private fun safeTarotAlmanacItems(items: List<String>): List<String> {
-        val excluded = setOf(
-            "诸事不宜", "馀事勿取", "余事勿取", "安葬", "出殡", "殡葬", "入殓",
-            "移柩", "启钻", "破土", "修坟", "立碑", "谢土", "开生坟", "合寿木",
-            "行丧", "成服", "除服", "破屋", "坏垣",
-        )
-        return items
-            .asSequence()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .filter { item -> excluded.none { term -> term in item } }
-            .distinct()
-            .take(6)
-            .toList()
-    }
+    ): String = OraclePromptBuilder.build(reading, tarotContext)
 }
 
 class FortuneOracle {

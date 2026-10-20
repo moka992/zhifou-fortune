@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".HapticPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".FourCardTarotPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".SemanticIconPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".MotionPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".SpeechBusyPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".OracleMotionPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".DailyInsightPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+    </application>
+</manifest>

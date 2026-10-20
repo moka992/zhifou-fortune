@@ -20,3 +20,6 @@ keystore.properties
 signing.properties
 app/src/main/assets/asr/sherpa-onnx-whisper-tiny-int8/*.onnx
 app/src/main/assets/asr/sherpa-onnx-whisper-tiny-int8/tiny-tokens.txt
+# Authoring files can retain workstation paths. Recreate them with tools/build_*.
+art/**/*.blend
+art/**/*.blend1

@@ -50,17 +50,19 @@ class OracleDailySuggestionsTest {
     }
 
     @Test
-    fun pageGestureRequiresAnIntentionalUpwardDrag() {
-        assertFalse(isUpwardOraclePageSwipe(totalDragY = -40f, thresholdPx = 72f))
-        assertTrue(isUpwardOraclePageSwipe(totalDragY = -72f, thresholdPx = 72f))
-        assertFalse(isUpwardOraclePageSwipe(totalDragY = 120f, thresholdPx = 72f))
+    fun firstVisitTodayShowsInspirationWithOrWithoutHistory() {
+        assertTrue(initiallyShowOraclePrompt(firstVisitToday = true, hasTimeline = true))
+        assertTrue(initiallyShowOraclePrompt(firstVisitToday = true, hasTimeline = false))
     }
 
     @Test
-    fun returningFromDailyPromptUsesTheOppositeDirection() {
-        assertFalse(isDownwardOraclePageSwipe(totalDragY = 40f, thresholdPx = 72f))
-        assertTrue(isDownwardOraclePageSwipe(totalDragY = 72f, thresholdPx = 72f))
-        assertFalse(isDownwardOraclePageSwipe(totalDragY = -120f, thresholdPx = 72f))
+    fun laterVisitsResumeMessagesWhenHistoryExists() {
+        assertFalse(initiallyShowOraclePrompt(firstVisitToday = false, hasTimeline = true))
+    }
+
+    @Test
+    fun emptyHistoryInitiallyShowsUsefulSuggestions() {
+        assertTrue(initiallyShowOraclePrompt(firstVisitToday = false, hasTimeline = false))
     }
 
     @Test

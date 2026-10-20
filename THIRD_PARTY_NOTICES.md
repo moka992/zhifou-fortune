@@ -1,5 +1,43 @@
 # Third-Party Notices
 
+## Google Filament
+
+- Project: https://github.com/google/filament
+- Artifacts: `filament-android` and `gltfio-android`, version `1.68.4`
+- Copyright: The Android Open Source Project / Google Filament contributors
+- License: Apache License 2.0
+
+Filament renders the original Blender coin model using glTF metallic-roughness
+materials. The model and studio reflection environment are original application
+assets, not copied currency artwork. The Apache License text is bundled at
+`app/src/main/assets/licenses/Apache-2.0.txt`.
+
+## Cinzel Decorative
+
+- Designer: Natanael Gama; copyright 2012, reserved font name Cinzel
+- Source: https://github.com/google/fonts/tree/main/ofl/cinzeldecorative
+- License: SIL Open Font License 1.1
+
+The original coin's numeral and inscriptions use Cinzel Decorative Bold converted
+to mesh outlines. The unmodified build-time font and its license are retained in
+`art/coin/fonts/`. Android renders only the exported geometry; it does not load
+the font. The license is also bundled at
+`app/src/main/assets/licenses/Cinzel-OFL.txt`.
+
+## libGDX / Bullet physics
+
+- Project: https://github.com/libgdx/libgdx
+- Artifacts: `gdx`, `gdx-bullet` and their native platform libraries, version `1.14.2`
+- libGDX license: Apache License 2.0; copyright the libGDX contributors
+- Bullet license: zlib; copyright Erwin Coumans and the Bullet contributors
+- Bullet source: https://github.com/bulletphysics/bullet3
+
+The dice tool uses the unmodified native Bullet wrapper for offline convex-body
+collisions and rigid-body trajectories. The app supplies its own rendering and
+result selection; libGDX's game UI and renderer are not used. The Apache License
+text is bundled at `app/src/main/assets/licenses/Apache-2.0.txt`; Bullet's notice
+is bundled at `app/src/main/assets/licenses/Bullet-zlib.txt`.
+
 ## Backdrop / AndroidLiquidGlass
 
 - Project: https://github.com/Kyant0/AndroidLiquidGlass

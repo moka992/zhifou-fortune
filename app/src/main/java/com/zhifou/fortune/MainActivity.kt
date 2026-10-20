@@ -699,7 +699,7 @@ private fun FortuneApp(vm: FortuneViewModel = viewModel()) {
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-private fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
+internal fun FortuneAppMd3(vm: FortuneViewModel = viewModel()) {
     val layout = rememberFortuneLayoutMetrics()
     val context = LocalContext.current
     val haptics = LocalAppHaptics.current

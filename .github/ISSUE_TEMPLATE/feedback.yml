@@ -1,0 +1,41 @@
+name: 使用反馈 / App feedback
+description: Report a reproducible problem or a focused improvement, without private data.
+title: "[Feedback] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请勿提交 API Key、真实占卜问题、个人资料、录音、完整聊天记录或设备序列号。截图先检查并脱敏。
+        Do not include credentials, real private questions, recordings, complete chats, or device identifiers.
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本 / App version
+      placeholder: v1.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统与窗口 / System and window
+      description: Android version, portrait/landscape, font scaling or screen size if relevant. No serial numbers.
+  - type: textarea
+    id: steps
+    attributes:
+      label: 如何复现 / Steps to reproduce
+      description: Use a fictional example rather than your actual reading or personal records.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 预期与实际 / Expected and actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私检查 / Privacy check
+      options:
+        - label: I removed private questions, credentials, personal data and device identifiers.
+          required: true

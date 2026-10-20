@@ -1,3 +1,5 @@
+<p><img src="docs/media/cover-v1.1.1.jpg" width="100%" alt="知否运势 / Zhifou Fortune — Offline first. AI optional."></p>
+
 # 知否运势 / Zhifou Fortune
 
 **离线占卜、传统历法与日常记录。AI 解读，由你选择。**
@@ -6,7 +8,7 @@ I Ching, Rider-Waite tarot, and the Chinese calendar. Offline first, with option
 
 [![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-216451?logo=android&logoColor=white)](https://developer.android.com/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
-[![v1.1.0](https://img.shields.io/badge/release-v1.1.0-216451)](https://github.com/moka992/zhifou-fortune/releases/tag/v1.1.0)
+[![v1.1.1](https://img.shields.io/badge/release-v1.1.1-216451)](https://github.com/moka992/zhifou-fortune/releases/tag/v1.1.1)
 
 **[下载 APK / Download](https://github.com/moka992/zhifou-fortune/releases/latest)** · [实机演示 / Demo](docs/showcase.md) · [中文](#中文) · [English](#english) · [Agent Skill](https://github.com/moka992/zhifou-oracle-skills)
 
@@ -48,7 +50,7 @@ Actual device captures with isolated demo data. The Android interface is primari
 2. 当前附件为**调试签名体验包**，不是应用商店生产包。签名一致时可覆盖安装；不要先卸载，以免丢失本地资料。
 3. 直接体验离线功能。AI 与云端语音在“我的 → 设置”中按需配置，第三方服务可能收费。
 
-APK 包含离线语音模型，体积较大。当前版本：[v1.1.0 更新说明](docs/releases/v1.1.0.md)。
+APK 包含离线语音模型，体积较大。当前版本：[v1.1.1 更新说明](docs/releases/v1.1.1.md)：四牌塔罗逐牌棘轮触觉、翻牌文字层级修正与全新项目头图。
 
 ### 开发
 
@@ -103,7 +105,9 @@ The APK is **debug-signed for evaluation**, not a production store build. Update
 
 The stack is Kotlin, Jetpack Compose, Material 3, local repositories, `lunar-java`, Sherpa-ONNX / Whisper Tiny INT8, and Bullet rigid-body dice. Use JDK 17 and Android SDK Platform 36; run the commands in [开发](#开发) above. Output: `app/build/outputs/apk/debug/app-debug.apk`.
 
-[Build guide](docs/guide.en.md#build-from-source) · [v1.1.0 release notes](docs/releases/v1.1.0.md) · [AI providers](docs/ai-providers.md) · [Speech providers](docs/speech-providers.md)
+[Build guide](docs/guide.en.md#build-from-source) · [v1.1.1 release notes](docs/releases/v1.1.1.md) · [AI providers](docs/ai-providers.md) · [Speech providers](docs/speech-providers.md)
+
+v1.1.1 aligns browsing haptics with individual card-center crossings, keeps position captions beneath the reveal animation, and adds a new project cover. Reading rules and AI behavior are unchanged.
 
 ### Privacy, Sources, and Feedback
 

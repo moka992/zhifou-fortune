@@ -17,6 +17,10 @@ These changes do not grant an open-source license to the Android application's o
 
 ## Set the Social Preview
 
+`cover-v1.1.1.jpg` is the current README cover: an original generated editorial still life with the app's Chinese/English name, a decorative time dial, face-down cards and bronze coins. It is presentation artwork, not an application screenshot, a working almanac or a historically verified divination instrument. Generated with the built-in image tool on 2026-10-20, using the independent skill's original cover as a brand-family style reference. The 1280 x 640 JPEG is resized/compressed with metadata removed, not a replacement for the separately labelled real-device captures. It can also be uploaded as the repository social preview; that separate setting is not applied by committing the file.
+
+The exact generation brief is recorded in [cover-v1.1.1-prompt.md](cover-v1.1.1-prompt.md). The new cover does not change licensing of the Android application or third-party assets.
+
 GitHub's documented social-preview upload is in repository **Settings > General > Social preview > Edit**. Upload `social-preview.jpg`. Merely committing this file or adding it to the README does **not** set that account-level repository image.
 
 Official format/size guidance: [GitHub Docs](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview). This project does not claim that the setting has been changed automatically.

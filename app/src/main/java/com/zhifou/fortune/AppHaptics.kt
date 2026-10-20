@@ -193,6 +193,14 @@ internal class AppHaptics(private val view: View) {
 
     fun sendAccepted() = scene(HapticCue.Send)
 
+    internal var cardBrowseObserver: ((TarotDeckTick, Boolean) -> Unit)? = null
+
+    fun cardBrowse(tick: TarotDeckTick): Boolean {
+        val accepted = scene(HapticCue.CardBrowse, tick.energy)
+        cardBrowseObserver?.invoke(tick, accepted)
+        return accepted
+    }
+
     fun scene(cue: HapticCue, amount: Float = 1f): Boolean {
         if (!canPlay() || !amount.isFinite() || amount <= 0f) return false
         val device = hardware
@@ -200,7 +208,23 @@ internal class AppHaptics(private val view: View) {
         val score = device?.let { HapticComposition.score(cue, it.primitives, it.durations) }
         val scoreDuration = score?.sumOf { (device.durations[it.primitive] ?: 20).toLong() + it.delayMs } ?: 0L
         val advanced = device != null && (device.envelopes || device.amplitudeControl || (score != null && scoreDuration <= 220))
-        val prepared = if (device != null && advanced) runCatching {
+        val prepared = if (cue == HapticCue.CardBrowse) runCatching {
+            effects.getOrPut(cue.ordinal * 16 + level) {
+                when {
+                    Build.VERSION.SDK_INT >= 31 && score != null && scoreDuration <= 30 -> {
+                        val builder = VibrationEffect.startComposition()
+                        score.forEach { builder.addPrimitive(primitiveId(it.primitive), it.scale * level / 8f, it.delayMs) }
+                        PreparedEffect(builder.compose(), scoreDuration, "composition:detent")
+                    }
+                    device?.amplitudeControl == true -> {
+                        val samples = HapticDesign.cardDetentSamples(level / 8f)
+                        PreparedEffect(VibrationEffect.createWaveform(samples.timings, samples.amplitudes, -1),
+                            samples.timings.sum(), "amplitude:detent")
+                    }
+                    else -> fallbackEffect(cue) ?: error("Use system detent")
+                }
+            }
+        }.getOrNull() else if (device != null && advanced) runCatching {
             effects.getOrPut(cue.ordinal * 16 + level) {
                 val points = HapticDesign.points(cue, level / 8f)
                 when {
@@ -313,6 +337,7 @@ internal class AppHaptics(private val view: View) {
 
     private fun systemConstant(cue: HapticCue): Int {
         if (Build.VERSION.SDK_INT >= 34) return when (cue) {
+            HapticCue.CardBrowse -> HapticFeedbackConstants.SEGMENT_TICK
             HapticCue.Selection, HapticCue.PageSnap -> HapticFeedbackConstants.SEGMENT_TICK
             HapticCue.FineSelection, HapticCue.GesturePull, HapticCue.Shuffle, HapticCue.CoinSpin,
             HapticCue.CardLand, HapticCue.WheelTick -> HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
@@ -343,12 +368,13 @@ internal class AppHaptics(private val view: View) {
     private fun fallbackEffect(cue: HapticCue): PreparedEffect? {
         // UI semantics use OEM-tuned View effects, not maximum-amplitude on/off approximations.
         val preset = when (cue) {
+            HapticCue.CardBrowse -> if (Build.VERSION.SDK_INT >= 29) VibrationEffect.EFFECT_TICK else return null
             HapticCue.DiceImpact -> if (Build.VERSION.SDK_INT >= 29) VibrationEffect.EFFECT_HEAVY_CLICK else null
             HapticCue.CoinImpact -> if (Build.VERSION.SDK_INT >= 29) VibrationEffect.EFFECT_CLICK else null
             else -> return null
         }
         return if (Build.VERSION.SDK_INT >= 29 && preset != null)
-            PreparedEffect(VibrationEffect.createPredefined(preset), 35, "preset:$preset")
+            PreparedEffect(VibrationEffect.createPredefined(preset), if (cue == HapticCue.CardBrowse) 20 else 35, "preset:$preset")
         else PreparedEffect(VibrationEffect.createWaveform(HapticDesign.basicTimings(cue), -1), 35, "timing")
     }
 

@@ -2,6 +2,8 @@
 
 [下载 APK](https://github.com/moka992/zhifou-fortune/releases/latest) · [English](#english) · [拍摄方式](#拍摄与隐私)
 
+以下录屏来自 v1.1.0，作为实机演示保留。当前下载版本及塔罗交互修正见 [v1.1.1](releases/v1.1.1.md)。 / These recordings remain v1.1.0 captures; see [v1.1.1](releases/v1.1.1.md) for the current build and tarot interaction updates.
+
 ## 界面
 
 <p>

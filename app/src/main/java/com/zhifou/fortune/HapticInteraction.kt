@@ -63,7 +63,9 @@ internal class HapticArbiter {
         if (lastTime != Long.MIN_VALUE) {
             val elapsed = nowMs - lastTime
             if (cue == lastCue && elapsed < minimumInterval(cue)) return false
-            if ((elapsed < 28L && nextPriority <= priority) || (nowMs < reservedUntil && nextPriority <= priority)) return false
+            val adjacentCards = cue == HapticCue.CardBrowse && lastCue == cue
+            if (!adjacentCards && ((elapsed < 28L && nextPriority <= priority) ||
+                (nowMs < reservedUntil && nextPriority <= priority))) return false
             // A save/send followed by route recomposition is one user action, not two vibrations.
             if (elapsed < 170L && priority >= 3 && nextPriority <= 1) return false
         }
@@ -83,7 +85,7 @@ internal class HapticArbiter {
 
     private fun priority(cue: HapticCue): Int = when (cue) {
         HapticCue.GesturePull, HapticCue.FineSelection, HapticCue.Shuffle,
-        HapticCue.CoinSpin, HapticCue.WheelTick -> 0
+        HapticCue.CoinSpin, HapticCue.WheelTick, HapticCue.CardBrowse -> 0
         HapticCue.NavigateIn, HapticCue.NavigateOut, HapticCue.MenuOpen, HapticCue.MenuClose,
         HapticCue.Selection, HapticCue.GestureDisarm, HapticCue.GestureCancel -> 1
         HapticCue.CardDraw, HapticCue.CardTurn, HapticCue.CardLand, HapticCue.CoinLift,
@@ -92,6 +94,7 @@ internal class HapticArbiter {
     }
 
     private fun minimumInterval(cue: HapticCue): Long = when (cue) {
+        HapticCue.CardBrowse -> TarotDeckHapticTrack.MIN_INTERVAL_MS
         HapticCue.GesturePull, HapticCue.FineSelection, HapticCue.WheelTick -> 48
         HapticCue.CoinSpin, HapticCue.Shuffle, HapticCue.DiceImpact, HapticCue.CoinImpact -> 65
         HapticCue.GestureArm, HapticCue.GestureDisarm -> 120

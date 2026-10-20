@@ -48,3 +48,27 @@ internal fun HapticWheelFeedback(state: LazyListState) {
         }
     }
 }
+
+private data class DeckTouch(val dragging: Boolean, val moving: Boolean, val position: Float)
+
+/** Observe actual list offsets, including a user fling, without intercepting card taps or Back. */
+@Composable
+internal fun HapticTarotDeckFeedback(state: LazyListState, stridePx: Float, enabled: Boolean) {
+    val haptics = LocalAppHaptics.current
+    val dragging by state.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(state, haptics, stridePx, enabled) {
+        if (!enabled || !stridePx.isFinite() || stridePx <= 0f) return@LaunchedEffect
+        val track = TarotDeckHapticTrack()
+        snapshotFlow {
+            val layout = state.layoutInfo
+            val item = layout.visibleItemsInfo.firstOrNull()
+            val center = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+            DeckTouch(dragging, state.isScrollInProgress,
+                if (item == null) Float.NaN else TarotDeckHapticTrack.position(item.index,
+                    item.offset + item.size / 2f, center, stridePx))
+        }.collect { touch ->
+            track.advance(touch.position, android.os.SystemClock.uptimeMillis(), touch.dragging, touch.moving)
+                ?.let { haptics.cardBrowse(it) }
+        }
+    }
+}

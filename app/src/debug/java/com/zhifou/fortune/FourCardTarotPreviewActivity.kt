@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
 /** Shell-only physical-device fixture: no account, persistent history or network client. */
 class FourCardTarotPreviewActivity : ComponentActivity() {
@@ -33,6 +34,23 @@ class FourCardTarotPreviewActivity : ComponentActivity() {
         setContent {
             ZhiFouTheme(darkTheme = intent.getBooleanExtra("dark", false)) {
                 val haptics = rememberAppHaptics(true)
+                DisposableEffect(haptics) {
+                    haptics.cardBrowseObserver = { tick, accepted ->
+                        Log.i("FourCardCheck", "DETENT card=${tick.cardIndex} position=${tick.position} direction=${tick.direction} accepted=$accepted")
+                    }
+                    onDispose { haptics.cardBrowseObserver = null }
+                }
+                LaunchedEffect(haptics) {
+                    var previous = ""
+                    while (true) {
+                        delay(500)
+                        val report = haptics.capabilityReport() + " " + haptics.playbackReport()
+                        if (report != previous) {
+                            Log.i("FourCardCheck", "HAPTICS $report")
+                            previous = report
+                        }
+                    }
+                }
                 val lamp = remember { GlassLightController().apply {
                     update(intent.getFloatExtra("lightX", -.18f), intent.getFloatExtra("lightY", -.24f))
                 } }

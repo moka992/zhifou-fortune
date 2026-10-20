@@ -47,6 +47,7 @@ internal object HapticComposition {
             HapticCue.CoinSpin -> listOf(a(soft, .30f), a(soft, .14f, 22))
             HapticCue.CardLand -> listOf(a(soft, .24f))
             HapticCue.WheelTick -> listOf(a(bright, .32f))
+            HapticCue.CardBrowse -> listOf(a(bright, .26f))
         }
         return listOf(rich, compact).firstOrNull {
             it.isNotEmpty() && it.all { atom -> atom.primitive in supported } &&

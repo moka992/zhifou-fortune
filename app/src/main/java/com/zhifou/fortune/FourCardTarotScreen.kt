@@ -317,6 +317,10 @@ private fun TarotIntention(question: String, onQuestion: (String) -> Unit, rever
 private fun TarotPickDeck(session: FourCardSession, busy: Boolean, onPick: (Int) -> Unit) {
     val listState = rememberLazyListState()
     val density = LocalDensity.current.density
+    val cardWidth = 76.dp
+    val overlap = 12.dp
+    HapticTarotDeckFeedback(listState, (cardWidth - overlap).value * density,
+        enabled = !busy && LocalFortuneMotionVisible.current)
     val c = LocalTarotAtelier.current
     val lamp = LocalGlassLightController.current
     Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -329,10 +333,10 @@ private fun TarotPickDeck(session: FourCardSession, busy: Boolean, onPick: (Int)
                 style = MaterialTheme.typography.labelLarge)
         }
         LazyRow(state = listState, contentPadding = PaddingValues(horizontal = 26.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy((-12).dp), modifier = Modifier.fillMaxWidth().height(156.dp)) {
+            horizontalArrangement = Arrangement.spacedBy(-overlap), modifier = Modifier.fillMaxWidth().height(156.dp)) {
             items((0..77).toList(), key = { it }) { slot ->
                 val selected = slot in session.picked
-                Box(Modifier.width(76.dp).height(130.dp)
+                Box(Modifier.width(cardWidth).height(130.dp)
                     .graphicsLayer {
                         val info = listState.layoutInfo
                         val item = info.visibleItemsInfo.firstOrNull { it.index == slot }
@@ -374,6 +378,8 @@ private fun TarotRitualStage(session: FourCardSession?, revealed: Int, shuffling
     val hero = session == null || shuffling
     val heroVisibility = animateFloatAsState(if (hero) 1f else 0f,
         tween(if (reduced) 0 else 460, easing = FastOutSlowInEasing), label = "deck-to-spread")
+    val labelVisibility = animateFloatAsState(if (active) 0f else 1f,
+        tween(if (reduced) 0 else 160, easing = FastOutSlowInEasing), label = "spread-labels")
     val drawDeck by remember(hero) { derivedStateOf { hero || heroVisibility.value > .001f } }
     BoxWithConstraints(modifier.clipToBounds()) {
         val width = maxWidth
@@ -410,15 +416,26 @@ private fun TarotRitualStage(session: FourCardSession?, revealed: Int, shuffling
             }
         }
         if (!hero) {
+            // Captions stay on the table plane, never in the flying card's elevated layer.
+            val labelWidth = maxOf(cardWidth + 16.dp, 70.dp)
+                .coerceAtMost(width * if (compactSpread) .24f else .44f)
+            FourCardTarot.positions.forEach { position ->
+                val anchor = tarotAtelierAnchor(position.index, compactSpread)
+                Text("${position.index} · ${position.name}", color = c.muted,
+                    style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.offset(x = width * anchor.first - labelWidth / 2,
+                        y = height * anchor.second + cardHeight / 2 - 3.dp)
+                        .width(labelWidth).graphicsLayer { alpha = labelVisibility.value })
+            }
             FourCardTarot.positions.forEach { position ->
                 // A short window keeps the same numbered positions in a readable linear presentation.
                 val anchor = tarotAtelierAnchor(position.index, compactSpread)
                 val draw = session.draws.getOrNull(position.index - 1)
                 val current = draw != null && position.index > revealed
                 val progress = if (current) reveal else remember { mutableFloatStateOf(1f) }
-                Column(Modifier.offset(x = width * anchor.first - cardWidth / 2,
-                        y = height * anchor.second - cardHeight / 2 - 8.dp).width(cardWidth).zIndex(if (current) 2f else 0f),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.offset(x = width * anchor.first - cardWidth / 2,
+                        y = height * anchor.second - cardHeight / 2 - 8.dp).width(cardWidth).zIndex(if (current) 3f else 2f)) {
                     if (draw == null) {
                         Box(Modifier.fillMaxWidth().aspectRatio(.58f),
                             contentAlignment = Alignment.Center) {
@@ -429,11 +446,6 @@ private fun TarotRitualStage(session: FourCardSession?, revealed: Int, shuffling
                         centerDelta = Offset((width * (.5f - anchor.first)).value * density,
                             (height * (.5f - anchor.second) + 8.dp).value * density),
                         onClick = { if (!current) onDetail(position.index) }, modifier = Modifier.fillMaxWidth().aspectRatio(.58f))
-                    Text("${position.index} · ${position.name}", color = c.muted,
-                        style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.requiredWidth(maxOf(cardWidth + 16.dp, 70.dp)
-                            .coerceAtMost(width * if (compactSpread) .24f else .44f)))
                 }
             }
         }

@@ -9,6 +9,7 @@ internal enum class HapticCue {
     Selection, FineSelection, ToggleOn, ToggleOff, MenuOpen, MenuClose,
     GestureArm, GestureDisarm, GestureCancel, VoiceStart, VoiceStop, VoiceCancel,
     CoinLift, CoinImpact, DiceImpact, WheelTick,
+    CardBrowse,
 }
 
 internal data class HapticPoint(val intensity: Float, val sharpness: Float, val durationMs: Long)
@@ -50,6 +51,7 @@ internal object HapticDesign {
         HapticCue.CoinImpact -> longArrayOf(0, 14, 22, 5)
         HapticCue.DiceImpact -> longArrayOf(0, 18)
         HapticCue.WheelTick -> longArrayOf(0, 6)
+        HapticCue.CardBrowse -> longArrayOf(0, 4)
     }
 
     fun points(cue: HapticCue, amount: Float = 1f): List<HapticPoint> {
@@ -88,7 +90,15 @@ internal object HapticDesign {
             HapticCue.CoinImpact -> listOf(p(.44f, .70f), p(.19f, .50f), p(0f, .18f))
             HapticCue.DiceImpact -> listOf(p(.56f, .24f), p(.22f, .20f), p(0f, .10f))
             HapticCue.WheelTick -> listOf(p(.23f, .65f), p(0f, .35f))
+            HapticCue.CardBrowse -> listOf(p(.22f, .48f + energy * .30f), p(0f, .30f))
         }
+    }
+
+    /** A single short tooth, so the next card does not wait behind an envelope tail. */
+    fun cardDetentSamples(amount: Float): HapticSamples {
+        val level = if (amount.isFinite()) amount.coerceIn(0f, 1f) else 0f
+        val peak = (96f * level).toInt()
+        return HapticSamples(longArrayOf(0, 2, 3, 3, 4), intArrayOf(0, peak / 2, peak, peak / 3, 0))
     }
 
     /** Last-resort amplitude-capable fallback: finite, smoothly tapered, never repeating. */

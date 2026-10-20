@@ -12,7 +12,11 @@ Zhifou Fortune is a native Android app that brings together the traditional Chin
 
 The project aims to present traditional material with modern product standards: sources should remain identifiable, conclusions should stay measured, and cultural references should never be framed as guaranteed predictions or fear-based advice.
 
-> The current version is `v1.1.0`. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice. The downloadable APK remains debug-signed; see the distribution notes below.
+> The current version is `v1.1.1`. Fortune, almanac, and divination content is intended for cultural study, personal reflection, and entertainment. It is not medical, legal, financial, or professional advice. The downloadable APK remains debug-signed; see the distribution notes below.
+
+### What's new in v1.1.1
+
+Four-card browsing now uses a card-center ratchet rather than sub-card distance pulses. Position captions stay beneath flying cards, fade out during reveals, and return after settling. Draws, references and AI behavior are unchanged. See the [v1.1.1 notes](releases/v1.1.1.md).
 
 ### What's new in v1.1.0
 
